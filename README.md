@@ -7,7 +7,7 @@ and [Intel Quick Sync Video](https://en.wikipedia.org/wiki/Intel_Quick_Sync_Vide
 
 # Overview
 
-VDI Stream Client is a tiny and low latency Linux client which connects to [Parsec Host](https://parsecgaming.com/)
+VDI Stream Client is a tiny and low latency Linux client which connects to [Parsec Host](https://parsec.app/)
 running on Windows. It allows to run fully GPU accelerated Windows desktop
 environment on a remote machine while streaming the content to a local Linux
 system which process keyboard and mouse input. The remote server can be a
@@ -60,27 +60,29 @@ Method          | Local | Remote | 3D
 [iGVT-g](https://www.kernel.org/doc/Documentation/vfio-mediated-device.txt)          | Yes   | No     | Yes
 [Virgil 3D](https://virgil3d.github.io/)       | Yes   | Yes    | Yes (Linux only)
 [Moonlight](https://moonlight-stream.org/)       | Yes   | Yes    | Yes (Nvidia only)
-[Parsec](https://parsecgaming.com/)          | Yes   | Yes    | Yes
+[Parsec](https://parsec.app/)          | Yes   | Yes    | Yes
 
 So why another streaming client is needed if one for Windows, Linux and macOS
 exist already? Well the Parsec client is focusing on gaming capabilities while
 VDI Stream Client is focusing on having a reliable daily working environment.
 The table below gives a brief overview about differences.
 
-Features               | VDI Stream Client | Parsec
------------------------|-------------------|---------------
-Keyboard Input         | Full              | Partial
-Mouse Input            | Full              | Partial
-Gamepad Input          | No                | Yes
-Clipboard Sharing      | Yes               | Text only
-Remote                 | Yes               | Yes
-DirectX                | Yes               | Yes
-OpenGL                 | Yes               | Yes
-Resolution Sync        | Host-to-Client    | Client-to-Host
-Alt+Tab Integration    | Yes               | No
-Minimal GUI            | Yes               | No
-System SDL2            | Yes               | No
-[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)       | [SDK Bug](https://github.com/parsec-cloud/parsec-sdk/issues/36)           | Yes
+Features                | VDI Stream Client | Parsec
+------------------------|-------------------|---------------
+Keyboard Input          | Full              | Partial
+Mouse Input             | Full              | Partial
+Gamepad Input           | No                | Yes
+Clipboard Sharing       | Yes               | Text only
+Remote                  | Yes               | Yes
+DirectX                 | Yes               | Yes
+OpenGL                  | Yes               | Yes
+Resolution Sync         | Host-to-Client    | Client-to-Host
+Alt+Tab Integration     | Yes               | No
+Minimal GUI             | Yes               | No
+System SDL2             | Yes               | No
+Auto Reconnect          | Yes               | No
+Screensaver Integration | Yes               | No
+[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK Bug](https://github.com/parsec-cloud/parsec-sdk/issues/36)           | Yes
 
 # Requirements
 
@@ -88,11 +90,11 @@ Any recent GPU with [OpenGL](https://en.wikipedia.org/wiki/OpenGL) and [VA-API](
 support will work. When it comes to 4:4:4 color mode, part of the decoding work
 is made with [FFmpeg](https://ffmpeg.org/) (see notes below regarding 4:4:4
 status). Nothing exist without drawbacks and that one for Parsec is that it is
-mandatory to have an [account](https://parsecgaming.com/signup/) which is
+mandatory to have an [account](https://parsec.app/signup) which is
 completely free. However communication between client and host is always made
 directly. Also the SDK is only available as pre-compiled library, so for those
 who fully rely on an open-source system, stop reading here. Some features are
-only available with a commercial subscription under [Parsec Warp](https://parsecgaming.com/warp/).
+only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
 It applies to 4:4:4 color mode which is required to encode images and streams
 without chroma subsampling for sharp and crystal clear text.
 
@@ -117,12 +119,19 @@ without chroma subsampling for sharp and crystal clear text.
   paste text and binary data like images between both environments.
 * Modular architecture and can be extended with additional streaming host
   services like Nvidia GameStream via Moonlight libraries.
+* Screen saver and screen locker support. By default screen saver support is
+  disabled but user can specify command line switch to set [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
+  to override it and allow X server to lock the screen when using it for remote
+  working system.
 
 # Known Issues
 
 * Color mode 4:4:4 is not yet supported by the SDK. There is an open bug at [Parsec SDK GitHub](https://github.com/parsec-cloud/parsec-sdk/issues/36)
-  and Parsec team want to fix it with next SDK release. In official [Parsec](https://parsecgaming.com/downloads/)
+  and Parsec team want to fix it with next SDK release. In official [Parsec](https://parsec.app/downloads)
   client it works already with some internal callbacks in the SDK.
+* Resolution changes from client connected to the host are not persistent and
+  only valid within the session. Once the last client disconnects the host
+  restores original resolution.
 * No macOS and Windows support yet. However porting should be fairly easy but I
   haven't tested it and pull requests are welcome.
 
