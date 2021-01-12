@@ -1,8 +1,8 @@
 # the autoconf initilization.
 AC_INIT(vdi-stream-client, 0.1.0, [mbroemme@libmpq.org], [vdi-stream-client])
 
-# detect the canonical host and target build environment.
-AC_CANONICAL_SYSTEM
+# detect the canonical target environment.
+AC_CANONICAL_TARGET
 
 # initialize autoconf and automake system.
 AM_INIT_AUTOMAKE([no-dependencies])
@@ -45,7 +45,10 @@ AC_SUBST(LIBSDL2_CFLAGS)
 AC_SUBST(LIBSDL2_LIBS)
 
 # creating files.
-AC_OUTPUT([
+AC_CONFIG_FILES([
 Makefile
 src/Makefile
 ])
+
+# perform configuration actions.
+AC_OUTPUT
