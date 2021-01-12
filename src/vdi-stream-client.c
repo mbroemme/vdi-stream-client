@@ -18,19 +18,194 @@
  */
 
 /* system includes. */
-#include <stdint.h>
+#include <getopt.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
-/* x11 includes. */
-#include <X11/Xlib.h>
+/* vdi-stream-client header includes. */
+#include "vdi-stream-client.h"
+#include "engine-parsec.h"
 
-/* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include "SDL2/SDL.h"
+/* vdi-stream-client configuration includes. */
+#include "config.h"
 
+/* this function show the usage. */
+int32_t vdi_stream_client__usage(char *program_name) {
+
+	/* show the help. */
+	printf("Usage: %s [session] [peer] (options)...\n", program_name);
+	printf("GPU accelerated remote host graphical console\n", program_name);
+	printf("\n");
+	printf("Help Options:\n");
+	printf("  -h, --help               show this help screen\n");
+	printf("  -v, --version            show the version information\n");
+	printf("\n");
+	printf("Parsec Options:\n");
+	printf("      --session <id>       session id for connection (mandatory)\n");
+	printf("      --peer <id>          peer id for connection (mandatory)\n");
+	printf("      --timeout <seconds>  connection timeout (default: 5 seconds)\n");
+	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
+	printf("      --mode <color>       color mode: 4:2:0 or 4:4:4 (default 4:2:0)\n");
+	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 255 (default: 100)\n");
+	printf("      --grab               enable keyboard and mouse grab (exit with Ctrl+Alt)\n");
+	printf("      --screensaver        enable screen saver and possible global lockers\n");
+	printf("\n");
+	printf("Please report bugs to the appropriate authors, which can be found in the\n");
+	printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
+
+	/* if no error was found, return zero. */
+	return VDI_STREAM_CLIENT_SUCCESS;
+}
+
+/* this function shows the version information. */
+int32_t vdi_stream_client__version(char *program_name) {
+
+	/* show the version. */
+	printf("%s version %s Copyright (c) 2020 The VDI Stream developers\n", program_name, VERSION);
+	printf("Written by %s\n", AUTHOR);
+	printf("\n");
+	printf("This is free software; see the source for copying conditions.  There is NO\n");
+	printf("warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n");
+
+	/* if no error was found, return zero. */
+	return VDI_STREAM_CLIENT_SUCCESS;
+}
+
+/* main function to initialize structs and parse command line options. */
 int32_t main(int32_t argc, char **argv) {
 
+	/* variables. */
+	int32_t option_index = 0;
+	int32_t opt;
+	int32_t speed;
+	char *program_name;
+	vdi_config_s *vdi_config = NULL;
+
+	/* command line options. */
+	struct option long_options[] = {
+		{"codec", required_argument, NULL, 'c'},
+		{"grab", no_argument, NULL, 'g'},
+		{"help", no_argument, NULL, 'h'},
+		{"mode", required_argument, NULL, 'm'},
+		{"peer", required_argument, NULL, 'y'},
+		{"screensaver", no_argument, NULL, 'z'},
+		{"session", required_argument, NULL, 'x'},
+		{"speed", required_argument, NULL, 's'},
+		{"timeout", required_argument, NULL, 't'},
+		{"version", no_argument, NULL, 'v'},
+		{0, 0, 0, 0},
+	};
+
+	/* default values. */
+	optind = 0;
+	opterr = 0;
+
+	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+	vdi_config->screensaver = 0;
+	vdi_config->timeout = 5000;
+	vdi_config->codec = 1;
+	vdi_config->mode = 1;
+	vdi_config->speed = 100;
+
+	program_name = argv[0];
+	if (program_name && strrchr(program_name, '/')) {
+		program_name = strrchr(program_name, '/') + 1;
+	}
+
+	if (argc <= 1) {
+		vdi_stream_client__usage(program_name);
+		return VDI_STREAM_CLIENT_SUCCESS;
+	}
+
+	/* parse command line. */
+	while ((opt = getopt_long(argc, argv, ":hv", long_options, &option_index)) != -1) {
+
+		/* check if all command line options are parsed. */
+		if (opt == -1) {
+			break;
+		}
+
+		/* parse option. */
+		switch (opt) {
+			case 'z':
+				vdi_config->screensaver = 1;
+				continue;
+			case 't':
+				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
+				continue;
+			case 'c':
+				if (strcmp(argv[optind - 1], "h265") == 0) {
+					vdi_config->codec = 2;
+				}
+				continue;
+			case 'm':
+				if (strcmp(argv[optind - 1], "4:4:4") == 0) {
+					printf("Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
+					printf("https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
+					vdi_config->mode = 2;
+				}
+				continue;
+			case 's':
+				speed = strtol(argv[optind - 1], NULL, 10);
+				if (speed < 0) {
+					vdi_config->speed = 0;
+				} else if (speed > 255) {
+					vdi_config->speed = 255;
+				} else {
+					vdi_config->speed = speed;
+				}
+				continue;
+			case 'g':
+				vdi_config->grab = 1;
+				continue;
+			case 'x':
+				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
+				vdi_config->session[128] = '\0';
+				continue;
+			case 'y':
+				strncpy(vdi_config->peer, argv[optind - 1], sizeof(vdi_config->peer));
+				vdi_config->peer[32] = '\0';
+				continue;
+			case 'h':
+				vdi_stream_client__usage(program_name);
+                                return VDI_STREAM_CLIENT_SUCCESS;
+			case 'v':
+				vdi_stream_client__version(program_name);
+                                return VDI_STREAM_CLIENT_SUCCESS;
+			case ':':
+				fprintf(stderr, "%s: option `%s' requires an argument\n", program_name, argv[optind - 1]);
+				fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+				return VDI_STREAM_CLIENT_ERROR;
+			case '?':
+				fprintf(stderr, "%s: unrecognized option `%s'\n", program_name, argv[optind]);
+				fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+				return VDI_STREAM_CLIENT_ERROR;
+                }
+	}
+
+	/* mandatory arguments not given. */
+	if (strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
+		fprintf(stderr, "%s: mandatory arguments missing\n", program_name, argv[optind]);
+		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+
+	/* additional non-option arguments given. */
+	if (argc > optind) {
+		fprintf(stderr, "%s: non-option arguments given\n", program_name, argv[optind]);
+		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+
+	/* main event loop. */
+	if (vdi_stream_client__event_loop(vdi_config) != 0) {
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+
 	/* quit application. */
-	return 0;
+	return VDI_STREAM_CLIENT_SUCCESS;
 }
