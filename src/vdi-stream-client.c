@@ -51,6 +51,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 255 (default: 100)\n");
 	printf("      --grab               enable keyboard and mouse grab (exit with Ctrl+Alt)\n");
 	printf("      --screensaver        enable screen saver and possible global lockers\n");
+	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("\n");
 	printf("Please report bugs to the appropriate authors, which can be found in the\n");
 	printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
@@ -89,6 +90,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"grab", no_argument, NULL, 'g'},
 		{"help", no_argument, NULL, 'h'},
 		{"mode", required_argument, NULL, 'm'},
+		{"no-clipboard", no_argument, NULL, 'p'},
 		{"peer", required_argument, NULL, 'y'},
 		{"screensaver", no_argument, NULL, 'z'},
 		{"session", required_argument, NULL, 'x'},
@@ -105,6 +107,7 @@ int32_t main(int32_t argc, char **argv) {
 	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
 		return VDI_STREAM_CLIENT_ERROR;
 	}
+	vdi_config->clipboard = 1;
 	vdi_config->screensaver = 0;
 	vdi_config->timeout = 5000;
 	vdi_config->codec = 1;
@@ -131,6 +134,9 @@ int32_t main(int32_t argc, char **argv) {
 
 		/* parse option. */
 		switch (opt) {
+			case 'p':
+				vdi_config->clipboard = 0;
+				continue;
 			case 'z':
 				vdi_config->screensaver = 1;
 				continue;

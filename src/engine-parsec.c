@@ -323,7 +323,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					pmsg.mouseWheel.y = msg.wheel.y * vdi_config->speed;
 					break;
 				case SDL_CLIPBOARDUPDATE:
-					ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
+					if (vdi_config->clipboard == 1) {
+						ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
+					}
 					break;
 				case SDL_WINDOWEVENT:
 					switch (msg.window.event) {
@@ -331,7 +333,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 						case SDL_WINDOWEVENT_ENTER:
 
 							/* TODO: copy client to host clipboard. (workaround for buggy x11 and sdl clipboard handling) */
-							if (SDL_HasClipboardText() == SDL_TRUE) {
+							if (vdi_config->clipboard == 1 && SDL_HasClipboardText() == SDL_TRUE) {
 								ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
 							}
 							SDL_EventState(SDL_KEYDOWN, SDL_ENABLE);
@@ -364,7 +366,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key);
 					break;
 				case CLIENT_EVENT_USER_DATA:
-					vdi_stream_client__clipboard(&parsec_context, event.userData.id, event.userData.key);
+					if (vdi_config->clipboard == 1) {
+						vdi_stream_client__clipboard(&parsec_context, event.userData.id, event.userData.key);
+					}
 					break;
 				default:
 					break;
