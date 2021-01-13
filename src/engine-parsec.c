@@ -329,6 +329,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					switch (msg.window.event) {
 						case SDL_WINDOWEVENT_FOCUS_GAINED:
 						case SDL_WINDOWEVENT_ENTER:
+
+							/* TODO: copy client to host clipboard. (workaround for buggy x11 and sdl clipboard handling) */
+							if (SDL_HasClipboardText() == SDL_TRUE) {
+								ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
+							}
 							SDL_EventState(SDL_KEYDOWN, SDL_ENABLE);
 							SDL_EventState(SDL_KEYUP, SDL_ENABLE);
 							XGrabKeyboard(wm_info.info.x11.display, wm_info.info.x11.window, False, GrabModeAsync, GrabModeAsync, CurrentTime);
