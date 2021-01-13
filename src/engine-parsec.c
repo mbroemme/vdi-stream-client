@@ -305,8 +305,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					pmsg.mouseMotion.x = pmsg.mouseMotion.relative ? msg.motion.xrel : msg.motion.x + 1;
 					pmsg.mouseMotion.y = pmsg.mouseMotion.relative ? msg.motion.yrel : msg.motion.y + 1;
 					break;
-				case SDL_MOUSEBUTTONDOWN:
 				case SDL_MOUSEBUTTONUP:
+					pmsg.type = MESSAGE_MOUSE_BUTTON;
+					pmsg.mouseButton.button = msg.button.button;
+					pmsg.mouseButton.pressed = SDL_FALSE;
+					break;
+				case SDL_MOUSEBUTTONDOWN:
 
 					/* check if we need to grab mouse. */
 					if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_FALSE) {
@@ -315,7 +319,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					}
 					pmsg.type = MESSAGE_MOUSE_BUTTON;
 					pmsg.mouseButton.button = msg.button.button;
-					pmsg.mouseButton.pressed = msg.button.type == SDL_MOUSEBUTTONDOWN;
+					pmsg.mouseButton.pressed = SDL_TRUE;
 					break;
 				case SDL_MOUSEWHEEL:
 					pmsg.type = MESSAGE_MOUSE_WHEEL;
