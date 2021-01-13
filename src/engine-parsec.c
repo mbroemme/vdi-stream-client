@@ -193,6 +193,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	cfg.video[DEFAULT_STREAM].decoderH265 = (vdi_config->codec == 2) ? SDL_TRUE : SDL_FALSE;
 	cfg.video[DEFAULT_STREAM].decoder444 = (vdi_config->mode == 2) ? SDL_TRUE : SDL_FALSE;
 
+	/* use client resolution if specified. */
+	if (vdi_config->width > 0 && vdi_config->height > 0) {
+		cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
+		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
+	}
+
 	/* parsec init. */
 	e = ParsecInit(PARSEC_VER, NULL, NULL, &parsec_context.parsec);
 	if (e != PARSEC_OK) {

@@ -49,6 +49,8 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
 	printf("      --mode <color>       color mode: 4:2:0 or 4:4:4 (default 4:2:0)\n");
 	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 255 (default: 100)\n");
+	printf("      --width <width>      horizontal resolution (default: host resolution)\n");
+	printf("      --height <height>    vertical resolution (default: host resolution)\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
@@ -87,6 +89,7 @@ int32_t main(int32_t argc, char **argv) {
 	/* command line options. */
 	struct option long_options[] = {
 		{"codec", required_argument, NULL, 'c'},
+		{"height", required_argument, NULL, 'u'},
 		{"help", no_argument, NULL, 'h'},
 		{"mode", required_argument, NULL, 'm'},
 		{"no-clipboard", no_argument, NULL, 'p'},
@@ -97,6 +100,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"speed", required_argument, NULL, 's'},
 		{"timeout", required_argument, NULL, 't'},
 		{"version", no_argument, NULL, 'v'},
+		{"width", required_argument, NULL, 'w'},
 		{0, 0, 0, 0},
 	};
 
@@ -135,6 +139,12 @@ int32_t main(int32_t argc, char **argv) {
 
 		/* parse option. */
 		switch (opt) {
+			case 'u':
+				vdi_config->height = strtol(argv[optind - 1], NULL, 10);
+				continue;
+			case 'w':
+				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
+				continue;
 			case 'p':
 				vdi_config->clipboard = 0;
 				continue;
