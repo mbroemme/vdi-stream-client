@@ -49,7 +49,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
 	printf("      --mode <color>       color mode: 4:2:0 or 4:4:4 (default 4:2:0)\n");
 	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 255 (default: 100)\n");
-	printf("      --grab               enable keyboard and mouse grab (exit with Ctrl+Alt)\n");
+	printf("      --no-grab            disable exclusive mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("\n");
@@ -87,10 +87,10 @@ int32_t main(int32_t argc, char **argv) {
 	/* command line options. */
 	struct option long_options[] = {
 		{"codec", required_argument, NULL, 'c'},
-		{"grab", no_argument, NULL, 'g'},
 		{"help", no_argument, NULL, 'h'},
 		{"mode", required_argument, NULL, 'm'},
 		{"no-clipboard", no_argument, NULL, 'p'},
+		{"no-grab", no_argument, NULL, 'g'},
 		{"no-screensaver", no_argument, NULL, 'z'},
 		{"peer", required_argument, NULL, 'y'},
 		{"session", required_argument, NULL, 'x'},
@@ -109,6 +109,7 @@ int32_t main(int32_t argc, char **argv) {
 	}
 	vdi_config->clipboard = 1;
 	vdi_config->screensaver = 1;
+	vdi_config->grab = 1;
 	vdi_config->timeout = 5000;
 	vdi_config->codec = 1;
 	vdi_config->mode = 1;
@@ -166,7 +167,7 @@ int32_t main(int32_t argc, char **argv) {
 				}
 				continue;
 			case 'g':
-				vdi_config->grab = 1;
+				vdi_config->grab = 0;
 				continue;
 			case 'x':
 				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
