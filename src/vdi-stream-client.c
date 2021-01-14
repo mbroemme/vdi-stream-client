@@ -48,7 +48,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --timeout <seconds>  connection timeout (default: 5 seconds)\n");
 	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
 	printf("      --mode <color>       color mode: 4:2:0 or 4:4:4 (default 4:2:0)\n");
-	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 255 (default: 100)\n");
+	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n");
 	printf("      --width <width>      horizontal resolution (default: host resolution)\n");
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
@@ -176,8 +176,8 @@ int32_t main(int32_t argc, char **argv) {
 				speed = strtol(argv[optind - 1], NULL, 10);
 				if (speed < 0) {
 					vdi_config->speed = 0;
-				} else if (speed > 255) {
-					vdi_config->speed = 255;
+				} else if (speed > 500) {
+					vdi_config->speed = 500;
 				} else {
 					vdi_config->speed = speed;
 				}
