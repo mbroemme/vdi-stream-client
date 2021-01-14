@@ -181,6 +181,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
 	const Uint8 *keys;
 	Uint32 wait_time = 0;
+	SDL_AudioSpec want = {0};
+	SDL_AudioSpec have = {0};
 	SDL_SysWMinfo wm_info;
 	ParsecStatus e;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
@@ -244,19 +246,26 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	SDL_AudioSpec want = {0}, have;
-	want.freq = VDI_AUDIO_SAMPLE_RATE;
-	want.format = AUDIO_S16;
-	want.channels = VDI_AUDIO_CHANNELS;
-	want.samples = 2048;
+	/* check if audio should be streamed. */
+	if (vdi_config->audio == 1) {
+		want.freq = VDI_AUDIO_SAMPLE_RATE;
+		want.format = AUDIO_S16;
+		want.channels = VDI_AUDIO_CHANNELS;
+		want.samples = 2048;
 
-	/* the number of audio packets (960 frames) to buffer before we begin playing. */
-	parsec_context.min_buffer = 1;
+		/* the number of audio packets (960 frames) to buffer before we begin playing. */
+		parsec_context.min_buffer = 1;
 
-	/* the number of audio packets (960 frames) to buffer before overflow and clear. */
-	parsec_context.max_buffer = 6;
+		/* the number of audio packets (960 frames) to buffer before overflow and clear. */
+		parsec_context.max_buffer = 6;
 
-	parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+		/* sdl audio device. */
+		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+
+		/* sdl audio thread. */
+		SDL_Thread *audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
+	}
+
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					SDL_WINDOWPOS_UNDEFINED,
 					SDL_WINDOWPOS_UNDEFINED,
@@ -267,14 +276,13 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
 
+	/* sdl video thread. */
+	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
+
 	/* configure screen saver. */
 	if (vdi_config->screensaver == 1) {
 		SDL_EnableScreenSaver();
 	}
-
-	/* sdl render threads. */
-	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
-	SDL_Thread *audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
 
 	SDL_GetWindowWMInfo(parsec_context.window, &wm_info);
 
@@ -407,8 +415,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	ParsecDestroy(parsec_context.parsec);
 
 	/* sdl destroy. */
+	if (vdi_config->audio == 1) {
+		SDL_CloseAudioDevice(parsec_context.audio);
+	}
 	SDL_DestroyWindow(parsec_context.window);
-	SDL_CloseAudioDevice(parsec_context.audio);
 	SDL_Quit();
 
 	/* terminate loop. */

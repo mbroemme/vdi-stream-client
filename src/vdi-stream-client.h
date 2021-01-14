@@ -26,6 +26,7 @@
 
 /* stored command line options. */
 typedef struct {
+	uint16_t	audio;		/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
 	uint16_t	screensaver;	/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
 	uint16_t	clipboard;	/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
 	uint16_t	timeout;	/* connection timeout in milliseconds. */

@@ -54,6 +54,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --no-grab            disable exclusive mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
+	printf("      --no-audio           disable audio streaming\n");
 	printf("\n");
 	printf("Please report bugs to the appropriate authors, which can be found in the\n");
 	printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
@@ -92,6 +93,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"height", required_argument, NULL, 'u'},
 		{"help", no_argument, NULL, 'h'},
 		{"mode", required_argument, NULL, 'm'},
+		{"no-audio", no_argument, NULL, 'a'},
 		{"no-clipboard", no_argument, NULL, 'p'},
 		{"no-grab", no_argument, NULL, 'g'},
 		{"no-screensaver", no_argument, NULL, 'z'},
@@ -111,6 +113,7 @@ int32_t main(int32_t argc, char **argv) {
 	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
 		return VDI_STREAM_CLIENT_ERROR;
 	}
+	vdi_config->audio = 1;
 	vdi_config->clipboard = 1;
 	vdi_config->screensaver = 1;
 	vdi_config->grab = 1;
@@ -144,6 +147,9 @@ int32_t main(int32_t argc, char **argv) {
 				continue;
 			case 'w':
 				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
+				continue;
+			case 'a':
+				vdi_config->audio = 0;
 				continue;
 			case 'p':
 				vdi_config->clipboard = 0;
