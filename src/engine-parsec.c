@@ -119,13 +119,13 @@ static void vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opa
 	Uint32 queued_frames = size / (VDI_AUDIO_CHANNELS * sizeof(Sint16));
 	Uint32 queued_packets = queued_frames / VDI_AUDIO_FRAMES_PER_PACKET;
 
-	if (parsec_context->playing == 1 && queued_packets > parsec_context->max_buffer) {
+	if (parsec_context->playing == SDL_TRUE && queued_packets > parsec_context->max_buffer) {
 		SDL_ClearQueuedAudio(parsec_context->audio);
 		SDL_PauseAudioDevice(parsec_context->audio, 1);
-		parsec_context->playing = 0;
-	} else if (parsec_context->playing == 0 && queued_packets >= parsec_context->min_buffer) {
+		parsec_context->playing = SDL_FALSE;
+	} else if (parsec_context->playing == SDL_FALSE && queued_packets >= parsec_context->min_buffer) {
 		SDL_PauseAudioDevice(parsec_context->audio, 0);
-		parsec_context->playing = 1;
+		parsec_context->playing = SDL_TRUE;
 	}
 
 	SDL_QueueAudio(parsec_context->audio, pcm, frames * VDI_AUDIO_CHANNELS * sizeof(Sint16));
@@ -135,7 +135,7 @@ static void vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opa
 static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 
-	while (parsec_context->done == 0) {
+	while (parsec_context->done == SDL_FALSE) {
 		ParsecClientPollAudio(parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context);
 	}
 
@@ -149,7 +149,7 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
 	SDL_GL_SetSwapInterval(1);
 
-	while (parsec_context->done == 0) {
+	while (parsec_context->done == SDL_FALSE) {
 		ParsecClientSetDimensions(
 			parsec_context->parsec,
 			DEFAULT_STREAM,
@@ -215,7 +215,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* wait until connection is established. */
-	while (parsec_context.connection == 0) {
+	while (parsec_context.connection == SDL_FALSE) {
 
 		/* get client status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
@@ -224,7 +224,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		if (e == PARSEC_OK &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
-			parsec_context.connection = 1;
+			parsec_context.connection = SDL_TRUE;
 		}
 
 		/* unknown error. */
@@ -243,7 +243,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* check if connected. */
-	if (parsec_context.connection == 0) {
+	if (parsec_context.connection == SDL_FALSE) {
 		goto error;
 	}
 
@@ -290,13 +290,13 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	keys = SDL_GetKeyboardState(NULL);
 
 	/* event loop. */
-	while (parsec_context.done == 0) {
+	while (parsec_context.done == SDL_FALSE) {
 		for (SDL_Event msg; SDL_PollEvent(&msg);) {
 			ParsecMessage pmsg = {0};
 
 			switch (msg.type) {
 				case SDL_QUIT:
-					parsec_context.done = 1;
+					parsec_context.done = SDL_TRUE;
 					break;
 				case SDL_KEYUP:
 					pmsg.type = MESSAGE_KEYBOARD;
@@ -375,7 +375,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
-			parsec_context.done = 1;
+			parsec_context.done = SDL_TRUE;
 		}
 
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
