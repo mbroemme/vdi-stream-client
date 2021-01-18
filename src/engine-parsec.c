@@ -182,6 +182,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	const Uint8 *keys;
 	Uint32 focus = SDL_FALSE;
 	Uint32 wait_time = 0;
+	Sint32 error = 0;
 	SDL_AudioSpec want = {0};
 	SDL_AudioSpec have = {0};
 	SDL_SysWMinfo wm_info;
@@ -189,7 +190,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
 
 	/* sdl init. */
-	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+	vdi_stream__log_info("Initialize SDL\n");
+	error = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+	if (error != 0) {
+		vdi_stream__log_error("Initialization failed: %s.\n", SDL_GetError());
+		goto error;
+	}
 	SDL_VERSION(&wm_info.version);
 
 	/* parsec configuration. */
@@ -198,23 +204,29 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* use client resolution if specified. */
 	if (vdi_config->width > 0 && vdi_config->height > 0) {
+		vdi_stream__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
 		cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
 	}
 
 	/* parsec init. */
+	vdi_stream__log_info("Initialize Parsec\n");
 	e = ParsecInit(PARSEC_VER, NULL, NULL, &parsec_context.parsec);
 	if (e != PARSEC_OK) {
+		vdi_stream__log_error("Initialization failed with code: %d.\n", e);
 		goto error;
 	}
 
 	/* parsec connect. */
+	vdi_stream__log_info("Connect to Parsec service\n");
 	e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 	if (e != PARSEC_OK) {
+		vdi_stream__log_error("Connection failed with code: %d.\n", e);
 		goto error;
 	}
 
 	/* wait until connection is established. */
+	vdi_stream__log_info("Connect to Parsec host\n");
 	while (parsec_context.connection == SDL_FALSE) {
 
 		/* get client status. */
@@ -224,16 +236,19 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		if (e == PARSEC_OK &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
+			vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
 			parsec_context.connection = SDL_TRUE;
 		}
 
 		/* unknown error. */
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+			vdi_stream__log_error("Connection failed with code: %d.\n", e);
 			break;
 		}
 
 		/* check if timeout reached. */
 		if (wait_time >= vdi_config->timeout) {
+			vdi_stream__log_error("Connection timed out after %d seconds, try increasing timeout\n", (vdi_config->timeout / 1000));
 			break;
 		}
 
@@ -247,8 +262,38 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
+	/* configure screen saver. */
+	if (vdi_config->screensaver == 1) {
+		vdi_stream__log_info("Enable screen saver\n");
+		SDL_EnableScreenSaver();
+	}
+
+	vdi_stream__log_info("Enable video\n");
+	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
+					SDL_WINDOWPOS_UNDEFINED,
+					SDL_WINDOWPOS_UNDEFINED,
+					parsec_context.client_status.decoder->width,
+					parsec_context.client_status.decoder->height,
+					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
+				);
+	if (parsec_context.window == NULL) {
+		vdi_stream__log_error("Window creation failed: %s\n", SDL_GetError());
+	}
+
+	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
+	if (parsec_context.gl == NULL) {
+		vdi_stream__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
+	}
+
+	/* sdl video thread. */
+	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
+	if (video_thread == NULL) {
+		vdi_stream__log_error("Video thread creation failed: %s\n", SDL_GetError());
+	}
+
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
+		vdi_stream__log_info("Enable audio\n");
 		want.freq = VDI_AUDIO_SAMPLE_RATE;
 		want.format = AUDIO_S16;
 		want.channels = VDI_AUDIO_CHANNELS;
@@ -262,31 +307,18 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* sdl audio device. */
 		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+		if (parsec_context.audio == 0) {
+			vdi_stream__log_error("Failed to open audio:: %s\n", SDL_GetError());
+		}
 
 		/* sdl audio thread. */
 		SDL_Thread *audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
-	}
-
-	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
-					SDL_WINDOWPOS_UNDEFINED,
-					SDL_WINDOWPOS_UNDEFINED,
-					parsec_context.client_status.decoder->width,
-					parsec_context.client_status.decoder->height,
-					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
-				);
-
-	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
-
-	/* sdl video thread. */
-	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
-
-	/* configure screen saver. */
-	if (vdi_config->screensaver == 1) {
-		SDL_EnableScreenSaver();
+		if (audio_thread == NULL) {
+			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
+		}
 	}
 
 	SDL_GetWindowWMInfo(parsec_context.window, &wm_info);
-
 	keys = SDL_GetKeyboardState(NULL);
 
 	/* event loop. */
@@ -375,6 +407,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+			vdi_stream__log_error("Connection failed with code: %d.\n", e);
 			parsec_context.done = SDL_TRUE;
 		}
 
@@ -408,6 +441,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		/* check if we need to change window size. */
 		if (parsec_context.old_width != parsec_context.client_status.decoder->width ||
 		    parsec_context.old_height != parsec_context.client_status.decoder->height) {
+
+			/* show resolution change message only if changed from within the client. */
+			if (parsec_context.old_width > 0 && parsec_context.old_height > 0) {
+				vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
+					parsec_context.old_width, parsec_context.old_height,
+					parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height
+				);
+			}
 			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
 		}
 

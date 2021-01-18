@@ -40,4 +40,8 @@ typedef struct {
 	char		peer[33];	/* peer id for connection. (last character must be '\0') */
 } vdi_config_s;
 
+/* define new print functions for logging. */
+#define vdi_stream__log_info(...) printf(__VA_ARGS__);
+#define vdi_stream__log_error(...) fprintf(stderr, __VA_ARGS__);
+
 #endif /* _VDI_STREAM_CLIENT_H */
