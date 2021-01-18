@@ -213,7 +213,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	vdi_stream__log_info("Initialize Parsec\n");
 	e = ParsecInit(PARSEC_VER, NULL, NULL, &parsec_context.parsec);
 	if (e != PARSEC_OK) {
-		vdi_stream__log_error("Initialization failed with code: %d.\n", e);
+		vdi_stream__log_error("Initialization failed with code: %d\n", e);
 		goto error;
 	}
 
@@ -221,7 +221,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	vdi_stream__log_info("Connect to Parsec service\n");
 	e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 	if (e != PARSEC_OK) {
-		vdi_stream__log_error("Connection failed with code: %d.\n", e);
+		vdi_stream__log_error("Connection failed with code: %d\n", e);
 		goto error;
 	}
 
@@ -242,13 +242,13 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* unknown error. */
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
-			vdi_stream__log_error("Connection failed with code: %d.\n", e);
+			vdi_stream__log_error("Connection failed with code: %d\n", e);
 			break;
 		}
 
 		/* check if timeout reached. */
 		if (wait_time >= vdi_config->timeout) {
-			vdi_stream__log_error("Connection timed out after %d seconds, try increasing timeout\n", (vdi_config->timeout / 1000));
+			vdi_stream__log_error("Connection timed out after %d seconds\n", (vdi_config->timeout / 1000));
 			break;
 		}
 
@@ -308,7 +308,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		/* sdl audio device. */
 		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 		if (parsec_context.audio == 0) {
-			vdi_stream__log_error("Failed to open audio:: %s\n", SDL_GetError());
+			vdi_stream__log_error("Failed to open audio: %s\n", SDL_GetError());
 		}
 
 		/* sdl audio thread. */
@@ -407,7 +407,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
-			vdi_stream__log_error("Connection failed with code: %d.\n", e);
+			vdi_stream__log_error("Connection failed with code: %d\n", e);
 			parsec_context.done = SDL_TRUE;
 		}
 
