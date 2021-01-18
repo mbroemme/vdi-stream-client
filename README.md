@@ -120,9 +120,8 @@ without chroma subsampling for sharp and crystal clear text.
 * Modular architecture and can be extended with additional streaming host
   services like Nvidia GameStream via Moonlight libraries.
 * Screen saver and screen locker support. By default screen saver support is
-  disabled but user can specify command line switch to set [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
-  to override it and allow X server to lock the screen when using it for remote
-  working system.
+  enabled but user can specify command line switch to avoid setting [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
+  and disallow X server to lock the local screen.
 
 # Known Issues
 
