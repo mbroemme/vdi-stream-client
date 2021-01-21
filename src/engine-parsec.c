@@ -279,17 +279,20 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream__log_error("Window creation failed: %s\n", SDL_GetError());
+		goto error;
 	}
 
 	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
 	if (parsec_context.gl == NULL) {
 		vdi_stream__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
+		goto error;
 	}
 
 	/* sdl video thread. */
 	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
 	if (video_thread == NULL) {
 		vdi_stream__log_error("Video thread creation failed: %s\n", SDL_GetError());
+		goto error;
 	}
 
 	/* check if audio should be streamed. */
@@ -310,12 +313,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 		if (parsec_context.audio == 0) {
 			vdi_stream__log_error("Failed to open audio: %s\n", SDL_GetError());
+			goto error;
 		}
 
 		/* sdl audio thread. */
 		SDL_Thread *audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
 		if (audio_thread == NULL) {
 			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
+			goto error;
 		}
 	}
 
@@ -516,6 +521,10 @@ error:
 	ParsecDestroy(parsec_context.parsec);
 
 	/* sdl destroy. */
+	if (vdi_config->audio == 1) {
+		SDL_CloseAudioDevice(parsec_context.audio);
+	}
+	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
 
 	/* return with error. */
