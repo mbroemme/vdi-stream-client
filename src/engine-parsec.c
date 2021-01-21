@@ -182,6 +182,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	const Uint8 *keys;
 	Uint32 focus = SDL_FALSE;
 	Uint32 wait_time = 0;
+	Uint32 last_time = 0;
 	Sint32 error = 0;
 	SDL_AudioSpec want = {0};
 	SDL_AudioSpec have = {0};
@@ -193,7 +194,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	vdi_stream__log_info("Initialize SDL\n");
 	error = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (error != 0) {
-		vdi_stream__log_error("Initialization failed: %s.\n", SDL_GetError());
+		vdi_stream__log_error("Initialization failed: %s\n", SDL_GetError());
 		goto error;
 	}
 	SDL_VERSION(&wm_info.version);
@@ -405,10 +406,42 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			}
 		}
 
+		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
-		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
-			vdi_stream__log_error("Connection failed with code: %d\n", e);
+		if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
+			vdi_stream__log_error("Parsec disconnected\n");
 			parsec_context.done = SDL_TRUE;
+		}
+		if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
+		    SDL_GetTicks() > last_time + vdi_config->timeout) {
+			if (last_time == 0) {
+				vdi_stream__log_info("Reconnect to Parsec service\n");
+			}
+			ParsecClientDisconnect(parsec_context.parsec);
+			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+			last_time = SDL_GetTicks();
+		}
+
+		/* check network connection status. */
+		if (vdi_config->reconnect == 0 && parsec_context.client_status.networkFailure == 1) {
+			vdi_stream__log_error("Network disconnected\n");
+			parsec_context.done = SDL_TRUE;
+		}
+		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
+		    SDL_GetTicks() > last_time + vdi_config->timeout) {
+			if (last_time == 0) {
+				vdi_stream__log_info("Reconnect to Parsec host\n");
+			}
+			ParsecClientDisconnect(parsec_context.parsec);
+			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+			last_time = SDL_GetTicks();
+		}
+
+		/* reset last time if reconnected. */
+		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 0 &&
+		    e == PARSEC_OK && last_time > 0) {
+			vdi_stream__log_info("Reconnected\n");
+			last_time = 0;
 		}
 
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
@@ -443,7 +476,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		    parsec_context.old_height != parsec_context.client_status.decoder->height) {
 
 			/* show resolution change message only if changed from within the client. */
-			if (parsec_context.old_width > 0 && parsec_context.old_height > 0) {
+			if (parsec_context.old_width > 0 &&
+			    parsec_context.old_height > 0 &&
+			    parsec_context.client_status.decoder->width > 0&&
+			    parsec_context.client_status.decoder->height > 0) {
 				vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
 					parsec_context.old_width, parsec_context.old_height,
 					parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height

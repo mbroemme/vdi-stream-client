@@ -29,6 +29,7 @@ typedef struct {
 	uint16_t	audio;		/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
 	uint16_t	screensaver;	/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
 	uint16_t	clipboard;	/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
+	uint16_t	reconnect;	/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
 	uint16_t	timeout;	/* connection timeout in milliseconds. */
 	uint16_t	codec;		/* streaming codec to use. (1 = h264 and 2 = h265) */
 	uint16_t	mode;		/* color mode to use. (1 = 4:2:0 and 2 = 4:4:4) */
