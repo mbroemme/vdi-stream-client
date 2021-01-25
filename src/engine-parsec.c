@@ -259,7 +259,16 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 
 	while (parsec_context->done == SDL_FALSE) {
-		ParsecClientPollAudio(parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context);
+
+		/* poll audio only if connected. */
+		if (parsec_context->connection == SDL_TRUE) {
+			ParsecClientPollAudio(parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context);
+		}
+
+		/* delay loop if in reconnect state. */
+		if (parsec_context->connection == SDL_FALSE) {
+			SDL_Delay(100);
+		}
 	}
 
 	return VDI_STREAM_CLIENT_SUCCESS;
@@ -274,20 +283,19 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 	SDL_GL_SetSwapInterval(1);
 
 	while (parsec_context->done == SDL_FALSE) {
-		ParsecClientSetDimensions(
-			parsec_context->parsec,
-			DEFAULT_STREAM,
-			parsec_context->client_status.decoder->width,
-			parsec_context->client_status.decoder->height,
-			1
-		);
-
 		glViewport(0, 0, parsec_context->client_status.decoder->width, parsec_context->client_status.decoder->height);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
 		/* show parsec frame. */
 		if (parsec_context->connection == SDL_TRUE) {
+			ParsecClientSetDimensions(
+				parsec_context->parsec,
+				DEFAULT_STREAM,
+				parsec_context->client_status.decoder->width,
+				parsec_context->client_status.decoder->height,
+				1
+			);
 			ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
 		}
 
