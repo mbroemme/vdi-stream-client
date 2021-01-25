@@ -633,9 +633,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			last_time = SDL_GetTicks();
 		}
 
-		/* reset last time if reconnected. */
+		/* set connection status if reconnected. */
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 0 &&
-		    e == PARSEC_OK && last_time > 0) {
+		    e == PARSEC_OK && parsec_context.connection == SDL_FALSE) {
 			parsec_context.connection = SDL_TRUE;
 		}
 
