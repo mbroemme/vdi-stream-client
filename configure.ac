@@ -30,15 +30,19 @@ AC_CHECK_LIB([GL], [glFinish], [], [AC_MSG_ERROR([*** glFinish is required, inst
 AC_CHECK_HEADER([parsec/parsec.h], [], [AC_MSG_ERROR([*** parsec/parsec.h is required, install parsec-sdk header files])])
 AC_CHECK_LIB([parsec], [ParsecInit], [], [AC_MSG_ERROR([*** ParsecInit is required, install parsec-sdk library files])])
 
-# checking for libsdl2 library.
-AC_CHECK_HEADER([SDL2/SDL.h], [], [AC_MSG_ERROR([*** SDL2/SDL.h is required, install libsdl2 header files])])
-AC_PATH_PROG([sdl2_config], [sdl2-config], [AC_MSG_ERROR([*** sdl2-config is required, install libsdl2 development files])])
+# checking for sdl2 library.
+AC_CHECK_HEADER([SDL2/SDL.h], [], [AC_MSG_ERROR([*** SDL2/SDL.h is required, install sdl2 header files])])
+AC_PATH_PROG([sdl2_config], [sdl2-config], [AC_MSG_ERROR([*** sdl2-config is required, install sdl2 development files])])
 
-# checking for libsdl2 environment.
+# checking for sdl2 environment.
 if test -n "$sdl2_config"; then
 	LIBSDL2_CFLAGS="$(sdl2-config --cflags)"
 	LIBSDL2_LIBS="$(sdl2-config --libs)"
 fi
+
+# checking for sdl2_ttf library.
+AC_CHECK_HEADER([SDL2/SDL_ttf.h], [], [AC_MSG_ERROR([*** SDL2/SDL_ttf.h is required, install sdl2_ttf header files])])
+AC_CHECK_LIB([SDL2_ttf], [TTF_Init], [], [AC_MSG_ERROR([*** TTF_Init is required, install sdl2_ttf library files])])
 
 # export library flags.
 AC_SUBST(LIBSDL2_CFLAGS)

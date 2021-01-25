@@ -35,9 +35,13 @@
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
+#include <SDL2/SDL_ttf.h>
 
 /* parsec includes. */
 #include <parsec/parsec.h>
+
+/* font include. */
+#include "../include/font.h"
 
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
@@ -60,12 +64,131 @@ struct parsec_context_s {
 	Sint32 old_width;
 	Sint32 old_height;
 
+	/* opengl texture for ttf rendering. */
+	SDL_Surface *surface_ttf;
+	GLuint texture_ttf;
+	GLfloat texture_min_x;
+	GLfloat texture_min_y;
+	GLfloat texture_max_x;
+	GLfloat texture_max_y;
+
 	/* audio. */
 	SDL_AudioDeviceID audio;
 	Sint32 playing;
 	Uint32 min_buffer;
 	Uint32 max_buffer;
 };
+
+static void vdi_stream__gl_enter_2d_mode(Sint32 width, Sint32 height) {
+	glPushAttrib(GL_ENABLE_BIT);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glEnable(GL_TEXTURE_2D);
+
+	/* this allows alpha blending of 2d textures with the scene. */
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glViewport(0, 0, width, height);
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glOrtho(0.0, (GLdouble)width, (GLdouble)height, 0.0, 0.0, 1.0);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+}
+
+static void vdi_stream__gl_leave_2d_mode() {
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
+
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+
+	glPopAttrib();
+}
+
+/* quick utility function for texture creation. */
+static Sint32 vdi_stream__power_of_two(Sint32 input) {
+	Sint32 value = 1;
+	while (value < input) {
+		value <<= 1;
+	}
+	return value;
+}
+
+/* convert text into opengl texture. */
+static GLuint vdi_stream__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord) {
+	GLuint texture;
+	Sint32 w, h;
+	SDL_Surface *image;
+	SDL_Rect area;
+	Uint8 saved_alpha;
+	SDL_BlendMode saved_mode;
+
+	/* use the surface width and height expanded to powers of 2. */
+	w = vdi_stream__power_of_two(surface->w);
+	h = vdi_stream__power_of_two(surface->h);
+	texture_coord[0] = 0.0f; /* min x */
+	texture_coord[1] = 0.0f; /* min y */
+	texture_coord[2] = (GLfloat)surface->w / w; /* max x */
+	texture_coord[3] = (GLfloat)surface->h / h; /* max y */
+
+	image = SDL_CreateRGBSurface(
+		SDL_SWSURFACE,
+		w, h,
+		32,
+#if SDL_BYTEORDER == SDL_LIL_ENDIAN /* opengl rgba masks. */
+		0x000000FF,
+		0x0000FF00,
+		0x00FF0000,
+		0xFF000000
+#else
+		0xFF000000,
+		0x00FF0000,
+		0x0000FF00,
+		0x000000FF
+#endif
+	);
+	if (image == NULL) {
+		return 0;
+	}
+
+	/* save the alpha blending attributes. */
+	SDL_GetSurfaceAlphaMod(surface, &saved_alpha);
+	SDL_SetSurfaceAlphaMod(surface, 0xFF);
+	SDL_GetSurfaceBlendMode(surface, &saved_mode);
+	SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
+
+	/* copy the surface into the gl texture image. */
+	area.x = 0;
+	area.y = 0;
+	area.w = surface->w;
+	area.h = surface->h;
+	SDL_BlitSurface(surface, &area, image, &area);
+
+	/* restore the alpha blending attributes. */
+	SDL_SetSurfaceAlphaMod(surface, saved_alpha);
+	SDL_SetSurfaceBlendMode(surface, saved_mode);
+
+	/* create an opengl texture for the image. */
+	glGenTextures(1, &texture);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->pixels);
+
+	/* no longer needed. */
+	SDL_FreeSurface(image);
+
+	return texture;
+}
 
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
@@ -145,6 +268,7 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 /* sdl video thread. */
 static Sint32 vdi_stream_client__video_thread(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+	Sint32 x, y, w, h;
 
 	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
 	SDL_GL_SetSwapInterval(1);
@@ -162,7 +286,32 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
+		/* show parsec frame. */
+		if (parsec_context->connection == SDL_TRUE) {
+			ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
+		}
+
+		/* show reconnecting text. */
+		if (parsec_context->connection == SDL_FALSE) {
+
+			/* calculate position and size to center of window. */
+			x = (parsec_context->client_status.decoder->width - parsec_context->surface_ttf->w) / 2;
+			y = (parsec_context->client_status.decoder->height - parsec_context->surface_ttf->h) / 2;
+			w = parsec_context->surface_ttf->w;
+			h = parsec_context->surface_ttf->h;
+
+			/* show the text on the screen. */
+			vdi_stream__gl_enter_2d_mode(parsec_context->client_status.decoder->width, parsec_context->client_status.decoder->height);
+			glBindTexture(GL_TEXTURE_2D, parsec_context->texture_ttf);
+			glBegin(GL_TRIANGLE_STRIP);
+			glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_min_y); glVertex2i(x, y);
+			glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_min_y); glVertex2i(x+w, y);
+			glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_max_y); glVertex2i(x, y+h);
+			glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_max_y); glVertex2i(x+w, y+h);
+			glEnd();
+			vdi_stream__gl_leave_2d_mode();
+		}
+
 		SDL_GL_SwapWindow(parsec_context->window);
 		glFinish();
 
@@ -184,9 +333,13 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	Uint32 wait_time = 0;
 	Uint32 last_time = 0;
 	Sint32 error = 0;
+	GLenum gl_error;
+	GLfloat texture_coord[4];
 	SDL_AudioSpec want = {0};
 	SDL_AudioSpec have = {0};
 	SDL_SysWMinfo wm_info;
+	SDL_Color color = { 0x88, 0x88, 0x88, 0xFF };
+	TTF_Font *font;
 	ParsecStatus e;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
 
@@ -198,6 +351,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 	SDL_VERSION(&wm_info.version);
+
+	/* ttf init. */
+	vdi_stream__log_info("Initialize TTF\n");
+	error = TTF_Init();
+	if (error != 0) {
+		vdi_stream__log_error("Initialization failed: %s\n", TTF_GetError());
+		goto error;
+	}
+
+	/* load font. */
+	font = TTF_OpenFontRW(SDL_RWFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), 1, 16);
+	if (font == NULL) {
+		vdi_stream__log_error("Loading font failed: %s\n", TTF_GetError());
+		goto error;
+	}
 
 	/* parsec configuration. */
 	cfg.video[DEFAULT_STREAM].decoderH265 = (vdi_config->codec == 2) ? SDL_TRUE : SDL_FALSE;
@@ -287,6 +455,25 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		vdi_stream__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
+
+	parsec_context.surface_ttf = TTF_RenderUTF8_Blended(font, "Reconnecting...", color);
+	if (parsec_context.surface_ttf == NULL) {
+		vdi_stream__log_error("TTF surface creation failed: %s\n", TTF_GetError());
+		goto error;
+	}
+
+	/* convert the text into an opengl texture. */
+	parsec_context.texture_ttf = vdi_stream__gl_load_texture(parsec_context.surface_ttf, texture_coord);
+	if ((gl_error = glGetError()) != GL_NO_ERROR) {
+		vdi_stream__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
+		goto error;
+	}
+
+	/* make texture coordinates easy to understand. */
+	parsec_context.texture_min_x = texture_coord[0];
+	parsec_context.texture_min_y = texture_coord[1];
+	parsec_context.texture_max_x = texture_coord[2];
+	parsec_context.texture_max_y = texture_coord[3];
 
 	/* sdl video thread. */
 	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
@@ -419,11 +606,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 		if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
-			if (last_time == 0) {
-				vdi_stream__log_info("Reconnect to Parsec service\n");
-			}
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+			parsec_context.connection = SDL_FALSE;
 			last_time = SDL_GetTicks();
 		}
 
@@ -434,19 +619,16 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
-			if (last_time == 0) {
-				vdi_stream__log_info("Reconnect to Parsec host\n");
-			}
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+			parsec_context.connection = SDL_FALSE;
 			last_time = SDL_GetTicks();
 		}
 
 		/* reset last time if reconnected. */
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 0 &&
 		    e == PARSEC_OK && last_time > 0) {
-			vdi_stream__log_info("Reconnected\n");
-			last_time = 0;
+			parsec_context.connection = SDL_TRUE;
 		}
 
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
@@ -505,10 +687,15 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);
 
+	/* ttf destroy. */
+	TTF_CloseFont(font);
+	TTF_Quit();
+
 	/* sdl destroy. */
 	if (vdi_config->audio == 1) {
 		SDL_CloseAudioDevice(parsec_context.audio);
 	}
+	SDL_FreeSurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
 
@@ -520,10 +707,15 @@ error:
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);
 
+	/* ttf destroy. */
+	TTF_CloseFont(font);
+	TTF_Quit();
+
 	/* sdl destroy. */
 	if (vdi_config->audio == 1) {
 		SDL_CloseAudioDevice(parsec_context.audio);
 	}
+	SDL_FreeSurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
 
