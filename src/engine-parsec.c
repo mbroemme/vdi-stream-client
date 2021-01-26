@@ -442,13 +442,25 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	/* configure screen saver. */
-	if (vdi_config->screensaver == 1) {
-		vdi_stream__log_info("Enable screen saver\n");
-		SDL_EnableScreenSaver();
+	/* check if reconnect should be disabled. */
+	if (vdi_config->reconnect == 0) {
+		vdi_stream__log_info("Disable automatic reconnect\n");
 	}
 
-	vdi_stream__log_info("Enable video\n");
+	/* check if exclusive mouse grab should be disabled. */
+	if (vdi_config->grab == 0) {
+		vdi_stream__log_info("Disable exclusive mouse grab\n");
+	}
+
+	/* configure screen saver. */
+	if (vdi_config->screensaver == 1) {
+		SDL_EnableScreenSaver();
+	}
+	if (vdi_config->screensaver == 0) {
+		vdi_stream__log_info("Disable screen saver\n");
+		SDL_DisableScreenSaver();
+	}
+
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					SDL_WINDOWPOS_UNDEFINED,
 					SDL_WINDOWPOS_UNDEFINED,
@@ -493,9 +505,13 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
+	/* check if clipboard should be disabled. */
+	if (vdi_config->clipboard == 0) {
+		vdi_stream__log_info("Disable clipboard sharing\n");
+	}
+
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
-		vdi_stream__log_info("Enable audio\n");
 		want.freq = VDI_AUDIO_SAMPLE_RATE;
 		want.format = AUDIO_S16;
 		want.channels = VDI_AUDIO_CHANNELS;
@@ -520,6 +536,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
 			goto error;
 		}
+	}
+	if (vdi_config->audio == 0) {
+		vdi_stream__log_info("Disable audio streaming\n");
 	}
 
 	SDL_GetWindowWMInfo(parsec_context.window, &wm_info);
