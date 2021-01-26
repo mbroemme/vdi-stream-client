@@ -80,6 +80,7 @@ struct parsec_context_s {
 	Uint32 max_buffer;
 };
 
+/* start text rendering. */
 static void vdi_stream__gl_enter_2d_mode(Sint32 width, Sint32 height) {
 	glPushAttrib(GL_ENABLE_BIT);
 	glDisable(GL_DEPTH_TEST);
@@ -105,6 +106,7 @@ static void vdi_stream__gl_enter_2d_mode(Sint32 width, Sint32 height) {
 	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
 }
 
+/* stop text rendering. */
 static void vdi_stream__gl_leave_2d_mode() {
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();
