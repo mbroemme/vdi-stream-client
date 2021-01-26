@@ -55,6 +55,7 @@ struct parsec_context_s {
 	Sint32 connection;
 	Parsec *parsec;
 	ParsecClientStatus client_status;
+	Uint32 mode_update;
 
 	/* video. */
 	SDL_Window *window;
@@ -222,7 +223,7 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->modeUpdate == SDL_TRUE) {
+	if (cursor->modeUpdate == SDL_TRUE && parsec_context->mode_update == SDL_TRUE) {
 		if (SDL_GetRelativeMouseMode() == SDL_TRUE && cursor->relative == SDL_FALSE) {
 			SDL_ShowCursor(SDL_ENABLE);
 			SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -596,6 +597,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 							SDL_EventState(SDL_KEYDOWN, SDL_DISABLE);
 							SDL_EventState(SDL_KEYUP, SDL_DISABLE);
 							XUngrabKeyboard(wm_info.info.x11.display, CurrentTime);
+							break;
+						case SDL_WINDOWEVENT_ENTER:
+							parsec_context.mode_update = SDL_TRUE;
+							break;
+						case SDL_WINDOWEVENT_LEAVE:
+							parsec_context.mode_update = SDL_FALSE;
 							break;
 					}
 					break;
