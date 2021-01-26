@@ -51,11 +51,11 @@
 struct parsec_context_s {
 
 	/* parsec. */
-	Sint32 done;
-	Sint32 connection;
+	SDL_bool done;
+	SDL_bool connection;
+	SDL_bool mode_update;
 	Parsec *parsec;
 	ParsecClientStatus client_status;
-	Uint32 mode_update;
 
 	/* video. */
 	SDL_Window *window;
@@ -338,7 +338,7 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
 	const Uint8 *keys;
-	Uint32 focus = SDL_FALSE;
+	SDL_bool focus = SDL_FALSE;
 	Uint32 wait_time = 0;
 	Uint32 last_time = 0;
 	Sint32 error = 0;
