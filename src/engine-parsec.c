@@ -352,6 +352,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	SDL_Color color = { 0x88, 0x88, 0x88, 0xFF };
 	TTF_Font *font;
 	ParsecStatus e;
+	ParsecConfig network_cfg = PARSEC_DEFAULTS;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
 
 	/* sdl init. */
@@ -389,9 +390,18 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
 	}
 
+	/* configure upnp. */
+	if (vdi_config->upnp == 1) {
+		network_cfg.upnp = 1;
+	}
+	if (vdi_config->upnp == 0) {
+		vdi_stream__log_info("Disable UPnP\n");
+		network_cfg.upnp = 0;
+	}
+
 	/* parsec init. */
 	vdi_stream__log_info("Initialize Parsec\n");
-	e = ParsecInit(PARSEC_VER, NULL, NULL, &parsec_context.parsec);
+	e = ParsecInit(PARSEC_VER, &network_cfg, NULL, &parsec_context.parsec);
 	if (e != PARSEC_OK) {
 		vdi_stream__log_error("Initialization failed with code: %d\n", e);
 		goto error;

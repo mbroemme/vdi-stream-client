@@ -37,6 +37,7 @@ typedef struct {
 	uint16_t	grab;		/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
 	uint16_t	width;		/* screen width in pixel. (host resolution is used if not specified) */
 	uint16_t	height;		/* screen height in pixel. (host resolution is used if not specified) */
+	uint16_t	upnp;		/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
 	char		session[129];	/* session id for connection. (last character must be '\0') */
 	char		peer[33];	/* peer id for connection. (last character must be '\0') */
 } vdi_config_s;

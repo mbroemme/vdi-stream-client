@@ -53,6 +53,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
 	printf("\n");
 	printf("Client Options:\n");
+	printf("      --no-upnp            disable upnp nat traversal\n");
 	printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
@@ -101,6 +102,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"no-grab", no_argument, NULL, 'g'},
 		{"no-reconnect", no_argument, NULL, 'r'},
 		{"no-screensaver", no_argument, NULL, 'z'},
+		{"no-upnp", no_argument, NULL, 'b'},
 		{"peer", required_argument, NULL, 'y'},
 		{"session", required_argument, NULL, 'x'},
 		{"speed", required_argument, NULL, 's'},
@@ -126,6 +128,7 @@ int32_t main(int32_t argc, char **argv) {
 	vdi_config->codec = 1;
 	vdi_config->mode = 1;
 	vdi_config->speed = 100;
+	vdi_config->upnp = 1;
 
 	program_name = argv[0];
 	if (program_name && strrchr(program_name, '/')) {
@@ -164,6 +167,9 @@ int32_t main(int32_t argc, char **argv) {
 				continue;
 			case 'r':
 				vdi_config->reconnect = 0;
+				continue;
+			case 'b':
+				vdi_config->upnp = 0;
 				continue;
 			case 't':
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
