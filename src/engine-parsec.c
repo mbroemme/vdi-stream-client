@@ -390,6 +390,15 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
 	}
 
+	/* configure client decoding acceleration. */
+	if (vdi_config->acceleration == 1) {
+		cfg.video[DEFAULT_STREAM].decoderIndex = 1;
+	}
+	if (vdi_config->acceleration == 0) {
+		vdi_stream__log_info("Disable Hardware Accelerated Video Decoding\n");
+		cfg.video[DEFAULT_STREAM].decoderIndex = 0;
+	}
+
 	/* configure upnp. */
 	if (vdi_config->upnp == 1) {
 		network_cfg.upnp = 1;

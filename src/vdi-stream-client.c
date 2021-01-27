@@ -53,6 +53,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
 	printf("\n");
 	printf("Client Options:\n");
+	printf("      --no-acceleration    disable hardware accelerated decoding\n");
 	printf("      --no-upnp            disable upnp nat traversal\n");
 	printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
@@ -97,6 +98,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"height", required_argument, NULL, 'u'},
 		{"help", no_argument, NULL, 'h'},
 		{"mode", required_argument, NULL, 'm'},
+		{"no-acceleration", no_argument, NULL, 'd'},
 		{"no-audio", no_argument, NULL, 'a'},
 		{"no-clipboard", no_argument, NULL, 'p'},
 		{"no-grab", no_argument, NULL, 'g'},
@@ -119,6 +121,7 @@ int32_t main(int32_t argc, char **argv) {
 	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
 		return VDI_STREAM_CLIENT_ERROR;
 	}
+	vdi_config->acceleration = 1;
 	vdi_config->audio = 1;
 	vdi_config->clipboard = 1;
 	vdi_config->screensaver = 1;
@@ -155,6 +158,9 @@ int32_t main(int32_t argc, char **argv) {
 				continue;
 			case 'w':
 				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
+				continue;
+			case 'd':
+				vdi_config->acceleration = 0;
 				continue;
 			case 'a':
 				vdi_config->audio = 0;
