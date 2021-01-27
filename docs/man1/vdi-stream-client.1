@@ -1,0 +1,163 @@
+.\" Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
+.\"
+.\" This program is free software: you can redistribute it and/or modify
+.\" it under the terms of the GNU General Public License as published by
+.\" the Free Software Foundation, either version 3 of the License, or
+.\" (at your option) any later version.
+.\"
+.\" This program is distributed in the hope that it will be useful,
+.\" but WITHOUT ANY WARRANTY; without even the implied warranty of
+.\" MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.\" GNU General Public License for more details.
+.\"
+.\" You should have received a copy of the GNU General Public License
+.\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
+.TH VDI-STREAM-CLIENT 1 2021-01-26 "VDI Stream Client" "multimedia"
+.SH NAME
+vdi-stream-client \- a low latency desktop streaming client
+.SH SYNOPSIS
+.B vdi-stream-client
+[\fI\-\-session\fP <id>] [\fI\-\-peer\fP <id>] [\fIoptions\fP]
+.SH DESCRIPTION
+.PP
+VDI Stream Client is a tiny and low latency Linux client which connects
+to Parsec Host running on Windows. It allows to run fully GPU accelerated
+Windows desktop environment on a remote machine while streaming the
+content to a local Linux system which process keyboard and mouse input.
+The remote server can be a virtual machine running on-top of on-premise
+deployments of Virtuozzo Hybrid Server, KVM or Xen. It can also connect
+to public clouds like Amazon (EC2 G3 Accelerated) or Microsoft Azure
+(NV6). It uses Simple DirectMedia Layer (SDL2) for low-level access to
+audio, video, keyboard, mouse and clipboard.
+.SH OPTIONS
+Help options:
+.TP 8
+.B  \-h|\-\-help
+.ti 15
+Print the usage message on the standard output.
+.TP 8
+.B  \-v|\-\-version
+.ti 15
+Print the currently installed version on the standard output.
+.PP
+Parsec options:
+.TP 8
+.B  \-\-session <\fIid\fP>
+.ti 15
+The session ID to connect to Parsec service. This option is mandatory.
+.TP 8
+.B  \-\-peer <\fIid\fP>
+.ti 15
+The peer ID of the remote Parsec host. This option is mandatory.
+.TP 8
+.B  \-\-timeout <\fIseconds\fP>
+.ti 15
+The connection timeout when first connection to host is established.
+There will be no reconnect in this case. The default timeout is 5
+seconds.
+.TP 8
+.B  \-\-codec <\fIh264\fP> | <\fIh265\fP>
+.ti 15
+The streaming codec to use, supported codecs are h264 and h265. There
+is a trade-off between CPU performance and network latency and
+bandwidth consumption. When using h264 the CPU load and network latency
+is lower while more network bandwidth is consumed. When using h265 -
+even in case of GPU decoding - CPU load and network latency is higher
+while network bandwidth is reduced. The default codec is h264.
+.TP 8
+.B  \-\-mode <\fI4:2:0\fP> | <\fI4:4:4\fP>
+.ti 15
+The color mode to use, supported modes are 4:2:0 and 4:4:4. The color
+mode 4:4:4 is a paid feature under Parsec Warp subscription and due to
+a bug in Parsec SDK it is currently not working. The default is 4:2.0.
+.TP 8
+.B  \-\-speed <\fIspeed\fP>
+.ti 15
+The mouse wheel snesitivity to use, supported range is between 0
+(disable mouse wheel completely) up to 500. The value is in pixel. The
+default value is 100.
+.TP 8
+.B  \-\-width <\fIwidth\fP>
+.ti 15
+The host screen and window width to use. The host will change
+resolution either to specified value or - if not supported - to closest
+one which matches. If not used, the client will resize window to current
+configured host width. The value is in pixel.
+.TP 8
+.B  \-\-height <\fIheight\fP>
+.ti 15
+The host screen and window height to use. The host will change
+resolution either to specified value or - if not supported - to closest
+one which matches. If not used, the client will resize window to current
+configured host height. The value is in pixel.
+.PP
+Client options:
+.TP 8
+.B  \-\-no\-upnp
+.ti 15
+Disable UPnP NAT traversal support. If disabled, client may not be
+able to connect to host. If enabled, client will use UPnP to assist
+NAT traversal. It is not recommended to turn it off due to UDP
+client listening. It is enabled by default.
+.TP 8
+.B  \-\-no\-reconnect
+.ti 15
+Disable automatic reconnect in case of network or service failures. If
+disabled, client will immediately terminate on failures. If enabled a
+black window with text "Reconnecting..." is shown in case of failures.
+It is recommended to leave it enabled if you are on roaming or an
+unstable and slow network link. It is enabled by default.
+.TP 8
+.B  \-\-no\-grab
+.ti 15
+Disable exclusive mouse grab. If disabled, the mouse is passive grabbed
+and can enter and leave the window when mouse is moved. If enabled, the
+first press of any mouse button will lock the mouse into the window. To
+release the mouse  grab you need to press "Ctrl+Alt". It is enabled by
+default.
+.TP 8
+.B  \-\-no\-screensaver
+.ti 15
+Disable screen saver and screen locker support on client machine (Linux
+X11). If disabled, configured X11 screen saver and lockers are ignored
+and X11 will never start them. This applies only to screen savers and
+lockers using the X11 API. If enabled, X11 screen saver and lockers will
+work as usual. It is enabled by default.
+.TP 8
+.B  \-\-no\-clipboard
+.ti 15
+Disable clipboard sharing between client and host. If disabled, the
+clipboards of client and host are independent and never synchronized. It
+helps to avoid occasional leaks of sensitive information made by copy
+and paste mistakes. If enabled, both clipboards are always synchronized
+in bi-directional mode. It is enabled by default.
+.TP 8
+.B  \-\-no\-audio
+.ti 15
+Disable audio streaming support. If disabled, no audio from host is
+streamed and played on client machine. If enabled, audio is streamed
+and played with default audio device used by SDL. It is enabled by
+default.
+.SH AUTHOR
+Written by Maik Broemme <mbroemme@libmpq.org>
+.SH REPORTING BUGS
+Report bugs to <https://github.com/mbroemme/vdi-stream-client/issues>
+.SH COPYRIGHT
+VDI Stream Client is a very tiny and low latency desktop streaming
+client for remote Windows guests with GPU passthrough which supports
+Nvidia NVENC, AMD VCE, VCN and Intel Quick Sync Video.
+
+Copyright (C) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.

@@ -52,6 +52,7 @@ AC_SUBST(LIBSDL2_LIBS)
 AC_CONFIG_FILES([
 Makefile
 src/Makefile
+docs/man1/Makefile
 ])
 
 # perform configuration actions.
