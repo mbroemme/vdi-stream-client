@@ -322,6 +322,9 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 			glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_max_y); glVertex2i(x+w, y+h);
 			glEnd();
 			vdi_stream__gl_leave_2d_mode();
+
+			/* static text and no need to render it frequently. */
+			SDL_Delay(100);
 		}
 
 		SDL_GL_SwapWindow(parsec_context->window);
