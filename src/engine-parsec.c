@@ -53,6 +53,7 @@ struct parsec_context_s {
 	/* parsec. */
 	SDL_bool done;
 	SDL_bool connection;
+	SDL_bool decoder;
 	SDL_bool mode_update;
 	Parsec *parsec;
 	ParsecClientStatus client_status;
@@ -325,9 +326,6 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 
 		SDL_GL_SwapWindow(parsec_context->window);
 		glFinish();
-
-		parsec_context->old_width = parsec_context->client_status.decoder->width;
-		parsec_context->old_height = parsec_context->client_status.decoder->height;
 	}
 
 	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
@@ -426,17 +424,28 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* wait until connection is established. */
 	vdi_stream__log_info("Connect to Parsec host\n");
-	while (parsec_context.connection == SDL_FALSE) {
+	while (parsec_context.decoder == SDL_FALSE) {
 
 		/* get client status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 
-		/* connection established. */
-		if (e == PARSEC_OK &&
-		    parsec_context.client_status.decoder->width > 0 &&
-		    parsec_context.client_status.decoder->height > 0) {
-			vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-			parsec_context.connection = SDL_TRUE;
+		/* connection established */
+		if (e == PARSEC_OK) {
+
+			/* decoder not yet initialized. */
+			if (parsec_context.client_status.decoder->width == 0 &&
+			    parsec_context.client_status.decoder->height == 0 &&
+			    parsec_context.connection == SDL_FALSE) {
+				vdi_stream__log_info("Initialize Video Decoder\n");
+				parsec_context.connection = SDL_TRUE;
+			}
+
+			/* decoder initialized. */
+			if (parsec_context.client_status.decoder->width > 0 &&
+			    parsec_context.client_status.decoder->height > 0) {
+				vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+				parsec_context.decoder = SDL_TRUE;
+			}
 		}
 
 		/* unknown error. */
@@ -447,7 +456,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* check if timeout reached. */
 		if (wait_time >= vdi_config->timeout) {
-			vdi_stream__log_error("Connection timed out after %d seconds\n", (vdi_config->timeout / 1000));
 			break;
 		}
 
@@ -456,8 +464,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		wait_time = wait_time + 250;
 	}
 
-	/* check if connected. */
-	if (parsec_context.connection == SDL_FALSE) {
+	/* check if connected and decoder initialized. */
+	if (parsec_context.connection == SDL_FALSE &&
+	    parsec_context.decoder == SDL_FALSE) {
+		vdi_stream__log_error("Connection timed out after %d seconds\n", (vdi_config->timeout / 1000));
 		goto error;
 	}
 
@@ -483,9 +493,17 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					SDL_WINDOWPOS_UNDEFINED,
 					SDL_WINDOWPOS_UNDEFINED,
-					parsec_context.client_status.decoder->width,
-					parsec_context.client_status.decoder->height,
-					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
+					(parsec_context.decoder == SDL_TRUE) ?
+						parsec_context.client_status.decoder->width :
+						640,
+					(parsec_context.decoder == SDL_TRUE) ?
+						parsec_context.client_status.decoder->height :
+						480,
+					(parsec_context.decoder == SDL_TRUE) ?
+						SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS :
+
+						/* TODO: workaround if decoder initialization failed. (workaround for buggy parsec sdk) */
+						SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_HIDDEN
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream__log_error("Window creation failed: %s\n", SDL_GetError());
@@ -717,17 +735,29 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		if (parsec_context.old_width != parsec_context.client_status.decoder->width ||
 		    parsec_context.old_height != parsec_context.client_status.decoder->height) {
 
-			/* show resolution change message only if changed from within the client. */
+			/* change resolution only if changed from within the client. */
 			if (parsec_context.old_width > 0 &&
 			    parsec_context.old_height > 0 &&
-			    parsec_context.client_status.decoder->width > 0&&
+			    parsec_context.client_status.decoder->width > 0 &&
 			    parsec_context.client_status.decoder->height > 0) {
 				vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
 					parsec_context.old_width, parsec_context.old_height,
 					parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height
 				);
+				SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
 			}
-			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+
+			/* resize and unhide window only if decoder initialization failed. */
+			if (parsec_context.decoder == SDL_FALSE && (SDL_GetWindowFlags(parsec_context.window) & SDL_WINDOW_HIDDEN) != 0) {
+				vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+				SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+				SDL_ShowWindow(parsec_context.window);
+				parsec_context.decoder = SDL_TRUE;
+			}
+
+			/* store resolution change in any case. */
+			parsec_context.old_width = parsec_context.client_status.decoder->width;
+			parsec_context.old_height = parsec_context.client_status.decoder->height;
 		}
 
 		/* check if we need to regrab keyboard on modifier keypress. */
