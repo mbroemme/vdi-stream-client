@@ -80,43 +80,6 @@ struct parsec_context_s {
 	Uint32 max_buffer;
 };
 
-/* start text rendering. */
-static void vdi_stream__gl_enter_2d_mode(Sint32 width, Sint32 height) {
-	glPushAttrib(GL_ENABLE_BIT);
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glEnable(GL_TEXTURE_2D);
-
-	/* this allows alpha blending of 2d textures with the scene. */
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	glViewport(0, 0, width, height);
-
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glOrtho(0.0, (GLdouble)width, (GLdouble)height, 0.0, 0.0, 1.0);
-
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-}
-
-/* stop text rendering. */
-static void vdi_stream__gl_leave_2d_mode() {
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
-
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-
-	glPopAttrib();
-}
-
 /* quick utility function for texture creation. */
 static Sint32 vdi_stream__power_of_two(Sint32 input) {
 	Sint32 value = 1;
@@ -274,57 +237,100 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 	return VDI_STREAM_CLIENT_SUCCESS;
 }
 
+/* opengl frame text event. */
+static void vdi_stream_client__frame_text(Uint32 timeout, void *opaque) {
+	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+	Sint32 x, y, w, h;
+
+	/* calculate position and size to center of window. */
+	x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2;
+	y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2;
+	w = parsec_context->surface_ttf->w;
+	h = parsec_context->surface_ttf->h;
+
+	/* reset drawable area. */
+	glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	/* attributes. */
+	glPushAttrib(GL_ENABLE_BIT);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	glEnable(GL_TEXTURE_2D);
+
+	/* this allows alpha blending of 2d textures with the scene. */
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+	glMatrixMode(GL_PROJECTION);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glOrtho(0.0, parsec_context->window_width, parsec_context->window_height, 0.0, 0.0, 1.0);
+
+	glMatrixMode(GL_MODELVIEW);
+	glPushMatrix();
+	glLoadIdentity();
+
+	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+	/* show the text in center of window. */
+	glBindTexture(GL_TEXTURE_2D, parsec_context->texture_ttf);
+	glBegin(GL_TRIANGLE_STRIP);
+	glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_min_y); glVertex2i(x,     y    );
+	glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_min_y); glVertex2i(x + w, y    );
+	glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_max_y); glVertex2i(x,     y + h);
+	glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_max_y); glVertex2i(x + w, y + h);
+	glEnd();
+
+	/* stop text rendering. */
+	glMatrixMode(GL_MODELVIEW);
+	glPopMatrix();
+
+	glMatrixMode(GL_PROJECTION);
+	glPopMatrix();
+
+	/* remove attributes. */
+	glPopAttrib();
+
+	/* static text and no need to render it frequently. */
+	SDL_Delay(timeout);
+}
+
+/* opengl frame video event. */
+static void vdi_stream_client__frame_video(void *opaque) {
+	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+
+	/* reset drawable area. */
+	glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
+	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
+}
+
 /* sdl video thread. */
 static Sint32 vdi_stream_client__video_thread(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	Sint32 x, y, w, h;
 
 	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
 	SDL_GL_SetSwapInterval(1);
 
 	while (parsec_context->done == SDL_FALSE) {
-		glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-		glClear(GL_COLOR_BUFFER_BIT);
 
 		/* show parsec frame. */
 		if (parsec_context->connection == SDL_TRUE) {
-			ParsecClientSetDimensions(
-				parsec_context->parsec,
-				DEFAULT_STREAM,
-				parsec_context->window_width,
-				parsec_context->window_height,
-				1
-			);
-			ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
+			vdi_stream_client__frame_video(parsec_context);
 		}
 
 		/* show reconnecting text. */
 		if (parsec_context->connection == SDL_FALSE) {
-
-			/* calculate position and size to center of window. */
-			x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2;
-			y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2;
-			w = parsec_context->surface_ttf->w;
-			h = parsec_context->surface_ttf->h;
-
-			/* show the text on the screen. */
-			vdi_stream__gl_enter_2d_mode(parsec_context->window_width, parsec_context->window_height);
-			glBindTexture(GL_TEXTURE_2D, parsec_context->texture_ttf);
-			glBegin(GL_TRIANGLE_STRIP);
-			glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_min_y); glVertex2i(x, y);
-			glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_min_y); glVertex2i(x+w, y);
-			glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_max_y); glVertex2i(x, y+h);
-			glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_max_y); glVertex2i(x+w, y+h);
-			glEnd();
-			vdi_stream__gl_leave_2d_mode();
-
-			/* static text and no need to render it frequently. */
-			SDL_Delay(100);
+			vdi_stream_client__frame_text(100, parsec_context);
 		}
 
 		SDL_GL_SwapWindow(parsec_context->window);
-		glFinish();
 	}
 
 	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
