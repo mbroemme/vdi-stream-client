@@ -61,7 +61,6 @@ struct parsec_context_s {
 	/* video. */
 	SDL_Window *window;
 	SDL_GLContext *gl;
-	SDL_Surface *surface;
 	SDL_Cursor *cursor;
 	Sint32 window_width;
 	Sint32 window_height;
@@ -218,9 +217,6 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 
 			SDL_FreeCursor(parsec_context->cursor);
 			parsec_context->cursor = sdlCursor;
-
-			SDL_FreeSurface(parsec_context->surface);
-			parsec_context->surface = surface;
 
 			ParsecFree(image);
 		}
