@@ -63,8 +63,8 @@ struct parsec_context_s {
 	SDL_GLContext *gl;
 	SDL_Surface *surface;
 	SDL_Cursor *cursor;
-	Sint32 old_width;
-	Sint32 old_height;
+	Sint32 window_width;
+	Sint32 window_height;
 
 	/* opengl texture for ttf rendering. */
 	SDL_Surface *surface_ttf;
@@ -287,7 +287,7 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 	SDL_GL_SetSwapInterval(1);
 
 	while (parsec_context->done == SDL_FALSE) {
-		glViewport(0, 0, parsec_context->client_status.decoder->width, parsec_context->client_status.decoder->height);
+		glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
 		glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT);
 
@@ -296,8 +296,8 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 			ParsecClientSetDimensions(
 				parsec_context->parsec,
 				DEFAULT_STREAM,
-				parsec_context->client_status.decoder->width,
-				parsec_context->client_status.decoder->height,
+				parsec_context->window_width,
+				parsec_context->window_height,
 				1
 			);
 			ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
@@ -307,13 +307,13 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 		if (parsec_context->connection == SDL_FALSE) {
 
 			/* calculate position and size to center of window. */
-			x = (parsec_context->client_status.decoder->width - parsec_context->surface_ttf->w) / 2;
-			y = (parsec_context->client_status.decoder->height - parsec_context->surface_ttf->h) / 2;
+			x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2;
+			y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2;
 			w = parsec_context->surface_ttf->w;
 			h = parsec_context->surface_ttf->h;
 
 			/* show the text on the screen. */
-			vdi_stream__gl_enter_2d_mode(parsec_context->client_status.decoder->width, parsec_context->client_status.decoder->height);
+			vdi_stream__gl_enter_2d_mode(parsec_context->window_width, parsec_context->window_height);
 			glBindTexture(GL_TEXTURE_2D, parsec_context->texture_ttf);
 			glBegin(GL_TRIANGLE_STRIP);
 			glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_min_y); glVertex2i(x, y);
@@ -476,6 +476,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			if (parsec_context.client_status.decoder->width > 0 &&
 			    parsec_context.client_status.decoder->height > 0) {
 				vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+				parsec_context.window_width = parsec_context.client_status.decoder->width;
+				parsec_context.window_height = parsec_context.client_status.decoder->height;
 				parsec_context.decoder = SDL_TRUE;
 			}
 		}
@@ -503,15 +505,18 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
+	/* check if connected but decoder initialization failed. */
+	if (parsec_context.connection == SDL_TRUE &&
+	    parsec_context.decoder == SDL_FALSE) {
+		parsec_context.window_width = 640;
+		parsec_context.window_height = 480;
+	}
+
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					SDL_WINDOWPOS_UNDEFINED,
 					SDL_WINDOWPOS_UNDEFINED,
-					(parsec_context.decoder == SDL_TRUE) ?
-						parsec_context.client_status.decoder->width :
-						640,
-					(parsec_context.decoder == SDL_TRUE) ?
-						parsec_context.client_status.decoder->height :
-						480,
+					parsec_context.window_width,
+					parsec_context.window_height,
 					(parsec_context.decoder == SDL_TRUE) ?
 						SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS :
 
@@ -736,33 +741,34 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			}
 		}
 
-		/* check if we need to change window size. */
-		if (parsec_context.old_width != parsec_context.client_status.decoder->width ||
-		    parsec_context.old_height != parsec_context.client_status.decoder->height) {
+		/* check if we need to resize and unhide window. */
+		if (parsec_context.decoder == SDL_FALSE && (SDL_GetWindowFlags(parsec_context.window) & SDL_WINDOW_HIDDEN) != 0 &&
+		    parsec_context.client_status.decoder->width > 0 &&
+		    parsec_context.client_status.decoder->height > 0) {
+			vdi_stream__log_info("Use resolution %dx%d\n",
+				parsec_context.client_status.decoder->width,
+				parsec_context.client_status.decoder->height
+			);
+			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+			SDL_ShowWindow(parsec_context.window);
+			parsec_context.window_width = parsec_context.client_status.decoder->width;
+			parsec_context.window_height = parsec_context.client_status.decoder->height;
+			parsec_context.decoder = SDL_TRUE;
+		}
 
-			/* change resolution only if changed from within the client. */
-			if (parsec_context.old_width > 0 &&
-			    parsec_context.old_height > 0 &&
-			    parsec_context.client_status.decoder->width > 0 &&
-			    parsec_context.client_status.decoder->height > 0) {
-				vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
-					parsec_context.old_width, parsec_context.old_height,
-					parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height
-				);
-				SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-			}
-
-			/* resize and unhide window only if decoder initialization failed. */
-			if (parsec_context.decoder == SDL_FALSE && (SDL_GetWindowFlags(parsec_context.window) & SDL_WINDOW_HIDDEN) != 0) {
-				vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-				SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-				SDL_ShowWindow(parsec_context.window);
-				parsec_context.decoder = SDL_TRUE;
-			}
-
-			/* store resolution change in any case. */
-			parsec_context.old_width = parsec_context.client_status.decoder->width;
-			parsec_context.old_height = parsec_context.client_status.decoder->height;
+		/* check if we need to resize window due to client resolution change. */
+		if ((parsec_context.window_width != parsec_context.client_status.decoder->width || parsec_context.window_height != parsec_context.client_status.decoder->height) &&
+		    parsec_context.client_status.decoder->width > 0 &&
+		    parsec_context.client_status.decoder->height > 0) {
+			vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
+				parsec_context.window_width,
+				parsec_context.window_height,
+				parsec_context.client_status.decoder->width,
+				parsec_context.client_status.decoder->height
+			);
+			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+			parsec_context.window_width = parsec_context.client_status.decoder->width;
+			parsec_context.window_height = parsec_context.client_status.decoder->height;
 		}
 
 		/* check if we need to regrab keyboard on modifier keypress. */
