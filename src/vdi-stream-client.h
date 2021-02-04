@@ -36,6 +36,7 @@ typedef struct {
 	uint16_t	mode;		/* color mode to use. (1 = 4:2:0 and 2 = 4:4:4) */
 	uint16_t	speed;		/* mouse wheel sensitivity. (0 - 255) */
 	uint16_t	grab;		/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
+	uint16_t	relative;	/* relative mouse grabbing. (0 = disable relative mode, 1 = enable relative mode when application requests) */
 	uint16_t	width;		/* screen width in pixel. (host resolution is used if not specified) */
 	uint16_t	height;		/* screen height in pixel. (host resolution is used if not specified) */
 	uint16_t	upnp;		/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */

@@ -57,6 +57,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --no-upnp            disable upnp nat traversal\n");
 	printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
+	printf("      --no-relative        disable relative mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("      --no-audio           disable audio streaming\n");
@@ -103,6 +104,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"no-clipboard", no_argument, NULL, 'p'},
 		{"no-grab", no_argument, NULL, 'g'},
 		{"no-reconnect", no_argument, NULL, 'r'},
+		{"no-relative", no_argument, NULL, 'e'},
 		{"no-screensaver", no_argument, NULL, 'z'},
 		{"no-upnp", no_argument, NULL, 'b'},
 		{"peer", required_argument, NULL, 'y'},
@@ -127,6 +129,7 @@ int32_t main(int32_t argc, char **argv) {
 	vdi_config->screensaver = 1;
 	vdi_config->grab = 1;
 	vdi_config->reconnect = 1;
+	vdi_config->relative = 1;
 	vdi_config->timeout = 5000;
 	vdi_config->codec = 1;
 	vdi_config->mode = 1;
@@ -204,6 +207,9 @@ int32_t main(int32_t argc, char **argv) {
 				continue;
 			case 'g':
 				vdi_config->grab = 0;
+				continue;
+			case 'e':
+				vdi_config->relative = 0;
 				continue;
 			case 'x':
 				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
