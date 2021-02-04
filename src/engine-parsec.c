@@ -54,7 +54,8 @@ struct parsec_context_s {
 	SDL_bool done;
 	SDL_bool connection;
 	SDL_bool decoder;
-	SDL_bool mode_update;
+	SDL_bool focus;
+	SDL_bool relative;
 	Parsec *parsec;
 	ParsecClientStatus client_status;
 
@@ -185,13 +186,19 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->modeUpdate == SDL_TRUE && parsec_context->mode_update == SDL_TRUE) {
+	if (cursor->modeUpdate == SDL_TRUE) {
 		if (SDL_GetRelativeMouseMode() == SDL_TRUE && cursor->relative == SDL_FALSE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
+			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
+			parsec_context->relative = SDL_FALSE;
 		}
 		if (SDL_GetRelativeMouseMode() == SDL_FALSE && cursor->relative == SDL_TRUE) {
-			SDL_SetRelativeMouseMode(SDL_TRUE);
+			if (parsec_context->focus == SDL_TRUE) {
+				SDL_SetRelativeMouseMode(SDL_TRUE);
+				SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+			}
+			parsec_context->relative = SDL_TRUE;
 		}
 	}
 }
@@ -635,6 +642,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 						SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
 						SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 					}
+
+					/* check if we need to grab mouse in relative mode. */
+					if (parsec_context.relative == SDL_TRUE) {
+						SDL_SetRelativeMouseMode(SDL_TRUE);
+						SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+					}
 					pmsg.type = MESSAGE_MOUSE_BUTTON;
 					pmsg.mouseButton.button = msg.button.button;
 					pmsg.mouseButton.pressed = SDL_TRUE;
@@ -668,10 +681,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 							XUngrabKeyboard(wm_info.info.x11.display, CurrentTime);
 							break;
 						case SDL_WINDOWEVENT_ENTER:
-							parsec_context.mode_update = SDL_TRUE;
+							parsec_context.focus = SDL_TRUE;
 							break;
 						case SDL_WINDOWEVENT_LEAVE:
-							parsec_context.mode_update = SDL_FALSE;
+							parsec_context.focus = SDL_FALSE;
 							break;
 					}
 					break;
@@ -733,11 +746,20 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			focus = SDL_FALSE;
 		}
 		
-		/* check if we need to release mouse. */
+		/* check if we need to release mouse grab. */
 		if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
 			if (keys[SDL_SCANCODE_LCTRL] != 0 &&
 			    keys[SDL_SCANCODE_LALT] != 0) {
 				SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+				SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
+			}
+		}
+
+		/* check if we need to release relative mouse grab. */
+		if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
+			if (keys[SDL_SCANCODE_LCTRL] != 0 &&
+			    keys[SDL_SCANCODE_LALT] != 0) {
+				SDL_SetRelativeMouseMode(SDL_FALSE);
 				SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
 			}
 		}
