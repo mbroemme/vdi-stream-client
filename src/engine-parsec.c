@@ -362,6 +362,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	Uint32 wait_time = 0;
 	Uint32 last_time = 0;
 	Sint32 error = 0;
+	Sint32 x = 0;
+	Sint32 y = 0;
 	GLenum gl_error;
 	GLfloat texture_coord[4];
 	SDL_AudioSpec want = {0};
@@ -530,6 +532,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* check if connected but decoder initialization failed. */
 	if (parsec_context.connection == SDL_TRUE &&
 	    parsec_context.decoder == SDL_FALSE) {
+
+		/* TODO: workaround if decoder initialization failed. (workaround for buggy parsec sdk) */
 		parsec_context.window_width = 640;
 		parsec_context.window_height = 480;
 	}
@@ -539,11 +543,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					SDL_WINDOWPOS_UNDEFINED,
 					parsec_context.window_width,
 					parsec_context.window_height,
-					(parsec_context.decoder == SDL_TRUE) ?
-						SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS :
-
-						/* TODO: workaround if decoder initialization failed. (workaround for buggy parsec sdk) */
-						SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS | SDL_WINDOW_HIDDEN
+					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream__log_error("Window creation failed: %s\n", SDL_GetError());
@@ -798,16 +798,29 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			}
 		}
 
-		/* check if we need to resize and unhide window. */
-		if (parsec_context.decoder == SDL_FALSE && (SDL_GetWindowFlags(parsec_context.window) & SDL_WINDOW_HIDDEN) != 0 &&
+		/* TODO: check if we need to grab input to force decoder initialization. (workaround for buggy parsec sdk) */
+		if (vdi_config->grab == 0 && SDL_GetWindowGrab(parsec_context.window) == SDL_FALSE &&
+		    parsec_context.decoder == SDL_FALSE &&
+		    parsec_context.client_status.decoder->width == 0 &&
+		    parsec_context.client_status.decoder->height == 0) {
+			SDL_ShowCursor(SDL_FALSE);
+			SDL_GetGlobalMouseState(&x, &y);
+			SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
+		}
+
+		/* TODO: check if we need to ungrab input due to forced decoder initialization. (workaround for buggy parsec sdk) */
+		if (vdi_config->grab == 0 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE &&
+		    parsec_context.decoder == SDL_FALSE &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
 			vdi_stream__log_info("Use resolution %dx%d\n",
 				parsec_context.client_status.decoder->width,
 				parsec_context.client_status.decoder->height
 			);
+			SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+			SDL_WarpMouseGlobal(x, y);
+			SDL_ShowCursor(SDL_TRUE);
 			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-			SDL_ShowWindow(parsec_context.window);
 			parsec_context.window_width = parsec_context.client_status.decoder->width;
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
 			parsec_context.decoder = SDL_TRUE;
