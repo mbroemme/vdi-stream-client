@@ -57,7 +57,7 @@ Method          | Local | Remote | 3D
 [QXL with Spice](https://www.spice-space.org/)  | Yes   | Yes    | No
 [GPU Passthrough](https://www.kernel.org/doc/Documentation/vfio.txt) | Yes   | No     | Yes
 [KVM FrameRelay](https://looking-glass.io/)  | Yes   | No     | Yes
-[iGVT-g](https://www.kernel.org/doc/Documentation/vfio-mediated-device.txt)          | Yes   | No     | Yes
+[iGVT-g](https://www.kernel.org/doc/Documentation/vfio-mediated-device.txt)          | Yes   | No     | Yes (Intel only)
 [Virgil 3D](https://virgil3d.github.io/)       | Yes   | Yes    | Yes (Linux only)
 [Moonlight](https://moonlight-stream.org/)       | Yes   | Yes    | Yes (Nvidia only)
 [Parsec](https://parsec.app/)          | Yes   | Yes    | Yes
@@ -74,7 +74,7 @@ Mouse Input             | Full              | Partial
 Gamepad Input           | No                | Yes
 Clipboard Sharing       | Yes               | Text only
 Remote                  | Yes               | Yes
-DirectX                 | Yes               | Yes
+DirectX                 | No                | Yes
 OpenGL                  | Yes               | Yes
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
@@ -116,7 +116,8 @@ without chroma subsampling for sharp and crystal clear text.
 * Configurable mouse wheel sensitivity. User can specify mouse scroll speed via
   command line switch serving different needs and requirements.
 * Full clipboard sharing support between host and client. User can copy and
-  paste text and binary data like images between both environments.
+  paste text and binary data like images between both environments using
+  built-in [Spice Protocol](https://www.spice-space.org/).
 * Modular architecture and can be extended with additional streaming host
   services like Nvidia GameStream via Moonlight libraries.
 * Screen saver and screen locker support. By default screen saver support is
@@ -134,9 +135,49 @@ without chroma subsampling for sharp and crystal clear text.
 * No macOS and Windows support yet. However porting should be fairly easy but I
   haven't tested it and pull requests are welcome.
 
+# Building
+
+VDI Stream Client uses GNU Build System to configure, build and install the
+application. It requires `sdl2`, `sdl2_ttf`, `libx11`, `libglvnd` and the
+[Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build system
+will search the SDK first in system-wide include and library directories and
+if not found, it will search it in build directory. For build and install use
+the commands below and if `--prefix=/usr` is used, the `make install` command
+must be run as root user.
+
+```
+./configure --prefix=/usr &&
+make &&
+make install
+```
+
+Arch Linux users can download ready-to-use `PKGBUILD` file available from
+[Arch User Repository (AUR)](https://aur.archlinux.org/packages/vdi-stream-client/), following [these](https://wiki.archlinux.org/index.php/Arch_User_Repository#Build_and_install_the_package) build and install instructions.
+
+# Usage
+
+VDI Stream Client requires that the Parsec Windows host ([x86_64](https://builds.parsecgaming.com/package/parsec-windows.exe)
+or [x86](https://builds.parsecgaming.com/package/parsec-windows32.exe)) is
+running and you have created a [free account](https://parsec.app/signup).
+There are several advanced configuration options for visual and network
+latency improvements described in the Parsec [documentation](https://support.parsec.app/hc/en-us/articles/360001562772-All-Advanced-Configuration-Options)
+in the "Hosting Settings" chapter.
+
+The client requires a `sessionID` and a `peerID` obtained through the Parsec
+API to identify users to make secure connections. For convenience you can use
+[tools/parsec-login](tools/parsec-login) script to retrieve list of available
+hosts. This is one-time operation whenever you add Parsec host application to
+another Windows machine.
+
 # Future
 
 Building a truly and fully open-source GPU accelerated desktop streaming
 solution requires a host service running inside the Windows environment.
 Hardware encoding is supported by FFmpeg for the major GPU vendors. VDI Stream
 Host application seems reasonable.
+
+VDI Stream Client can use Spice Protocol for clipboard sharing of text and raw
+data between client and host. The Spice Protocol is also capable to do USB
+redirection of devices attached to the client and it will be added in a future
+version. Moreover Spice Protocol is currently only supported if using KVM or
+Xen virtualization.
