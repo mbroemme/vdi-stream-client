@@ -514,6 +514,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* check if timeout reached. */
 		if (wait_time >= vdi_config->timeout) {
+			vdi_stream__log_error("Connection timed out after %d seconds\n", (vdi_config->timeout / 1000));
 			break;
 		}
 
@@ -525,7 +526,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* check if connected and decoder initialized. */
 	if (parsec_context.connection == SDL_FALSE &&
 	    parsec_context.decoder == SDL_FALSE) {
-		vdi_stream__log_error("Connection timed out after %d seconds\n", (vdi_config->timeout / 1000));
 		goto error;
 	}
 
