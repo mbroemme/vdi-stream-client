@@ -113,6 +113,8 @@ without chroma subsampling for sharp and crystal clear text.
 * Host to client resolution sync with automatic window resize. User can change
   resolution in Windows control panel and client polls for the changes and
   adjust client window size.
+* Specify client window size via command line and host will change native
+  resolution to it once the connection has been established.
 * Configurable mouse wheel sensitivity. User can specify mouse scroll speed via
   command line switch serving different needs and requirements.
 * Full clipboard sharing support between host and client. User can copy and
@@ -123,6 +125,12 @@ without chroma subsampling for sharp and crystal clear text.
 * Screen saver and screen locker support. By default screen saver support is
   enabled but user can specify command line switch to avoid setting [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
   and disallow X server to lock the local screen.
+
+# Parsec Warp
+
+* Support for disabling chroma subsampling to support color mode 4:4:4 with
+  sharp and crisp text and better colors. Available for Nvidia Hosts running
+  GTX 900 or better.
 
 # Known Issues
 
