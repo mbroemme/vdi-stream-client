@@ -1,0 +1,241 @@
+#!/bin/bash
+#
+# parsec-login -- Parsec API tool to get session and list available peers.
+#
+# Copyright (c) 2018 Maik Broemme <mbroemme@libmpq.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+# default config section. (this can be modified)
+export PARSEC_HOST="https://kessel-api.parsecgaming.com"
+
+# runtime config section. (don't edit)
+export PARSEC_PROCESS="${0##*/}"
+export PARSEC_VERSION="0.0.0"
+export PARSEC_AUTHOR="Maik Broemme"
+export PARSEC_EMAIL="mbroemme@libmpq.org"
+
+# global variables.
+declare -a GLOBAL__parameters=("${@}")
+
+# show help.
+function parsec_login__usage() {
+
+	# show command line help.
+	printf "Usage: %s [username] [password] (tfa)...\n" "${PARSEC_PROCESS}"
+	printf "Parsec API tool to get session ID and peer IDs\n"
+	printf "\n"
+	printf "Help Options:\n"
+	printf "  -h, --help                 show this help screen\n"
+	printf "  -v, --version              show the version information\n"
+	printf "\n"
+	printf "Parsec Options:\n"
+	printf "  -u, --username <email>     username for API login (mandatory)\n"
+	printf "  -p, --password <password>  password for API login (mandatory)\n"
+	printf "  -t, --tfa <code>           2fa code for API login (optional)\n"
+	printf "\n"
+	printf "Please report bugs to the appropriate authors, which can be found in the\n"
+	printf "version information. All other things can be send to <${PARSEC_EMAIL}>\n"
+
+	# successful execution.
+	return 0
+}
+
+# show version.
+function parsec_login__version() {
+
+	printf "${PARSEC_PROCESS} version ${PARSEC_VERSION} Copyright (c) 2021 The VDI Stream developers\n"
+	printf "Written by ${PARSEC_AUTHOR} <${PARSEC_EMAIL}>\n"
+	printf "\n"
+	printf "This is free software; see the source for copying conditions.  There is NO\n"
+	printf "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+
+	# successful execution.
+	return 0
+}
+
+# check if curl exist.
+[ -x "/bin/curl" ] || [ -x "/usr/bin/curl" ] || [ -x "/usr/local/bin/curl" ] || {
+	printf "No curl found, please install it\n"
+	exit 1
+}
+
+# check if jq exist.
+[ -x "/bin/jq" ] || [ -x "/usr/bin/jq" ] || [ -x "/usr/local/bin/jq" ] || {
+	printf "No jq found, please install it\n"
+	exit 1
+}
+
+# parse command line for switches.
+for LOOP__index in "${!GLOBAL__parameters[@]}" ; do
+	case "${GLOBAL__parameters[${LOOP__index}]}" in
+		-h|--help)
+			parsec_login__usage
+			exit 0
+		;;
+		-v|--version)
+			parsec_login__version
+			exit 0
+		;;
+		-u|--username)
+
+			# check if we miss some parameter.
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+
+				# show the help for the missing parameter.
+				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
+				printf "Try \`${PARSEC_PROCESS} --help' for more information.\n"
+
+				# exit if we missed some parameter.
+				exit 1
+			}
+
+			# store username.
+			declare -g GLOBAL__username="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+
+			# unset array items.
+			unset GLOBAL__parameters[${LOOP__index}]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+		;;
+		-p|--password)
+
+			# check if we miss some parameter.
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+
+				# show the help for the missing parameter.
+				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
+				printf "Try \`${PARSEC_PROCESS} --help' for more information.\n"
+
+				# exit if we missed some parameter.
+				exit 1
+			}
+
+			# store password.
+			declare -g GLOBAL__password="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+
+			# unset array items.
+			unset GLOBAL__parameters[${LOOP__index}]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+		;;
+		-t|--tfa)
+
+			# check if we miss some parameter.
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+
+				# show the help for the missing parameter.
+				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
+				printf "Try \`${PARSEC_PROCESS} --help' for more information.\n"
+
+				# exit if we missed some parameter.
+				exit 1
+			}
+
+			# store password.
+			declare -g GLOBAL__tfa="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+
+			# unset array items.
+			unset GLOBAL__parameters[${LOOP__index}]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+		;;
+		*)
+
+			# store index of unknown parameter.
+			[ -z "${GLOBAL__unknown}" ] && {
+				declare -g GLOBAL__unknown="${GLOBAL__parameters[${LOOP__index}]}"
+			}
+		;;
+	esac
+done
+
+# check if unprocessed parameters are left.
+[ "${#GLOBAL__parameters[@]}" != "0" ] && {
+
+	# show the help for an unknown option.
+	printf "${PARSEC_PROCESS}: unrecognized option \`${GLOBAL__unknown}'\n" "OPTION"
+	printf "Try \`${PARSEC_PROCESS} --help' for more information.\n"
+
+	# exit if we found some unknown option.
+	exit 1
+}
+
+# check if we need to ask for username.
+[ -z "${GLOBAL__username}" ] && {
+	read -r -p "Username: " GLOBAL__username
+	[ -z "${GLOBAL__username}" ] && {
+		printf "Username cannot be empty\n"
+		exit 1
+	}
+}
+
+# check if we need to ask for password.
+[ -z "${GLOBAL__password}" ] && {
+	read -r -p "Password: " -s GLOBAL__password
+	printf "\n"
+	[ -z "${GLOBAL__password}" ] && {
+		printf "Password cannot be empty\n"
+		exit 1
+	}
+}
+
+# check if we need to ask for 2fa code.
+[ -z "${GLOBAL__tfa}" ] && {
+	read -r -p "2FA code (optional): " GLOBAL__tfa
+}
+
+# show current step.
+printf "Retrieve Session ID: "
+
+# get session id.
+/bin/curl --max-time 5 --silent --fail --request POST --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" , "tfa": "'"${GLOBAL__tfa}"'" }' "${PARSEC_HOST}/v1/auth" | /bin/jq --raw-output '.session_id' | {
+	while read LOCAL__line ; do
+		declare -g GLOBAL__session_id="${LOCAL__line}"
+	done
+
+	# check if something failed.
+	[ -z "${GLOBAL__session_id}" ] && {
+		printf "failed\n"
+		exit 1
+	}
+
+	printf "${GLOBAL__session_id}\n"
+	printf "Retrieve Peer ID: "
+
+	# get peer ids.
+	/bin/curl --max-time 5 --silent --fail --request GET --header 'Content-Type: application/json' --header 'Authorization: Bearer '"${GLOBAL__session_id}"'' "${PARSEC_HOST}/v2/hosts?mode=desktop&public=false" | /bin/jq -r '.data[] | "\(.peer_id) (\(.name))"' | {
+		while read LOCAL__line ; do
+
+			# store result.
+			[ -z "${GLOBAL__peer_ids}" ] && {
+				GLOBAL__peer_ids="${LOCAL__line}"
+			} || {
+				GLOBAL__peer_ids="${GLOBAL__peer_ids}, ${LOCAL__line}"
+			}
+		done
+
+		# check if something failed.
+		[ -z "${GLOBAL__peer_ids}" ] && {
+			printf "failed\n"
+			exit 1
+		}
+
+		printf "${GLOBAL__peer_ids}\n"
+		exit 0
+	} || exit 1
+
+	# all good.
+	exit 0
+} || exit 1
+
+# no error found.
+exit 0
