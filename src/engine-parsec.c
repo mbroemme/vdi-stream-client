@@ -409,13 +409,25 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* parsec configuration. */
 	cfg.video[DEFAULT_STREAM].decoderH265 = (vdi_config->codec == 2) ? SDL_TRUE : SDL_FALSE;
-	cfg.video[DEFAULT_STREAM].decoder444 = (vdi_config->mode == 2) ? SDL_TRUE : SDL_FALSE;
 
 	/* use client resolution if specified. */
 	if (vdi_config->width > 0 && vdi_config->height > 0) {
 		vdi_stream__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
 		cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
+	}
+
+	/* configure host color mode. */
+	if (vdi_config->subsampling == 1) {
+		cfg.video[DEFAULT_STREAM].decoder444 = 1;
+	}
+	if (vdi_config->subsampling == 0) {
+		vdi_stream__log_info("Disable Chroma Subsampling\n");
+		cfg.video[DEFAULT_STREAM].decoder444 = 0;
+
+		/* TODO: parsec sdk bug. */
+		vdi_stream__log_info("WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
+		vdi_stream__log_info("WARNING: https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
 	}
 
 	/* configure client decoding acceleration. */

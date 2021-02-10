@@ -47,10 +47,12 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --peer <id>          peer id for connection (mandatory)\n");
 	printf("      --timeout <seconds>  connection timeout (default: 5 seconds)\n");
 	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
-	printf("      --mode <color>       color mode: 4:2:0 or 4:4:4 (default 4:2:0)\n");
 	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n");
 	printf("      --width <width>      horizontal resolution (default: host resolution)\n");
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
+	printf("\n");
+	printf("Parsec Warp Options:\n");
+	printf("      --no-subsampling     disable compression with chroma subsampling\n");
 	printf("\n");
 	printf("Client Options:\n");
 	printf("      --no-acceleration    disable hardware accelerated decoding\n");
@@ -98,7 +100,6 @@ int32_t main(int32_t argc, char **argv) {
 		{"codec", required_argument, NULL, 'c'},
 		{"height", required_argument, NULL, 'u'},
 		{"help", no_argument, NULL, 'h'},
-		{"mode", required_argument, NULL, 'm'},
 		{"no-acceleration", no_argument, NULL, 'd'},
 		{"no-audio", no_argument, NULL, 'a'},
 		{"no-clipboard", no_argument, NULL, 'p'},
@@ -106,6 +107,7 @@ int32_t main(int32_t argc, char **argv) {
 		{"no-reconnect", no_argument, NULL, 'r'},
 		{"no-relative", no_argument, NULL, 'e'},
 		{"no-screensaver", no_argument, NULL, 'z'},
+		{"no-subsampling", no_argument, NULL, 'm'},
 		{"no-upnp", no_argument, NULL, 'b'},
 		{"peer", required_argument, NULL, 'y'},
 		{"session", required_argument, NULL, 'x'},
@@ -132,7 +134,7 @@ int32_t main(int32_t argc, char **argv) {
 	vdi_config->relative = 1;
 	vdi_config->timeout = 5000;
 	vdi_config->codec = 1;
-	vdi_config->mode = 1;
+	vdi_config->subsampling = 1;
 	vdi_config->speed = 100;
 	vdi_config->upnp = 1;
 
@@ -189,11 +191,7 @@ int32_t main(int32_t argc, char **argv) {
 				}
 				continue;
 			case 'm':
-				if (strcmp(argv[optind - 1], "4:4:4") == 0) {
-					printf("Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
-					printf("https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
-					vdi_config->mode = 2;
-				}
+				vdi_config->subsampling = 0;
 				continue;
 			case 's':
 				speed = strtol(argv[optind - 1], NULL, 10);

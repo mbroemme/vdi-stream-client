@@ -65,12 +65,6 @@ is lower while more network bandwidth is consumed. When using h265 -
 even in case of GPU decoding - CPU load and network latency is higher
 while network bandwidth is reduced. The default codec is h264.
 .TP 8
-.B  \-\-mode <\fI4:2:0\fP> | <\fI4:4:4\fP>
-.ti 15
-The color mode to use, supported modes are 4:2:0 and 4:4:4. The color
-mode 4:4:4 is a paid feature under Parsec Warp subscription and due to
-a bug in Parsec SDK it is currently not working. The default is 4:2.0.
-.TP 8
 .B  \-\-speed <\fIspeed\fP>
 .ti 15
 The mouse wheel snesitivity to use, supported range is between 0
@@ -90,6 +84,17 @@ The host screen and window height to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host height. The value is in pixel.
+.PP
+Parsec Warp options:
+.TP 8
+.B  \-\-no\-subsampling
+.ti 15
+Disable compression and chroma subsampling. If disabled, host will
+compress video stream and apply chroma subsampling with mode 4:2:0 to
+reduce data transfers. If enabled, no chroma subsampling is applied and
+client will receive sharp and crisp stream with mode 4:4:4. Disabling is
+only available under commercial subscription Parsec Warp. It is enabled
+by default.
 .PP
 Client options:
 .TP 8
