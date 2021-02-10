@@ -56,15 +56,6 @@ The connection timeout when first connection to host is established.
 There will be no reconnect in this case. The default timeout is 5
 seconds.
 .TP 8
-.B  \-\-codec <\fIh264\fP> | <\fIh265\fP>
-.ti 15
-The streaming codec to use, supported codecs are h264 and h265. There
-is a trade-off between CPU performance and network latency and
-bandwidth consumption. When using h264 the CPU load and network latency
-is lower while more network bandwidth is consumed. When using h265 -
-even in case of GPU decoding - CPU load and network latency is higher
-while network bandwidth is reduced. The default codec is h264.
-.TP 8
 .B  \-\-speed <\fIspeed\fP>
 .ti 15
 The mouse wheel snesitivity to use, supported range is between 0
@@ -162,6 +153,17 @@ Disable audio streaming support. If disabled, no audio from host is
 streamed and played on client machine. If enabled, audio is streamed
 and played with default audio device used by SDL. It is enabled by
 default.
+.TP 8
+.B  \-\-no\-hevc
+.ti 15
+Disable H.265 (HEVC) video codec. If disabled, client will use H.264
+(AVC) video codec. If enabled, client will use H.265 (HEVC) video codec.
+There is a trade-off between CPU performance and network latency and
+bandwidth consumption. When using H.265 (HEVC) - even in case of GPU
+decoding - CPU load and network latency is higher while network
+bandwidth is reduced. When using H.264 (AVC) the CPU load and network
+latency is lower while more network bandwidth is consumed. It is enabled
+by default.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS

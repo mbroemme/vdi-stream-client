@@ -407,14 +407,20 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	/* parsec configuration. */
-	cfg.video[DEFAULT_STREAM].decoderH265 = (vdi_config->codec == 2) ? SDL_TRUE : SDL_FALSE;
-
 	/* use client resolution if specified. */
 	if (vdi_config->width > 0 && vdi_config->height > 0) {
 		vdi_stream__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
 		cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
+	}
+
+	/* configure host video codec. */
+	if (vdi_config->hevc == 1) {
+		cfg.video[DEFAULT_STREAM].decoderH265 = 1;
+	}
+	if (vdi_config->hevc == 0) {
+		vdi_stream__log_info("Disable H.265 (HEVC) Video Codec\n");
+		cfg.video[DEFAULT_STREAM].decoderH265 = 0;
 	}
 
 	/* configure host color mode. */

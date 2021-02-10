@@ -46,7 +46,6 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --session <id>       session id for connection (mandatory)\n");
 	printf("      --peer <id>          peer id for connection (mandatory)\n");
 	printf("      --timeout <seconds>  connection timeout (default: 5 seconds)\n");
-	printf("      --codec <codec>      streaming codec: h264 or h265 (default: h264)\n");
 	printf("      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n");
 	printf("      --width <width>      horizontal resolution (default: host resolution)\n");
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
@@ -63,6 +62,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("      --no-audio           disable audio streaming\n");
+	printf("      --no-hevc            disable H.265/HEVC video codec\n");
 	printf("\n");
 	printf("Please report bugs to the appropriate authors, which can be found in the\n");
 	printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
@@ -97,12 +97,12 @@ int32_t main(int32_t argc, char **argv) {
 
 	/* command line options. */
 	struct option long_options[] = {
-		{"codec", required_argument, NULL, 'c'},
 		{"height", required_argument, NULL, 'u'},
 		{"help", no_argument, NULL, 'h'},
 		{"no-acceleration", no_argument, NULL, 'd'},
 		{"no-audio", no_argument, NULL, 'a'},
 		{"no-clipboard", no_argument, NULL, 'p'},
+		{"no-hevc", no_argument, NULL, 'c'},
 		{"no-grab", no_argument, NULL, 'g'},
 		{"no-reconnect", no_argument, NULL, 'r'},
 		{"no-relative", no_argument, NULL, 'e'},
@@ -133,7 +133,7 @@ int32_t main(int32_t argc, char **argv) {
 	vdi_config->reconnect = 1;
 	vdi_config->relative = 1;
 	vdi_config->timeout = 5000;
-	vdi_config->codec = 1;
+	vdi_config->hevc = 1;
 	vdi_config->subsampling = 1;
 	vdi_config->speed = 100;
 	vdi_config->upnp = 1;
@@ -186,9 +186,7 @@ int32_t main(int32_t argc, char **argv) {
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
 				continue;
 			case 'c':
-				if (strcmp(argv[optind - 1], "h265") == 0) {
-					vdi_config->codec = 2;
-				}
+				vdi_config->hevc = 0;
 				continue;
 			case 'm':
 				vdi_config->subsampling = 0;

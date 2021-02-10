@@ -32,7 +32,7 @@ typedef struct {
 	uint16_t	reconnect;	/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
 	uint16_t	timeout;	/* connection timeout in milliseconds. */
 	uint16_t	acceleration;	/* client decoding type. (0 = software, 1 = hardware) */
-	uint16_t	codec;		/* streaming codec to use. (1 = h264 and 2 = h265) */
+	uint16_t	hevc;		/* streaming codec to use. (0 = h264, 1 = h265) */
 	uint16_t	subsampling;	/* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
 	uint16_t	speed;		/* mouse wheel sensitivity. (0 - 255) */
 	uint16_t	grab;		/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
