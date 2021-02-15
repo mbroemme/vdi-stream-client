@@ -1,7 +1,7 @@
 /*
  *  engine-parsec.c -- desktop streaming with parsec sdk
  *
- *  Copyright (c) 2020 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -16,6 +16,9 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
+/* configuration includes. */
+#include "config.h"
 
 /* system includes. */
 #include <limits.h>
@@ -38,7 +41,11 @@
 #include <SDL2/SDL_ttf.h>
 
 /* parsec includes. */
+#ifdef HAVE_LIBPARSEC
 #include <parsec/parsec.h>
+#else
+#include "../parsec-sdk/sdk/parsec-dso.h"
+#endif
 
 /* font include. */
 #include "../include/font.h"
@@ -57,7 +64,11 @@ struct parsec_context_s {
 	SDL_bool focus;
 	SDL_bool relative;
 	SDL_bool pressed;
+#ifdef HAVE_LIBPARSEC
 	Parsec *parsec;
+#else
+	ParsecDSO *parsec;
+#endif
 	ParsecClientStatus client_status;
 
 	/* video. */
@@ -166,7 +177,11 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 		SDL_SetClipboardText(msg);
 	}
 
+#ifdef HAVE_LIBPARSEC
 	ParsecFree(msg);
+#else
+	ParsecFree(parsec_context->parsec, msg);
+#endif
 }
 
 /* parsec cursor event. */
@@ -183,7 +198,11 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 			SDL_FreeCursor(parsec_context->cursor);
 			parsec_context->cursor = sdlCursor;
 
+#ifdef HAVE_LIBPARSEC
 			ParsecFree(image);
+#else
+			ParsecFree(parsec_context->parsec, image);
+#endif
 		}
 	}
 
@@ -401,7 +420,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* parsec init. */
 	vdi_stream__log_info("Initialize Parsec\n");
+#ifdef HAVE_LIBPARSEC
 	e = ParsecInit(PARSEC_VER, &network_cfg, NULL, &parsec_context.parsec);
+#else
+	e = ParsecInit(NULL, &network_cfg, "libparsec.so", &parsec_context.parsec);
+#endif
 	if (e != PARSEC_OK) {
 		vdi_stream__log_error("Initialization failed with code: %d\n", e);
 		goto error;

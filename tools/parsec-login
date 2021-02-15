@@ -31,8 +31,6 @@ declare -a GLOBAL__parameters=("${@}")
 
 # show help.
 function parsec_login__usage() {
-
-	# show command line help.
 	printf "Usage: %s [username] [password] (tfa)...\n" "${PARSEC_PROCESS}"
 	printf "Parsec API tool to get session ID and peer IDs\n"
 	printf "\n"
@@ -54,7 +52,6 @@ function parsec_login__usage() {
 
 # show version.
 function parsec_login__version() {
-
 	printf "${PARSEC_PROCESS} version ${PARSEC_VERSION} Copyright (c) 2021 The VDI Stream developers\n"
 	printf "Written by ${PARSEC_AUTHOR} <${PARSEC_EMAIL}>\n"
 	printf "\n"

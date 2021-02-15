@@ -26,10 +26,6 @@ AC_CHECK_LIB([X11], [XGrabKeyboard], [], [AC_MSG_ERROR([*** XGrabKeyboard is req
 AC_CHECK_HEADER([GL/gl.h], [], [AC_MSG_ERROR([*** X11/Xlib.h is required, install libglvnd header files])])
 AC_CHECK_LIB([GL], [glFinish], [], [AC_MSG_ERROR([*** glFinish is required, install libglvnd library files])])
 
-# checking for libparsec library.
-AC_CHECK_HEADER([parsec/parsec.h], [], [AC_MSG_ERROR([*** parsec/parsec.h is required, install parsec-sdk header files])])
-AC_CHECK_LIB([parsec], [ParsecInit], [], [AC_MSG_ERROR([*** ParsecInit is required, install parsec-sdk library files])])
-
 # checking for sdl2 library.
 AC_CHECK_HEADER([SDL2/SDL.h], [], [AC_MSG_ERROR([*** SDL2/SDL.h is required, install sdl2 header files])])
 AC_PATH_PROG([sdl2_config], [sdl2-config], [AC_MSG_ERROR([*** sdl2-config is required, install sdl2 development files])])
@@ -47,6 +43,20 @@ AC_CHECK_LIB([SDL2_ttf], [TTF_Init], [], [AC_MSG_ERROR([*** TTF_Init is required
 # export library flags.
 AC_SUBST(LIBSDL2_CFLAGS)
 AC_SUBST(LIBSDL2_LIBS)
+
+# checking for internal parsec sdk.
+AC_CHECK_FILE([parsec-sdk/sdk/parsec.h], [AC_CHECK_FILE([parsec-sdk/sdk/linux/libparsec.so], [enable_internal_parsec_sdk="yes"])])
+
+# checking for external parsec sdk usage.
+if test "x$enable_internal_parsec_sdk" != "xyes"; then
+
+	# checking for external parsec sdk.
+	AC_CHECK_HEADER([parsec/parsec.h], [], [AC_MSG_ERROR([*** parsec/parsec.h is required, install parsec-sdk header files])])
+	AC_CHECK_LIB([parsec], [ParsecInit], [], [AC_MSG_ERROR([*** ParsecInit is required, install parsec-sdk library files])])
+fi
+
+# condition for parsec sdk to usage.
+AM_CONDITIONAL([INTERNAL_PARSEC_SDK], [test "x$enable_internal_parsec_sdk" = "xyes"])
 
 # creating files.
 AC_CONFIG_FILES([

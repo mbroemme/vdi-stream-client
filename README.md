@@ -74,7 +74,7 @@ Mouse Input             | Full              | Partial
 Gamepad Input           | No                | Yes
 Clipboard Sharing       | Yes               | Text only
 Remote                  | Yes               | Yes
-DirectX                 | No                | Yes
+DirectX                 | Yes               | Yes
 OpenGL                  | Yes               | Yes
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
@@ -148,12 +148,15 @@ without chroma subsampling for sharp and crystal clear text.
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl2`, `sdl2_ttf`, `libx11`, `libglvnd` and the
 [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build system
-will search the SDK first in system-wide include and library directories and
-if not found, it will search it in build directory. For build and install use
+will search the SDK first in build directory and use DSO linking, the resulting
+binary will be redistributable but you need to ship Parsec library somehow. If
+not found, it will search in system-wide include and library directories and
+link accordingly, binary may not be redistributable. For build and install use
 the commands below and if `--prefix=/usr` is used, the `make install` command
 must be run as root user.
 
 ```
+git clone https://github.com/parsec-cloud/parsec-sdk
 ./configure --prefix=/usr &&
 make &&
 make install

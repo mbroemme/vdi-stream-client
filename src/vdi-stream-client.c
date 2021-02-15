@@ -1,7 +1,7 @@
 /*
  *  vdi-stream-client.c -- gpu accelerated streaming client
  *
- *  Copyright (c) 2020 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
