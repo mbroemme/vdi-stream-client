@@ -272,7 +272,7 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 }
 
 /* opengl frame text event. */
-static void vdi_stream_client__frame_text(Uint32 timeout, void *opaque) {
+static void vdi_stream_client__frame_text(void *opaque, Uint32 timeout) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 	Sint32 x, y, w, h;
 
@@ -333,7 +333,7 @@ static void vdi_stream_client__frame_text(Uint32 timeout, void *opaque) {
 }
 
 /* opengl frame video event. */
-static void vdi_stream_client__frame_video(void *opaque) {
+static void vdi_stream_client__frame_video(void *opaque, Uint32 timeout) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 
 	/* reset drawable area. */
@@ -342,7 +342,7 @@ static void vdi_stream_client__frame_video(void *opaque) {
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
-	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, 100);
+	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, timeout);
 }
 
 /* sdl video thread. */
@@ -356,12 +356,12 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 
 		/* show parsec frame. */
 		if (parsec_context->connection == SDL_TRUE) {
-			vdi_stream_client__frame_video(parsec_context);
+			vdi_stream_client__frame_video(parsec_context, 100);
 		}
 
 		/* show reconnecting text. */
 		if (parsec_context->connection == SDL_FALSE) {
-			vdi_stream_client__frame_text(100, parsec_context);
+			vdi_stream_client__frame_text(parsec_context, 100);
 		}
 
 		SDL_GL_SwapWindow(parsec_context->window);
