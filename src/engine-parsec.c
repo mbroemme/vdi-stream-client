@@ -264,6 +264,13 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 
 		/* delay loop if in reconnect state. */
 		if (parsec_context->connection == SDL_FALSE) {
+
+			/* clear queue and close audio device. */
+			if (parsec_context->playing == SDL_TRUE) {
+				SDL_ClearQueuedAudio(parsec_context->audio);
+				SDL_PauseAudioDevice(parsec_context->audio, 1);
+				parsec_context->playing = SDL_FALSE;
+			}
 			SDL_Delay(100);
 		}
 	}
