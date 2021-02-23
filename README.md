@@ -82,6 +82,7 @@ Minimal GUI             | Yes               | No
 System SDL2             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
+USB Redirection         | Yes               | No
 [Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK Bug](https://github.com/parsec-cloud/parsec-sdk/issues/36)           | Yes
 
 # Requirements
@@ -117,14 +118,23 @@ without chroma subsampling for sharp and crystal clear text.
   resolution to it once the connection has been established.
 * Configurable mouse wheel sensitivity. User can specify mouse scroll speed via
   command line switch serving different needs and requirements.
-* Full clipboard sharing support between host and client. User can copy and
-  paste text and binary data like images between both environments using
-  built-in [Spice Protocol](https://www.spice-space.org/).
 * Modular architecture and can be extended with additional streaming host
   services like Nvidia GameStream via Moonlight libraries.
 * Screen saver and screen locker support. By default screen saver support is
   enabled but user can specify command line switch to avoid setting [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
   and disallow X server to lock the local screen.
+* Full clipboard sharing support between host and client. User can copy and
+  paste text and binary data like images between both environments using
+  built-in [Spice Protocol](https://www.spice-space.org/). Moreover Spice
+  Protocol is currently only supported if using KVM, Xen or Virtuozzo Hybrid
+  Server with QEMU.
+* Built-in USB redirection with automatic reconnect support using
+  [usbredir protocol](https://gitlab.freedesktop.org/spice/usbredir). User can
+  specify via command line which local USB devices will be redirected to the
+  host (e.g. to forward a webcam with microphone). However usbredir protocol is
+  currently only supported if using KVM, Xen or Virtuozzo Hybrid Server with
+  QEMU. Other virtualization solutions may use standard Linux USB/IP server and
+  native [Windows client driver](https://github.com/cezanne/usbip-win).
 
 # Parsec Warp
 
@@ -180,6 +190,53 @@ API to identify users to make secure connections. For convenience you can use
 hosts. This is one-time operation whenever you add Parsec host application to
 another Windows machine.
 
+# USB Redirection
+
+If you are using [libvirt](https://libvirt.org/) for virtualization, you can
+redirect local USB devices to your Windows host. It is highly recommended to
+add XHCI controller because it is the only one which supports USB 1.1, USB 2.0
+and USB 3.0, the QEMU UHCI and EHCI controllers support only their respective
+USB standard. Windows 10 is shipped by default with an XHCI USB 3.0 driver. Add
+the following to your `<devices>` section in domain XML for an USB 3.0
+controller:
+
+```
+<controller type='usb' model='nec-xhci'/>
+```
+
+With the controller you can start using USB redirection via TCP/IP protocol.
+Each USB device is redirected through an independent port and the firewall of
+your client must allow incoming TCP/IP connection for that. VDI Stream Client
+supports monitoring of hotplug events (e.g. plug and unplug) of the redirected
+USB devices to allow automatic reassignment to the Windows host. Add the
+following to your `<devices>` section in domain XML to enable redirection of
+one local USB device and replace `<ip>` with the IP address of your local
+client:
+
+```
+<redirdev bus='usb' type='tcp'>
+  <source mode='connect' host='<ip>' service='4000'>
+    <reconnect enabled='yes' timeout='10'/>
+  </source>
+</redirdev>
+```
+
+You need to add additional `<redirdev>` sections to redirect multiple devices
+and increase the port number accordingly. After reloading libvirt and starting
+the Virtual Machine with the configuration above, you can redirect a local USB
+device. You can get a list of available devices with their `<vendor_id>` and
+`<product_id>` with `lsusb` command.
+
+```
+vdi-stream-client --session <sessionID> --peer <peerID> --redirect <vendor_id>:<product_id>:4000
+```
+
+Once connection is established it will redirect the local USB device to the
+host and setup drivers. Repeating `--redirect` options are allowed to redirect
+multiple USB devices. They will be reassigned if the client reconnects to the
+host. Moreover, devices are reconnected to the host automatically when you
+unplug and plug it again to the USB port.
+
 # Future
 
 Building a truly and fully open-source GPU accelerated desktop streaming
@@ -187,8 +244,12 @@ solution requires a host service running inside the Windows environment.
 Hardware encoding is supported by FFmpeg for the major GPU vendors. VDI Stream
 Host application seems reasonable.
 
-VDI Stream Client can use Spice Protocol for clipboard sharing of text and raw
-data between client and host. The Spice Protocol is also capable to do USB
-redirection of devices attached to the client and it will be added in a future
-version. Moreover Spice Protocol is currently only supported if using KVM or
-Xen virtualization.
+# Support
+
+If you want to help out with development without providing code yourself, you
+can always donate to the project directly using the following platforms.
+
+* [GitHub](https://github.com/sponsors/mbroemme)
+* [PayPal](https://www.paypal.com/donate?hosted_button_id=TJLZRF9BPVX22)
+* Bitcoin - bc1qh2pssvhac7629k3ndmmpw3azsm4yjz9jvaaycr
+* Litecoin - ltc1qfz93z928vr36d9ksp5mstt385t84mdx4shsv35
