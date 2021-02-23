@@ -136,6 +136,10 @@ int32_t main(int32_t argc, char **argv) {
 	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
 		goto error;
 	}
+	if ((vdi_config->session = calloc(0, sizeof(vdi_config->session))) == NULL ||
+	    (vdi_config->peer = calloc(0, sizeof(vdi_config->peer))) == NULL) {
+		goto error;
+	}
 
 	/* parsec defaults. */
 	vdi_config->timeout = 5000;
@@ -186,12 +190,10 @@ int32_t main(int32_t argc, char **argv) {
 
 			/* parsec options. */
 			case 'x':
-				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
-				vdi_config->session[128] = '\0';
+				vdi_config->session = strdup(argv[optind - 1]);
 				continue;
 			case 'y':
-				strncpy(vdi_config->peer, argv[optind - 1], sizeof(vdi_config->peer));
-				vdi_config->peer[32] = '\0';
+				vdi_config->peer = strdup(argv[optind - 1]);
 				continue;
 			case 't':
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
@@ -281,6 +283,8 @@ int32_t main(int32_t argc, char **argv) {
 	}
 
 	/* free allocated memory. */
+	free(vdi_config->session);
+	free(vdi_config->peer);
 	free(vdi_config);
 
 	/* quit application. */
@@ -289,6 +293,8 @@ int32_t main(int32_t argc, char **argv) {
 error:
 
 	/* free allocated memory. */
+	free(vdi_config->session);
+	free(vdi_config->peer);
 	free(vdi_config);
 
 	/* quit application with error code. */

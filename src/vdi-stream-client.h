@@ -28,8 +28,8 @@
 typedef struct {
 
 	/* parsec options. */
-	char		session[129];		/* session id for connection. (last character must be '\0') */
-	char		peer[33];		/* peer id for connection. (last character must be '\0') */
+	char		*session;		/* session id for connection. */
+	char		*peer;			/* peer id for connection. */
 	uint16_t	timeout;		/* connection timeout in milliseconds. */
 	uint16_t	speed;			/* mouse wheel sensitivity. (0 - 255) */
 	uint16_t	width;			/* screen width in pixel. (host resolution is used if not specified) */
