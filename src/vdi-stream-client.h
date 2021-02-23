@@ -26,22 +26,28 @@
 
 /* stored command line options. */
 typedef struct {
-	uint16_t	audio;		/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
-	uint16_t	screensaver;	/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
-	uint16_t	clipboard;	/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
-	uint16_t	reconnect;	/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
-	uint16_t	timeout;	/* connection timeout in milliseconds. */
-	uint16_t	acceleration;	/* client decoding type. (0 = software, 1 = hardware) */
-	uint16_t	hevc;		/* streaming codec to use. (0 = h264, 1 = h265) */
-	uint16_t	subsampling;	/* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
-	uint16_t	speed;		/* mouse wheel sensitivity. (0 - 255) */
-	uint16_t	grab;		/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
-	uint16_t	relative;	/* relative mouse grabbing. (0 = disable relative mode, 1 = enable relative mode when application requests) */
-	uint16_t	width;		/* screen width in pixel. (host resolution is used if not specified) */
-	uint16_t	height;		/* screen height in pixel. (host resolution is used if not specified) */
-	uint16_t	upnp;		/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
-	char		session[129];	/* session id for connection. (last character must be '\0') */
-	char		peer[33];	/* peer id for connection. (last character must be '\0') */
+
+	/* parsec options. */
+	char		session[129];		/* session id for connection. (last character must be '\0') */
+	char		peer[33];		/* peer id for connection. (last character must be '\0') */
+	uint16_t	timeout;		/* connection timeout in milliseconds. */
+	uint16_t	speed;			/* mouse wheel sensitivity. (0 - 255) */
+	uint16_t	width;			/* screen width in pixel. (host resolution is used if not specified) */
+	uint16_t	height;			/* screen height in pixel. (host resolution is used if not specified) */
+
+	/* parsec warp options. */
+	uint16_t	subsampling;		/* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
+
+	/* client options. */
+	uint16_t	acceleration;		/* client decoding type. (0 = software, 1 = hardware) */
+	uint16_t	upnp;			/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
+	uint16_t	reconnect;		/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
+	uint16_t	grab;			/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
+	uint16_t	relative;		/* relative mouse grabbing. (0 = disable relative mode, 1 = enable relative mode when application requests) */
+	uint16_t	screensaver;		/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
+	uint16_t	clipboard;		/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
+	uint16_t	audio;			/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
+	uint16_t	hevc;			/* streaming codec to use. (0 = h264, 1 = h265) */
 } vdi_config_s;
 
 /* define new print functions for logging. */

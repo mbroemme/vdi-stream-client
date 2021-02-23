@@ -97,24 +97,34 @@ int32_t main(int32_t argc, char **argv) {
 
 	/* command line options. */
 	struct option long_options[] = {
-		{"height", required_argument, NULL, 'u'},
+
+		/* help options. */
 		{"help", no_argument, NULL, 'h'},
+		{"version", no_argument, NULL, 'v'},
+
+		/* parsec options. */
+		{"session", required_argument, NULL, 'x'},
+		{"peer", required_argument, NULL, 'y'},
+		{"timeout", required_argument, NULL, 't'},
+		{"speed", required_argument, NULL, 's'},
+		{"width", required_argument, NULL, 'w'},
+		{"height", required_argument, NULL, 'u'},
+
+		/* parsec warp options. */
+		{"no-subsampling", no_argument, NULL, 'm'},
+
+		/* client options. */
 		{"no-acceleration", no_argument, NULL, 'd'},
-		{"no-audio", no_argument, NULL, 'a'},
-		{"no-clipboard", no_argument, NULL, 'p'},
-		{"no-hevc", no_argument, NULL, 'c'},
-		{"no-grab", no_argument, NULL, 'g'},
+		{"no-upnp", no_argument, NULL, 'b'},
 		{"no-reconnect", no_argument, NULL, 'r'},
+		{"no-grab", no_argument, NULL, 'g'},
 		{"no-relative", no_argument, NULL, 'e'},
 		{"no-screensaver", no_argument, NULL, 'z'},
-		{"no-subsampling", no_argument, NULL, 'm'},
-		{"no-upnp", no_argument, NULL, 'b'},
-		{"peer", required_argument, NULL, 'y'},
-		{"session", required_argument, NULL, 'x'},
-		{"speed", required_argument, NULL, 's'},
-		{"timeout", required_argument, NULL, 't'},
-		{"version", no_argument, NULL, 'v'},
-		{"width", required_argument, NULL, 'w'},
+		{"no-clipboard", no_argument, NULL, 'p'},
+		{"no-audio", no_argument, NULL, 'a'},
+		{"no-hevc", no_argument, NULL, 'c'},
+
+		/* end options. */
 		{0, 0, 0, 0},
 	};
 
@@ -122,21 +132,28 @@ int32_t main(int32_t argc, char **argv) {
 	optind = 0;
 	opterr = 0;
 
+	/* allocate memory defaults. */
 	if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
-		return VDI_STREAM_CLIENT_ERROR;
+		goto error;
 	}
-	vdi_config->acceleration = 1;
-	vdi_config->audio = 1;
-	vdi_config->clipboard = 1;
-	vdi_config->screensaver = 1;
-	vdi_config->grab = 1;
-	vdi_config->reconnect = 1;
-	vdi_config->relative = 1;
+
+	/* parsec defaults. */
 	vdi_config->timeout = 5000;
-	vdi_config->hevc = 1;
-	vdi_config->subsampling = 1;
 	vdi_config->speed = 100;
+
+	/* parsec warp defaults. */
+	vdi_config->subsampling = 1;
+
+	/* client defaults. */
+	vdi_config->acceleration = 1;
 	vdi_config->upnp = 1;
+	vdi_config->reconnect = 1;
+	vdi_config->grab = 1;
+	vdi_config->relative = 1;
+	vdi_config->screensaver = 1;
+	vdi_config->clipboard = 1;
+	vdi_config->audio = 1;
+	vdi_config->hevc = 1;
 
 	program_name = argv[0];
 	if (program_name && strrchr(program_name, '/')) {
@@ -158,38 +175,26 @@ int32_t main(int32_t argc, char **argv) {
 
 		/* parse option. */
 		switch (opt) {
-			case 'u':
-				vdi_config->height = strtol(argv[optind - 1], NULL, 10);
+
+			/* help options. */
+			case 'h':
+				vdi_stream_client__usage(program_name);
+                                return VDI_STREAM_CLIENT_SUCCESS;
+			case 'v':
+				vdi_stream_client__version(program_name);
+                                return VDI_STREAM_CLIENT_SUCCESS;
+
+			/* parsec options. */
+			case 'x':
+				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
+				vdi_config->session[128] = '\0';
 				continue;
-			case 'w':
-				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
-				continue;
-			case 'd':
-				vdi_config->acceleration = 0;
-				continue;
-			case 'a':
-				vdi_config->audio = 0;
-				continue;
-			case 'p':
-				vdi_config->clipboard = 0;
-				continue;
-			case 'z':
-				vdi_config->screensaver = 0;
-				continue;
-			case 'r':
-				vdi_config->reconnect = 0;
-				continue;
-			case 'b':
-				vdi_config->upnp = 0;
+			case 'y':
+				strncpy(vdi_config->peer, argv[optind - 1], sizeof(vdi_config->peer));
+				vdi_config->peer[32] = '\0';
 				continue;
 			case 't':
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
-				continue;
-			case 'c':
-				vdi_config->hevc = 0;
-				continue;
-			case 'm':
-				vdi_config->subsampling = 0;
 				continue;
 			case 's':
 				speed = strtol(argv[optind - 1], NULL, 10);
@@ -201,34 +206,58 @@ int32_t main(int32_t argc, char **argv) {
 					vdi_config->speed = speed;
 				}
 				continue;
+			case 'w':
+				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
+				continue;
+			case 'u':
+				vdi_config->height = strtol(argv[optind - 1], NULL, 10);
+				continue;
+
+			/* parsec warp options. */
+			case 'm':
+				vdi_config->subsampling = 0;
+				continue;
+
+			/* client options. */
+			case 'd':
+				vdi_config->acceleration = 0;
+				continue;
+			case 'b':
+				vdi_config->upnp = 0;
+				continue;
+			case 'r':
+				vdi_config->reconnect = 0;
+				continue;
 			case 'g':
 				vdi_config->grab = 0;
 				continue;
 			case 'e':
 				vdi_config->relative = 0;
 				continue;
-			case 'x':
-				strncpy(vdi_config->session, argv[optind - 1], sizeof(vdi_config->session));
-				vdi_config->session[128] = '\0';
+			case 'z':
+				vdi_config->screensaver = 0;
 				continue;
-			case 'y':
-				strncpy(vdi_config->peer, argv[optind - 1], sizeof(vdi_config->peer));
-				vdi_config->peer[32] = '\0';
+			case 'p':
+				vdi_config->clipboard = 0;
 				continue;
-			case 'h':
-				vdi_stream_client__usage(program_name);
-                                return VDI_STREAM_CLIENT_SUCCESS;
-			case 'v':
-				vdi_stream_client__version(program_name);
-                                return VDI_STREAM_CLIENT_SUCCESS;
+			case 'a':
+				vdi_config->audio = 0;
+				continue;
+			case 'c':
+				vdi_config->hevc = 0;
+				continue;
+
+			/* missing arguments. */
 			case ':':
 				fprintf(stderr, "%s: option `%s' requires an argument\n", program_name, argv[optind - 1]);
 				fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
-				return VDI_STREAM_CLIENT_ERROR;
+				goto error;
+
+			/* unknown switches. */
 			case '?':
 				fprintf(stderr, "%s: unrecognized option `%s'\n", program_name, argv[optind]);
 				fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
-				return VDI_STREAM_CLIENT_ERROR;
+				goto error;
                 }
 	}
 
@@ -236,21 +265,32 @@ int32_t main(int32_t argc, char **argv) {
 	if (strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
 		fprintf(stderr, "%s: mandatory arguments missing\n", program_name, argv[optind]);
 		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
-		return VDI_STREAM_CLIENT_ERROR;
+		goto error;
 	}
 
 	/* additional non-option arguments given. */
 	if (argc > optind) {
 		fprintf(stderr, "%s: non-option arguments given\n", program_name, argv[optind]);
 		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
-		return VDI_STREAM_CLIENT_ERROR;
+		goto error;
 	}
 
 	/* main event loop. */
 	if (vdi_stream_client__event_loop(vdi_config) != 0) {
-		return VDI_STREAM_CLIENT_ERROR;
+		goto error;
 	}
+
+	/* free allocated memory. */
+	free(vdi_config);
 
 	/* quit application. */
 	return VDI_STREAM_CLIENT_SUCCESS;
+
+error:
+
+	/* free allocated memory. */
+	free(vdi_config);
+
+	/* quit application with error code. */
+	return VDI_STREAM_CLIENT_ERROR;
 }
