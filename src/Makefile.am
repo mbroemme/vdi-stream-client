@@ -3,8 +3,8 @@ bin_PROGRAMS			= vdi-stream-client
 
 # sources for vdi-stream-client program.
 vdi_stream_client_SOURCES	= vdi-stream-client.c engine-parsec.c
-vdi_stream_client_CFLAGS	= @LIBSDL2_CFLAGS@
-vdi_stream_client_LDADD		= @LIBSDL2_LIBS@
+vdi_stream_client_CFLAGS	= $(X11_CFLAGS) $(GL_CFLAGS) $(SDL2_CFLAGS) $(SDL2_TTF_CFLAGS)
+vdi_stream_client_LDADD		= $(X11_LIBS) $(GL_LIBS) $(SDL2_LIBS) $(SDL2_TTF_LIBS)
 
 # install libparsec for dso loading.
 if INTERNAL_PARSEC_SDK

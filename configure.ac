@@ -14,35 +14,24 @@ AC_DEFINE([AUTHOR], ["Maik Broemme <mbroemme@libmpq.org>"], [Define to the autho
 # checking for programs.
 AC_PROG_CC
 
+# checking for pkg-config application.
+PKG_PROG_PKG_CONFIG
+
 # checking for libdl library.
 AC_CHECK_HEADER([dlfcn.h], [], [AC_MSG_ERROR([*** dlfcn.h is required, install glibc header files])])
 AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_ERROR([*** dlopen is required, install glibc library files])])
 
 # checking for libx11 library.
-AC_CHECK_HEADER([X11/Xlib.h], [], [AC_MSG_ERROR([*** X11/Xlib.h is required, install libx11 header files])])
-AC_CHECK_LIB([X11], [XGrabKeyboard], [], [AC_MSG_ERROR([*** XGrabKeyboard is required, install libx11 library files])])
+PKG_CHECK_MODULES([X11], [x11])
 
 # checking for libglvnd library.
-AC_CHECK_HEADER([GL/gl.h], [], [AC_MSG_ERROR([*** X11/Xlib.h is required, install libglvnd header files])])
-AC_CHECK_LIB([GL], [glFinish], [], [AC_MSG_ERROR([*** glFinish is required, install libglvnd library files])])
+PKG_CHECK_MODULES([GL], [gl])
 
 # checking for sdl2 library.
-AC_CHECK_HEADER([SDL2/SDL.h], [], [AC_MSG_ERROR([*** SDL2/SDL.h is required, install sdl2 header files])])
-AC_PATH_PROG([sdl2_config], [sdl2-config], [AC_MSG_ERROR([*** sdl2-config is required, install sdl2 development files])])
-
-# checking for sdl2 environment.
-if test -n "$sdl2_config"; then
-	LIBSDL2_CFLAGS="$(sdl2-config --cflags)"
-	LIBSDL2_LIBS="$(sdl2-config --libs)"
-fi
+PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.5])
 
 # checking for sdl2_ttf library.
-AC_CHECK_HEADER([SDL2/SDL_ttf.h], [], [AC_MSG_ERROR([*** SDL2/SDL_ttf.h is required, install sdl2_ttf header files])])
-AC_CHECK_LIB([SDL2_ttf], [TTF_Init], [], [AC_MSG_ERROR([*** TTF_Init is required, install sdl2_ttf library files])])
-
-# export library flags.
-AC_SUBST(LIBSDL2_CFLAGS)
-AC_SUBST(LIBSDL2_LIBS)
+PKG_CHECK_MODULES([SDL2_TTF], [SDL2_ttf >= 2.0.5])
 
 # checking for internal parsec sdk.
 AC_CHECK_FILE([parsec-sdk/sdk/parsec.h], [AC_CHECK_FILE([parsec-sdk/sdk/linux/libparsec.so], [enable_internal_parsec_sdk="yes"])])
