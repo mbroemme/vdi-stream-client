@@ -17,6 +17,9 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* configuration includes. */
+#include "config.h"
+
 /* system includes. */
 #include <getopt.h>
 #include <stdlib.h>
@@ -24,12 +27,28 @@
 #include <stdio.h>
 #include <string.h>
 
+/* network includes. */
+#include <arpa/inet.h>
+
+/* opengl includes. */
+#include <GL/gl.h>
+
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h>
+#include <SDL2/SDL_ttf.h>
+
+/* parsec includes. */
+#ifdef HAVE_LIBPARSEC
+#include <parsec/parsec.h>
+#else
+#include "../parsec-sdk/sdk/parsec-dso.h"
+#endif
+
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
 #include "engine-parsec.h"
-
-/* vdi-stream-client configuration includes. */
-#include "config.h"
 
 /* this function show the usage. */
 int32_t vdi_stream_client__usage(char *program_name) {
@@ -64,6 +83,10 @@ int32_t vdi_stream_client__usage(char *program_name) {
 	printf("      --no-audio           disable audio streaming\n");
 	printf("      --no-hevc            disable H.265/HEVC video codec\n");
 	printf("\n");
+	printf("USB Options:\n");
+	printf("      --redirect <vendorID>:<productID>@<address>#<port>,[...]\n");
+	printf("                           redirect single or multiple local USB devices\n");
+	printf("\n");
 	printf("Please report bugs to the appropriate authors, which can be found in the\n");
 	printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
 
@@ -91,9 +114,17 @@ int32_t main(int32_t argc, char **argv) {
 	/* variables. */
 	int32_t option_index = 0;
 	int32_t opt;
-	int32_t speed;
 	char *program_name;
 	vdi_config_s *vdi_config = NULL;
+
+	/* temp variables for command line parser. */
+	int32_t device;
+	int32_t type;
+	char *redirect;
+	char *item;
+	char *delim;
+	char *endptr;
+	uint64_t port;
 
 	/* command line options. */
 	struct option long_options[] = {
@@ -123,6 +154,9 @@ int32_t main(int32_t argc, char **argv) {
 		{"no-clipboard", no_argument, NULL, 'p'},
 		{"no-audio", no_argument, NULL, 'a'},
 		{"no-hevc", no_argument, NULL, 'c'},
+
+		/* usb options. */
+		{"redirect", required_argument, NULL, 'f'},
 
 		/* end options. */
 		{0, 0, 0, 0},
@@ -199,13 +233,12 @@ int32_t main(int32_t argc, char **argv) {
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
 				continue;
 			case 's':
-				speed = strtol(argv[optind - 1], NULL, 10);
-				if (speed < 0) {
+				vdi_config->speed = strtol(argv[optind - 1], NULL, 10);
+				if (vdi_config->speed < 0) {
 					vdi_config->speed = 0;
-				} else if (speed > 500) {
+				}
+				if (vdi_config->speed > 500) {
 					vdi_config->speed = 500;
-				} else {
-					vdi_config->speed = speed;
 				}
 				continue;
 			case 'w':
@@ -247,6 +280,97 @@ int32_t main(int32_t argc, char **argv) {
 				continue;
 			case 'c':
 				vdi_config->hevc = 0;
+				continue;
+
+			/* usb options. */
+			case 'f':
+
+				/* loop through multiple redirect configs. */
+				device = 0;
+				while ((redirect = strsep(&argv[optind - 1], ",")) != NULL) {
+
+					/* check if number of usb redirects are out of range. */
+					if (device >= USB_MAX) {
+						fprintf(stderr, "%s: usb redirection limit of %d reached\n", program_name, USB_MAX);
+						fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+						goto error;
+					}
+
+					/* initialize. */
+					memset(&vdi_config->server_addrs[device], 0, sizeof(vdi_config->server_addrs[device]));
+
+					/* loop through redirect categroy. (usb vendor, product, address and port) */
+					type = 0;
+					while ((item = strsep(&redirect, "@#")) != NULL) {
+
+						/* usb device. */
+						if (type == 0) {
+
+							/* check if usb vendor is out of range. */
+							delim = strchr(item, ':');
+							vdi_config->usb_devices[device].vendor = strtol(item, &endptr, 16);
+							if (*endptr != ':' || vdi_config->usb_devices[device].vendor <= 0 || vdi_config->usb_devices[device].vendor > 0xffff) {
+								fprintf(stderr, "%s: invalid vendor identifier in usb device: %s\n", program_name, item);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+
+							/* check if usb product is out of range. (product id 0000 is valid) */
+							vdi_config->usb_devices[device].product = strtol(delim + 1, &endptr, 16);
+							if (*endptr != '\0' || vdi_config->usb_devices[device].product < 0 || vdi_config->usb_devices[device].product > 0xffff) {
+								fprintf(stderr, "%s: invalid product identifier in usb device: %s\n", program_name, item);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+						}
+
+						/* listen address. */
+						if (type == 1) {
+
+							/* check if ipv4 address. */
+							if (inet_pton(AF_INET, item, &vdi_config->server_addrs[device].v4.sin_addr) == 1) {
+								vdi_config->server_addrs[device].v4.sin_family = AF_INET;
+							}
+
+							/* check if ipv6 address. */
+							if (inet_pton(AF_INET6, item, &vdi_config->server_addrs[device].v6.sin6_addr) == 1) {
+								vdi_config->server_addrs[device].v6.sin6_family = AF_INET6;
+							}
+
+							/* check if bad formatted address. */
+							if (vdi_config->server_addrs[device].v4.sin_family != AF_INET &&
+							    vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
+								fprintf(stderr, "%s: invalid listen address in usb device: %s\n", program_name, item);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+						}
+
+						/* listen port. */
+						if (type == 2) {
+							port = strtol(item, NULL, 10);
+
+							/* check if listen port is out of range. */
+							if (port <= 0 || port >= 65536) {
+								fprintf(stderr, "%s: invalid listen port in usb device: %s\n", program_name, item);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+
+							/* check if ipv4 address has been assigned previosuly. */
+							if (vdi_config->server_addrs[device].v4.sin_family != AF_INET) {
+								vdi_config->server_addrs[device].v4.sin_port = htons(port);
+							}
+
+							/* check if ipv6 address has been assigned previosuly. */
+							if (vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
+								vdi_config->server_addrs[device].v6.sin6_port = htons(port);
+							}
+						}
+						type++;
+					}
+					device++;
+				}
 				continue;
 
 			/* missing arguments. */

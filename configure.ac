@@ -33,6 +33,13 @@ PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.5])
 # checking for sdl2_ttf library.
 PKG_CHECK_MODULES([SDL2_TTF], [SDL2_ttf >= 2.0.5])
 
+# checking for libusb library.
+PKG_CHECK_MODULES([USB], [libusb-1.0 >= 1.0.9])
+
+# checking for usbredir library.
+PKG_CHECK_MODULES([USBREDIRHOST], [libusbredirhost >= 0.7.1])
+PKG_CHECK_MODULES([USBREDIRPARSER], [libusbredirparser-0.5 >= 0.7.1])
+
 # checking for internal parsec sdk.
 AC_CHECK_FILE([parsec-sdk/sdk/parsec.h], [AC_CHECK_FILE([parsec-sdk/sdk/linux/libparsec.so], [enable_internal_parsec_sdk="yes"])])
 

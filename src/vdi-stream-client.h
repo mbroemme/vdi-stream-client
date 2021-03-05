@@ -24,6 +24,9 @@
 #define VDI_STREAM_CLIENT_SUCCESS	0	/* return value for all functions which success. */
 #define VDI_STREAM_CLIENT_ERROR		-1	/* generic error. */
 
+/* define limits. */
+#define USB_MAX				8	/* maximum number of usb redirects. */
+
 /* stored command line options. */
 typedef struct {
 
@@ -48,6 +51,16 @@ typedef struct {
 	uint16_t	clipboard;		/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
 	uint16_t	audio;			/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
 	uint16_t	hevc;			/* streaming codec to use. (0 = h264, 1 = h265) */
+
+	/* usb options. */
+	union {
+		struct		sockaddr_in v4;		/* listen address for incoming qemu connections. */
+		struct		sockaddr_in6 v6;	/* listen port for incoming qemu connections. */
+	} server_addrs[USB_MAX];
+	struct {
+		int32_t		vendor;			/* vendor id of usb devices for redirection. */
+		int32_t		product;		/* product id of usb devices for redirection. */
+	} usb_devices[USB_MAX];
 } vdi_config_s;
 
 /* define new print functions for logging. */

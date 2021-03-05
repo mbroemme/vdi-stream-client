@@ -31,6 +31,9 @@
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 
+/* network includes. */
+#include <arpa/inet.h>
+
 /* opengl includes. */
 #include <GL/gl.h>
 
@@ -53,45 +56,7 @@
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
 #include "engine-parsec.h"
-
-/* parsec configuration. */
-struct parsec_context_s {
-
-	/* parsec. */
-	SDL_bool done;
-	SDL_bool connection;
-	SDL_bool decoder;
-	SDL_bool focus;
-	SDL_bool relative;
-	SDL_bool pressed;
-#ifdef HAVE_LIBPARSEC
-	Parsec *parsec;
-#else
-	ParsecDSO *parsec;
-#endif
-	ParsecClientStatus client_status;
-
-	/* video. */
-	SDL_Window *window;
-	SDL_GLContext *gl;
-	SDL_Cursor *cursor;
-	Sint32 window_width;
-	Sint32 window_height;
-
-	/* opengl texture for ttf rendering. */
-	SDL_Surface *surface_ttf;
-	GLuint texture_ttf;
-	GLfloat texture_min_x;
-	GLfloat texture_min_y;
-	GLfloat texture_max_x;
-	GLfloat texture_max_y;
-
-	/* audio. */
-	SDL_AudioDeviceID audio;
-	Sint32 playing;
-	Uint32 min_buffer;
-	Uint32 max_buffer;
-};
+#include "usb-redirect.h"
 
 /* quick utility function for texture creation. */
 static Sint32 vdi_stream__power_of_two(Sint32 input) {
@@ -383,6 +348,7 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 /* parsec event loop. */
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
+	struct redirect_context_s redirect_context[USB_MAX] = {0};
 	const Uint8 *keys;
 	SDL_bool focus = SDL_FALSE;
 	Uint32 wait_time = 0;
@@ -400,6 +366,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	ParsecStatus e;
 	ParsecConfig network_cfg = PARSEC_DEFAULTS;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
+	Uint32 device;
+	Uint32 count;
+	SDL_Thread *video_thread = NULL;
+	SDL_Thread *audio_thread = NULL;
+	SDL_Thread *network_thread[USB_MAX] = {0};
 
 	/* sdl init. */
 	vdi_stream__log_info("Initialize SDL\n");
@@ -435,6 +406,31 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	if (e != PARSEC_OK) {
 		vdi_stream__log_error("Initialization failed with code: %d\n", e);
 		goto error;
+	}
+
+	/* configure usb. */
+	if (vdi_config->usb_devices[0].vendor != 0) {
+		vdi_stream__log_info("Initialize USB\n");
+
+		/* one thread per one usb device redirect. */
+		for (device = 0; vdi_config->usb_devices[device].vendor != 0 ; device++) {
+
+			/* store main thread context in a pointer. */
+			redirect_context[device].parsec_context = &parsec_context;
+
+			/* prepare data for network thread. */
+			redirect_context[device].server_addr.v4 = vdi_config->server_addrs[device].v4;
+			redirect_context[device].server_addr.v6 = vdi_config->server_addrs[device].v6;
+			redirect_context[device].usb_device.vendor = vdi_config->usb_devices[device].vendor;
+			redirect_context[device].usb_device.product = vdi_config->usb_devices[device].product;
+
+			/* sdl network thread. */
+			network_thread[device] = SDL_CreateThread(vdi_stream_client__network_thread, "vdi_stream_client__network_thread", &redirect_context[device]);
+			if (network_thread[device] == NULL) {
+				vdi_stream__log_error("Network thread creation failed: %s\n", SDL_GetError());
+				goto error;
+			}
+		}
 	}
 
 	/* use client resolution if specified. */
@@ -623,7 +619,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.texture_max_y = texture_coord[3];
 
 	/* sdl video thread. */
-	SDL_Thread *video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
+	video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
 	if (video_thread == NULL) {
 		vdi_stream__log_error("Video thread creation failed: %s\n", SDL_GetError());
 		goto error;
@@ -650,7 +646,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 
 		/* sdl audio thread. */
-		SDL_Thread *audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
+		audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
 		if (audio_thread == NULL) {
 			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
 			goto error;
@@ -896,6 +892,30 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		SDL_Delay(1);
 	}
+
+	/* already release any grabbed keyboard because thread termination can take some time. */
+	XUngrabKeyboard(wm_info.info.x11.display, CurrentTime);
+
+	/* stop network threads for usb redirection. */
+	if (vdi_config->usb_devices[0].vendor != 0) {
+		vdi_stream__log_info("Stop Network Thread\n");
+		for (count = 0; count < USB_MAX ; count++) {
+			if (network_thread[count] == NULL) {
+				continue;
+			}
+			SDL_WaitThread(network_thread[count], NULL);
+		}
+	}
+
+	/* stop audio thread. */
+	if (vdi_config->audio == 1) {
+		vdi_stream__log_info("Stop Audio Thread\n");
+		SDL_WaitThread(audio_thread, NULL);
+	}
+
+	/* stop video thread. */
+	vdi_stream__log_info("Stop Video Thread\n");
+	SDL_WaitThread(video_thread, NULL);
 
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);

@@ -164,6 +164,23 @@ decoding - CPU load and network latency is higher while network
 bandwidth is reduced. When using H.264 (AVC) the CPU load and network
 latency is lower while more network bandwidth is consumed. It is enabled
 by default.
+.PP
+USB options:
+.TP 8
+.B  \-\-redirect <\fIvendorID\fP>:<\fIproductID\fP>@<\fIip\fP>#<\fIport\fP>,[...]
+.ti 15
+The USB devices to redirect to the host. The client will monitor the
+specified USB device with <\fIvendorID\fP> and <\fIproductID\fP> for
+hotplug events (attach and detach). To get a list of available USB devices
+you can use the "lsusb" command. If a USB device is connected to the
+client, it gets automatically redirected to the host with exclusive
+access. The client will listen on <\fIip\fP> and <\fIport\fP> for incoming
+connections from QEMU/libvirt to redirect devices to the hypervisor.
+Multiple USB devices can be redirected if comma separated. You can redirect
+up to 8 devices in total. Moreover, devices are reconnected to the host
+automatically when you unplug and plug them again to the USB port and if
+not connected during startup of the client, they are monitored and
+redirected as soon as they are attached.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS

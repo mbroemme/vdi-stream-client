@@ -190,7 +190,7 @@ API to identify users to make secure connections. For convenience you can use
 hosts. This is one-time operation whenever you add Parsec host application to
 another Windows machine.
 
-# USB Redirection
+## USB Redirection
 
 If you are using [libvirt](https://libvirt.org/) for virtualization, you can
 redirect local USB devices to your Windows host. It is highly recommended to
@@ -224,18 +224,20 @@ client:
 You need to add additional `<redirdev>` sections to redirect multiple devices
 and increase the port number accordingly. After reloading libvirt and starting
 the Virtual Machine with the configuration above, you can redirect a local USB
-device. You can get a list of available devices with their `<vendor_id>` and
-`<product_id>` with `lsusb` command.
+device. You can get a list of available devices with their `<vendorID>` and
+`<productID>` with `lsusb` command.
 
 ```
-vdi-stream-client --session <sessionID> --peer <peerID> --redirect <vendor_id>:<product_id>:4000
+vdi-stream-client --session <sessionID> --peer <peerID> --redirect <vendorID>:<productID>@<ip>#4000
 ```
 
 Once connection is established it will redirect the local USB device to the
-host and setup drivers. Repeating `--redirect` options are allowed to redirect
-multiple USB devices. They will be reassigned if the client reconnects to the
-host. Moreover, devices are reconnected to the host automatically when you
-unplug and plug it again to the USB port.
+host and setup drivers. Multiple USB devices can be redirected using `,`
+separator to the `--redirect` switch. They will be reassigned if the client
+reconnects to the host. Moreover, devices are reconnected to the host
+automatically when you unplug and plug them again to the USB port. If the
+devices are not connected during startup of the client, they are monitored and
+redirected as soon as they are attached to the client.
 
 # Future
 

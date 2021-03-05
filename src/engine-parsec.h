@@ -28,7 +28,65 @@
 /* define parsec messages. */
 #define PARSEC_CLIPBOARD_MSG		7
 
+/* parsec configuration. */
+struct parsec_context_s {
+
+	/* parsec. */
+	SDL_bool done;
+	SDL_bool connection;
+	SDL_bool decoder;
+	SDL_bool focus;
+	SDL_bool relative;
+	SDL_bool pressed;
+#ifdef HAVE_LIBPARSEC
+	Parsec *parsec;
+#else
+	ParsecDSO *parsec;
+#endif
+	ParsecClientStatus client_status;
+
+	/* video. */
+	SDL_Window *window;
+	SDL_GLContext *gl;
+	SDL_Cursor *cursor;
+	Sint32 window_width;
+	Sint32 window_height;
+
+	/* opengl texture for ttf rendering. */
+	SDL_Surface *surface_ttf;
+	GLuint texture_ttf;
+	GLfloat texture_min_x;
+	GLfloat texture_min_y;
+	GLfloat texture_max_x;
+	GLfloat texture_max_y;
+
+	/* audio. */
+	SDL_AudioDeviceID audio;
+	Sint32 playing;
+	Uint32 min_buffer;
+	Uint32 max_buffer;
+};
+
+/* usb redirect. */
+struct redirect_context_s {
+
+	/* parsec context. */
+	struct parsec_context_s *parsec_context;
+
+	/* network. */
+	union {
+		struct sockaddr_in v4;
+		struct sockaddr_in6 v6;
+	} server_addr;
+
+	/* usb. */
+	struct {
+		Sint32 vendor;
+		Sint32 product;
+	} usb_device;
+};
+
 /* parsec event loop. */
-int32_t vdi_stream_client__event_loop(vdi_config_s *vdi_config);
+Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config);
 
 #endif /* _ENGINE_PARSEC_H */
