@@ -23,7 +23,6 @@
 /* system includes. */
 #include <getopt.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -51,7 +50,7 @@
 #include "engine-parsec.h"
 
 /* this function show the usage. */
-int32_t vdi_stream_client__usage(char *program_name) {
+Sint32 vdi_stream_client__usage(char *program_name) {
 
 	/* show the help. */
 	printf("Usage: %s [session] [peer] (options)...\n", program_name);
@@ -95,7 +94,7 @@ int32_t vdi_stream_client__usage(char *program_name) {
 }
 
 /* this function shows the version information. */
-int32_t vdi_stream_client__version(char *program_name) {
+Sint32 vdi_stream_client__version(char *program_name) {
 
 	/* show the version. */
 	printf("%s version %s Copyright (c) 2020 The VDI Stream developers\n", program_name, VERSION);
@@ -109,22 +108,22 @@ int32_t vdi_stream_client__version(char *program_name) {
 }
 
 /* main function to initialize structs and parse command line options. */
-int32_t main(int32_t argc, char **argv) {
+Sint32 main(Sint32 argc, char **argv) {
 
 	/* variables. */
-	int32_t option_index = 0;
-	int32_t opt;
+	Sint32 option_index = 0;
+	Sint32 opt;
 	char *program_name;
 	vdi_config_s *vdi_config = NULL;
 
 	/* temp variables for command line parser. */
-	int32_t device;
-	int32_t type;
+	Sint32 device;
+	Sint32 type;
 	char *redirect;
 	char *item;
 	char *delim;
 	char *endptr;
-	uint64_t port;
+	Uint64 port;
 
 	/* command line options. */
 	struct option long_options[] = {

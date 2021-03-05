@@ -23,9 +23,7 @@
 /* system includes. */
 #include <errno.h>
 #include <fcntl.h>
-#include <limits.h>
 #include <poll.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
