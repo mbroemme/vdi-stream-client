@@ -174,10 +174,10 @@ specified USB device with <\fIvendorID\fP> and <\fIproductID\fP> for
 hotplug events (attach and detach). To get a list of available USB devices
 you can use the "lsusb" command. If a USB device is connected to the
 client, it gets automatically redirected to the host with exclusive
-access. The client will listen on <\fIip\fP> and <\fIport\fP> for incoming
-connections from QEMU/libvirt to redirect devices to the hypervisor.
-Multiple USB devices can be redirected if comma separated. You can redirect
-up to 8 devices in total. Moreover, devices are reconnected to the host
+access. The client will connect to <\fIip\fP> and <\fIport\fP> to your
+virtualization host to redirect devices to the hypervisor. Multiple USB
+devices can be redirected if comma separated. You can redirect up to 8
+devices in total. Moreover, devices are reconnected to the host
 automatically when you unplug and plug them again to the USB port and if
 not connected during startup of the client, they are monitored and
 redirected as soon as they are attached.

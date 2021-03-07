@@ -56,7 +56,7 @@
 #include "engine-parsec.h"
 
 /* thread specific variables. */
-static __thread Sint32 client_fd = -1;
+static __thread Sint32 server_fd = -1;
 static __thread libusb_device_handle *device_handle = NULL;
 static __thread struct usbredirhost *host = NULL;
 
@@ -65,7 +65,7 @@ static void vdi_stream_client__usb_log(void *priv, Sint32 level, const char *msg
 
 /* read data from client. */
 static Sint32 vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count) {
-	Sint32 r = read(client_fd, data, count);
+	Sint32 r = read(server_fd, data, count);
 	if (r < 0) {
 		if (errno == EAGAIN) {
 			return 0;
@@ -75,15 +75,15 @@ static Sint32 vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
 
 	/* client disconnected. */
 	if (r == 0) {
-		close(client_fd);
-		client_fd = -1;
+		close(server_fd);
+		server_fd = -1;
 	}
 	return r;
 }
 
 /* write data to client. */
 static Sint32 vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count) {
-	Sint32 r = write(client_fd, data, count);
+	Sint32 r = write(server_fd, data, count);
 	if (r < 0) {
 		if (errno == EAGAIN) {
 			return 0;
@@ -91,8 +91,8 @@ static Sint32 vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count
 
 		/* client disconnected. */
 		if (errno == EPIPE) {
-			close(client_fd);
-			client_fd = -1;
+			close(server_fd);
+			server_fd = -1;
 			return 0;
 		}
 		return -1;
@@ -105,9 +105,9 @@ static Sint32 vdi_stream_client__usb_remove(struct libusb_context *usb_context, 
 
 	/* usb device removed. */
 	if (device_handle != NULL) {
-		if (client_fd != -1) {
-			close(client_fd);
-			client_fd = -1;
+		if (server_fd != -1) {
+			close(server_fd);
+			server_fd = -1;
 		}
 	}
 
@@ -126,7 +126,6 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 
 	/* variables for data processing loop. */
 	const struct libusb_pollfd **pollfds = NULL;
-	fd_set listenfds;
 	fd_set readfds;
 	fd_set writefds;
 	Sint32 i;
@@ -136,7 +135,6 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 
 	/* initial values. */
 	Uint32 delay = 100;
-	Sint32 server_fd = -1;
 	Sint32 option = 1;
 	Sint32 error = 0;
 
@@ -167,67 +165,32 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		goto error;
 	}
 
-	/* set ipv4 or ipv6 socket. */
-	if (redirect_context->server_addr.v4.sin_family == AF_INET) {
-		server_fd = socket(AF_INET, SOCK_STREAM, 0);
-	}
-	if (redirect_context->server_addr.v6.sin6_family == AF_INET6) {
-		server_fd = socket(AF_INET6, SOCK_STREAM, 0);
-	}
-
-	/* configure listening socket. */
-	if (server_fd == -1) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect failed: socket() failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-		goto error;
-	}
-	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) != 0) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect failed: setsockopt(SO_REUSEADDR) failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-		goto error;
-	}
-	if (bind(server_fd, (struct sockaddr *)&redirect_context->server_addr, sizeof(redirect_context->server_addr)) != 0) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect failed: bind() failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-		goto error;
-	}
-	if (listen(server_fd, 1) != 0) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect failed: listen() failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-		goto error;
-	}
-
 	while (redirect_context->parsec_context->done == SDL_FALSE) {
-		FD_ZERO(&listenfds);
-		FD_SET(server_fd, &listenfds);
-
 		memset(&timeout, 0, sizeof(timeout));
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
 
-		/* look for incoming connections with 1 seond timeout. */
-		n = select(server_fd + 1, &listenfds, NULL, NULL, &timeout);
+		/* set ipv4 or ipv6 socket. */
+		if (redirect_context->server_addr.v4.sin_family == AF_INET) {
+			server_fd = socket(AF_INET, SOCK_STREAM, 0);
+		}
+		if (redirect_context->server_addr.v6.sin6_family == AF_INET6) {
+			server_fd = socket(AF_INET6, SOCK_STREAM, 0);
+		}
+
+		/* set socket connection timeout. */
+		setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+		/* connect to qemu usbredir guest service. */
+		n = connect(server_fd, (struct sockaddr *)&redirect_context->server_addr, sizeof(redirect_context->server_addr));
 		if (n == -1) {
 			if (errno == EINTR) {
 				continue;
 			}
-			vdi_stream__log_error("USB Device %04x:%04x redirect failed: select() failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-			break;
-		}
-
-		/* select() timeout reached. */
-		if (n == 0) {
-			continue;
-		}
-
-		/* no need to check FD_ISSET as we have only one socket. */
-		client_fd = accept(server_fd, NULL, 0);
-		if (client_fd == -1) {
-			if (errno == EINTR) {
-				continue;
-			}
-			vdi_stream__log_error("USB Device %04x:%04x redirect failed: accept() failed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
-			break;
 		}
 
 		/* non-blocking client socket. */
-		fcntl(client_fd, F_SETFL, O_NONBLOCK);
+		fcntl(server_fd, F_SETFL, O_NONBLOCK);
 
 		/* get list of usb devices. */
 		libusb_get_device_list(usb_context, &devices);
@@ -247,8 +210,8 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			/* free list of usb devices after successful open. */
 			libusb_free_device_list(devices, 1);
 
-			close(client_fd);
-			client_fd = -1;
+			close(server_fd);
+			server_fd = -1;
 			continue;
 		}
 
@@ -264,8 +227,8 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			/* free list of usb devices after successful open. */
 			libusb_free_device_list(devices, 1);
 
-			close(client_fd);
-			client_fd = -1;
+			close(server_fd);
+			server_fd = -1;
 			continue;
 		}
 
@@ -275,8 +238,8 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		/* setup host. */
 		host = usbredirhost_open(usb_context, device_handle, vdi_stream_client__usb_log, vdi_stream_client__usb_read, vdi_stream_client__usb_write, NULL, NULL, 0, 0);
 		if (host == NULL) {
-			close(client_fd);
-			client_fd = -1;
+			close(server_fd);
+			server_fd = -1;
 			continue;
 		}
 
@@ -284,7 +247,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		vdi_stream__log_info("USB Device %04x:%04x connected\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
 
 		/* data processing loop. */
-		while (client_fd != -1) {
+		while (server_fd != -1) {
 
 			/* check if main thread is still running. */
 			if (redirect_context->parsec_context->done == SDL_TRUE) {
@@ -296,11 +259,11 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			FD_ZERO(&writefds);
 
 			/* adding client socket descriptor to set. */
-			FD_SET(client_fd, &readfds);
+			FD_SET(server_fd, &readfds);
 			if (usbredirhost_has_data_to_write(host)) {
-				FD_SET(client_fd, &writefds);
+				FD_SET(server_fd, &writefds);
 			}
-			nfds = client_fd + 1;
+			nfds = server_fd + 1;
 
 			/* free not cleared sockets. */
 			if (pollfds != NULL) {
@@ -346,17 +309,17 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			}
 
 			/* read data from usb device. */
-			if (FD_ISSET(client_fd, &readfds) != 0 && usbredirhost_read_guest_data(host) != 0) {
+			if (FD_ISSET(server_fd, &readfds) != 0 && usbredirhost_read_guest_data(host) != 0) {
 				break;
 			}
 
 			/* usbredirhost_read_guest_data may have detected client disconnect. */
-			if (client_fd == -1) {
+			if (server_fd == -1) {
 				break;
 			}
 
 			/* write data to usb device. */
-			if (FD_ISSET(client_fd, &writefds) != 0 && usbredirhost_write_guest_data(host) != 0) {
+			if (FD_ISSET(server_fd, &writefds) != 0 && usbredirhost_write_guest_data(host) != 0) {
 				break;
 			}
 
@@ -371,9 +334,9 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		}
 
 		/* loop terminated but socket still open. */
-		if (client_fd != -1) {
-			close(client_fd);
-			client_fd = -1;
+		if (server_fd != -1) {
+			close(server_fd);
+			server_fd = -1;
 		}
 
 		/* free memory. */
@@ -390,14 +353,9 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		device_handle = NULL;
 	}
 
-	/* close server socket. */
+	/* close client socket. */
 	if (server_fd != -1) {
 		close(server_fd);
-	}
-
-	/* close client socket. */
-	if (client_fd != -1) {
-		close(client_fd);
 	}
 
 	/* usb destroy. */
@@ -415,14 +373,9 @@ error:
 	/* stop main thread. */
 	redirect_context->parsec_context->done = SDL_TRUE;
 
-	/* close server socket. */
+	/* close client socket. */
 	if (server_fd != -1) {
 		close(server_fd);
-	}
-
-	/* close client socket. */
-	if (client_fd != -1) {
-		close(client_fd);
 	}
 
 	/* usb destroy. */

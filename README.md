@@ -206,18 +206,16 @@ controller:
 
 With the controller you can start using USB redirection via TCP/IP protocol.
 Each USB device is redirected through an independent port and the firewall of
-your client must allow incoming TCP/IP connection for that. VDI Stream Client
+your server must allow incoming TCP/IP connection for that. VDI Stream Client
 supports monitoring of hotplug events (e.g. plug and unplug) of the redirected
 USB devices to allow automatic reassignment to the Windows host. Add the
 following to your `<devices>` section in domain XML to enable redirection of
-one local USB device and replace `<ip>` with the IP address of your local
-client:
+one local USB device and replace `<ip>` with the IP address of your
+virtualization host:
 
 ```
 <redirdev bus='usb' type='tcp'>
-  <source mode='connect' host='<ip>' service='4000'>
-    <reconnect enabled='yes' timeout='10'/>
-  </source>
+  <source mode='bind' host='<ip>' service='4000'/>
 </redirdev>
 ```
 
