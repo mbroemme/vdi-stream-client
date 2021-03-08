@@ -2,7 +2,7 @@
 #
 # parsec-login -- Parsec API tool to get session and list available peers.
 #
-# Copyright (c) 2018 Maik Broemme <mbroemme@libmpq.org>
+# Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -187,7 +187,15 @@ done
 
 # check if we need to ask for 2fa code.
 [ -z "${GLOBAL__tfa}" ] && {
-	read -r -p "2FA code (optional): " GLOBAL__tfa
+	[ "$(/bin/curl --max-time 5 --silent --fail --request POST --write-out '{ "session_id":"%{http_code}" }' --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" }' "${PARSEC_HOST}/v1/auth" | /bin/jq --raw-output '.session_id')" == "403" ] && {
+
+		# ask for 2fa code.
+		read -r -p "2FA code: " GLOBAL__tfa
+		[ -z "${GLOBAL__tfa}" ] && {
+			printf "2FA code cannot be empty\n"
+			exit 1
+		}
+	}
 }
 
 # show current step.
