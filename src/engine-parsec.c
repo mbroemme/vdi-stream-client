@@ -348,7 +348,6 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
 	struct redirect_context_s redirect_context[USB_MAX] = {0};
-	const Uint8 *keys;
 	SDL_bool focus = SDL_FALSE;
 	Uint32 wait_time = 0;
 	Uint32 last_time = 0;
@@ -653,7 +652,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	SDL_GetWindowWMInfo(parsec_context.window, &wm_info);
-	keys = SDL_GetKeyboardState(NULL);
 
 	/* event loop. */
 	while (parsec_context.done == SDL_FALSE) {
@@ -679,6 +677,34 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
 					pmsg.keyboard.mod = msg.key.keysym.mod;
 					pmsg.keyboard.pressed = SDL_TRUE;
+
+					/* check if we need to release mouse grab. */
+					if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
+						if ((msg.key.keysym.mod & KMOD_LCTRL) != 0 &&
+						    (msg.key.keysym.mod & KMOD_LALT) != 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
+							SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
+						}
+					}
+
+					/* check if we need to release relative mouse grab. */
+					if (vdi_config->relative == 1 && SDL_GetRelativeMouseMode() == SDL_TRUE) {
+						if ((msg.key.keysym.mod & KMOD_LCTRL) != 0 &&
+						    (msg.key.keysym.mod & KMOD_LALT) != 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
+						    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
+							SDL_SetRelativeMouseMode(SDL_FALSE);
+
+							/* avoid cursor flickering on mouse down later when entering window. */
+							SDL_ShowCursor(SDL_TRUE);
+							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
+						}
+					}
+
 					break;
 				case SDL_MOUSEMOTION:
 					pmsg.type = MESSAGE_MOUSE_MOTION;
@@ -811,33 +837,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* TODO: we need to re-grab keyboard later. (workaround for buggy x11 and sdl) */
 			focus = SDL_FALSE;
-		}
-		
-		/* check if we need to release mouse grab. */
-		if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
-			if (keys[SDL_SCANCODE_LCTRL] != 0 &&
-			    keys[SDL_SCANCODE_LALT] != 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
-				SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
-				SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
-			}
-		}
-
-		/* check if we need to release relative mouse grab. */
-		if (vdi_config->relative == 1 && SDL_GetRelativeMouseMode() == SDL_TRUE) {
-			if (keys[SDL_SCANCODE_LCTRL] != 0 &&
-			    keys[SDL_SCANCODE_LALT] != 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
-			    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
-				SDL_SetRelativeMouseMode(SDL_FALSE);
-
-				/* avoid cursor flickering on mouse down later when entering window. */
-				SDL_ShowCursor(SDL_TRUE);
-				SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
-			}
 		}
 
 		/* TODO: check if we need to grab input to force decoder initialization. (workaround for buggy parsec sdk) */
