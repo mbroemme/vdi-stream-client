@@ -410,31 +410,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	/* configure usb. */
-	if (vdi_config->usb_devices[0].vendor != 0) {
-		vdi_stream__log_info("Initialize USB\n");
-
-		/* one thread per one usb device redirect. */
-		for (device = 0; vdi_config->usb_devices[device].vendor != 0 ; device++) {
-
-			/* store main thread context in a pointer. */
-			redirect_context[device].parsec_context = &parsec_context;
-
-			/* prepare data for network thread. */
-			redirect_context[device].server_addr.v4 = vdi_config->server_addrs[device].v4;
-			redirect_context[device].server_addr.v6 = vdi_config->server_addrs[device].v6;
-			redirect_context[device].usb_device.vendor = vdi_config->usb_devices[device].vendor;
-			redirect_context[device].usb_device.product = vdi_config->usb_devices[device].product;
-
-			/* sdl network thread. */
-			network_thread[device] = SDL_CreateThread(vdi_stream_client__network_thread, "vdi_stream_client__network_thread", &redirect_context[device]);
-			if (network_thread[device] == NULL) {
-				vdi_stream__log_error("Network thread creation failed: %s\n", SDL_GetError());
-				goto error;
-			}
-		}
-	}
-
 	/* use client resolution if specified. */
 	if (vdi_config->width > 0 && vdi_config->height > 0) {
 		vdi_stream__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
@@ -652,6 +627,31 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		if (audio_thread == NULL) {
 			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
 			goto error;
+		}
+	}
+
+	/* configure usb. */
+	if (vdi_config->usb_devices[0].vendor != 0) {
+		vdi_stream__log_info("Initialize USB\n");
+
+		/* one thread per one usb device redirect. */
+		for (device = 0; vdi_config->usb_devices[device].vendor != 0 ; device++) {
+
+			/* store main thread context in a pointer. */
+			redirect_context[device].parsec_context = &parsec_context;
+
+			/* prepare data for network thread. */
+			redirect_context[device].server_addr.v4 = vdi_config->server_addrs[device].v4;
+			redirect_context[device].server_addr.v6 = vdi_config->server_addrs[device].v6;
+			redirect_context[device].usb_device.vendor = vdi_config->usb_devices[device].vendor;
+			redirect_context[device].usb_device.product = vdi_config->usb_devices[device].product;
+
+			/* sdl network thread. */
+			network_thread[device] = SDL_CreateThread(vdi_stream_client__network_thread, "vdi_stream_client__network_thread", &redirect_context[device]);
+			if (network_thread[device] == NULL) {
+				vdi_stream__log_error("Network thread creation failed: %s\n", SDL_GetError());
+				goto error;
+			}
 		}
 	}
 
