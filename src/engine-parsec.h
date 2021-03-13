@@ -65,6 +65,9 @@ struct parsec_context_s {
 	Sint32 playing;
 	Uint32 min_buffer;
 	Uint32 max_buffer;
+
+	/* timeouts. */
+	Uint32 timeout;
 };
 
 /* usb redirect. */

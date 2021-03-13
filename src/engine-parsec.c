@@ -235,7 +235,7 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 				SDL_PauseAudioDevice(parsec_context->audio, 1);
 				parsec_context->playing = SDL_FALSE;
 			}
-			SDL_Delay(100);
+			SDL_Delay(parsec_context->timeout);
 		}
 	}
 
@@ -243,7 +243,7 @@ static Sint32 vdi_stream_client__audio_thread(void *opaque) {
 }
 
 /* opengl frame text event. */
-static void vdi_stream_client__frame_text(void *opaque, Uint32 timeout) {
+static void vdi_stream_client__frame_text(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 	Sint32 x, y, w, h;
 
@@ -300,11 +300,11 @@ static void vdi_stream_client__frame_text(void *opaque, Uint32 timeout) {
 	glPopAttrib();
 
 	/* static text and no need to render it frequently. */
-	SDL_Delay(timeout);
+	SDL_Delay(parsec_context->timeout);
 }
 
 /* opengl frame video event. */
-static void vdi_stream_client__frame_video(void *opaque, Uint32 timeout) {
+static void vdi_stream_client__frame_video(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 
 	/* reset drawable area. */
@@ -313,7 +313,7 @@ static void vdi_stream_client__frame_video(void *opaque, Uint32 timeout) {
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
-	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, timeout);
+	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, parsec_context->timeout);
 }
 
 /* sdl video thread. */
@@ -327,12 +327,12 @@ static Sint32 vdi_stream_client__video_thread(void *opaque) {
 
 		/* show parsec frame. */
 		if (parsec_context->connection == SDL_TRUE) {
-			vdi_stream_client__frame_video(parsec_context, 100);
+			vdi_stream_client__frame_video(parsec_context);
 		}
 
 		/* show reconnecting text. */
 		if (parsec_context->connection == SDL_FALSE) {
-			vdi_stream_client__frame_text(parsec_context, 100);
+			vdi_stream_client__frame_text(parsec_context);
 		}
 
 		SDL_GL_SwapWindow(parsec_context->window);
@@ -370,6 +370,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	SDL_Thread *video_thread = NULL;
 	SDL_Thread *audio_thread = NULL;
 	SDL_Thread *network_thread[USB_MAX] = {0};
+
+	/* default values. */
+	parsec_context.timeout = 100;
 
 	/* sdl init. */
 	vdi_stream__log_info("Initialize SDL\n");
