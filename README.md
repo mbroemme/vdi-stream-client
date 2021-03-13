@@ -156,14 +156,14 @@ without chroma subsampling for sharp and crystal clear text.
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl2`, `sdl2_ttf`, `libx11`, `libglvnd` and the
-[Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build system
-will search the SDK first in build directory and use DSO linking, the resulting
-binary will be redistributable but you need to ship Parsec library somehow. If
-not found, it will search in system-wide include and library directories and
-link accordingly, binary may not be redistributable. For build and install use
-the commands below and if `--prefix=/usr` is used, the `make install` command
-must be run as root user.
+application. It requires `sdl2`, `sdl2_ttf`, `libx11`, `libglvnd`, `libusb`,
+`usbredir` and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk).
+The build system will search the SDK first in build directory and use DSO
+linking, the resulting binary will be redistributable but you need to ship
+Parsec library somehow. If not found, it will search in system-wide include and
+library directories and link accordingly, binary may not be redistributable.
+For build and install use the commands below and if `--prefix=/usr` is used,
+the `make install` command must be run as root user.
 
 ```
 git clone https://github.com/parsec-cloud/parsec-sdk
@@ -201,7 +201,7 @@ the following to your `<devices>` section in domain XML for an USB 3.0
 controller:
 
 ```
-<controller type='usb' model='nec-xhci'/>
+<controller type='usb' model='qemu-xhci'/>
 ```
 
 With the controller you can start using USB redirection via TCP/IP protocol.
