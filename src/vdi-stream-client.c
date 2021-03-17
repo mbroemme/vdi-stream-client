@@ -45,7 +45,7 @@
 
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
-#include "engine-parsec.h"
+#include "parsec.h"
 
 /* this function show the usage. */
 Sint32 vdi_stream_client__usage(char *program_name) {

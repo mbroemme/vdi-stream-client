@@ -1,5 +1,5 @@
 /*
- *  engine-parsec.h -- parsec default types and defines
+ *  parsec.h -- parsec default types and defines
  *
  *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,8 +17,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _ENGINE_PARSEC_H
-#define _ENGINE_PARSEC_H
+#ifndef _PARSEC_H
+#define _PARSEC_H
 
 /* define audio defaults. */
 #define VDI_AUDIO_CHANNELS		2
@@ -92,4 +92,4 @@ struct redirect_context_s {
 /* parsec event loop. */
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config);
 
-#endif /* _ENGINE_PARSEC_H */
+#endif /* _PARSEC_H */

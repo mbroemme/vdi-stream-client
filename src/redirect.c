@@ -1,5 +1,5 @@
 /*
- *  usb-redirect.c -- usb redirection via libusb
+ *  redirect.c -- usb redirection via libusb
  *
  *  Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -51,7 +51,7 @@
 
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
-#include "engine-parsec.h"
+#include "parsec.h"
 
 /* thread specific variables. */
 static __thread Sint32 server_fd = -1;

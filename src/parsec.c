@@ -1,5 +1,5 @@
 /*
- *  engine-parsec.c -- desktop streaming with parsec sdk
+ *  parsec.c -- desktop streaming with parsec sdk
  *
  *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -54,8 +54,8 @@
 
 /* vdi-stream-client header includes. */
 #include "vdi-stream-client.h"
-#include "engine-parsec.h"
-#include "usb-redirect.h"
+#include "parsec.h"
+#include "redirect.h"
 
 /* quick utility function for texture creation. */
 static Sint32 vdi_stream__power_of_two(Sint32 input) {

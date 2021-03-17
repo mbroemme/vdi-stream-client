@@ -1,5 +1,5 @@
 /*
- *  usb-redirect.h -- usb redirection via libusb
+ *  redirect.h -- usb redirection via libusb
  *
  *  Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,10 +17,10 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _USB_REDIRECT_H
-#define _USB_REDIRECT_H
+#ifndef _REDIRECT_H
+#define _REDIRECT_H
 
 /* usb redirection thread. */
 Sint32 vdi_stream_client__network_thread(void *opaque);
 
-#endif /* _USB_REDIRECT_H */
+#endif /* _REDIRECT_H */
