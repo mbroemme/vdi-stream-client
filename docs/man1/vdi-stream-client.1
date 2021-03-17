@@ -181,6 +181,25 @@ devices in total. Moreover, devices are reconnected to the host
 automatically when you unplug and plug them again to the USB port and if
 not connected during startup of the client, they are monitored and
 redirected as soon as they are attached.
+.SH KEYBOARD CONTROL
+During connection to the host, you can use certain key combinations to
+release keyboard grab or to switch into force grab mode.
+.TP 8
+.B  Ctrl+Alt
+.ti 15
+Toggle mouse and keyboard grab if exclusive mouse grab is enabled. If any
+mouse button is pressed, the cursor will be locked into the window and all
+keys are passed. The Ctrl+Alt key combination will release the grab.
+See \-\-no\-grab option for more details.
+.TP 8
+.B  Shift+F12
+.ti 15
+Toggle mouse and keyboard grab regardless if exclusive grab is enabled
+or disabled. If enabling grab state, it will lock the cursor to the window
+and pass all keys, except Shift+F12 to the window. The Ctrl+Alt key
+combination will not release a forced grab. If disabling the grab state, it
+will release the mouse from the window and don't pass window manager key
+combinations anymore.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS
