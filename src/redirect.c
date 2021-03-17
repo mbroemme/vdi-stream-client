@@ -37,6 +37,7 @@
 
 /* network includes. */
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 
 /* usb includes. */
 #include <libusb.h>
@@ -121,6 +122,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	libusb_hotplug_callback_handle callback_handle;
 	struct libusb_device_descriptor desc;
 	size_t count;
+	Sint32 flag;
 
 	/* variables for data processing loop. */
 	const struct libusb_pollfd **pollfds = NULL;
@@ -198,6 +200,11 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			if (redirect_context->server_addr.v6.sin6_family == AF_INET6) {
 				server_fd = socket(AF_INET6, SOCK_STREAM, 0);
 			}
+
+			/* set tcp options. */
+			flag = 1;
+			setsockopt(server_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
+			setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
 
 			/* set socket connection timeout. */
 			setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
