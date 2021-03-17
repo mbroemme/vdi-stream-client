@@ -667,20 +667,16 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					parsec_context.done = SDL_TRUE;
 					break;
 				case SDL_KEYUP:
-					pmsg.type = MESSAGE_KEYBOARD;
-					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
-					pmsg.keyboard.mod = msg.key.keysym.mod;
-					pmsg.keyboard.pressed = SDL_FALSE;
 
 					/* TODO: we need to re-grab keyboard later. (workaround for buggy x11 and sdl) */
 					focus = SDL_FALSE;
 
-					break;
-				case SDL_KEYDOWN:
 					pmsg.type = MESSAGE_KEYBOARD;
 					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
 					pmsg.keyboard.mod = msg.key.keysym.mod;
-					pmsg.keyboard.pressed = SDL_TRUE;
+					pmsg.keyboard.pressed = SDL_FALSE;
+					break;
+				case SDL_KEYDOWN:
 
 					/* check if we need to switch window grab state. */
 					if ((msg.key.keysym.mod & KMOD_LCTRL) != 0 &&
@@ -696,6 +692,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
 							}
+
+							/* don't send hotkey to host and break execution. */
+							break;
 						}
 
 						/* check if we need to release relative mouse grab. */
@@ -711,6 +710,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								SDL_ShowCursor(SDL_TRUE);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
 							}
+
+							/* don't send hotkey to host and break execution. */
+							break;
 						}
 					}
 
@@ -728,9 +730,16 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Shift+F12 to release forced grab)");
 								grab_forced = SDL_TRUE;
 							}
+
+							/* don't send hotkey to host and break execution. */
+							break;
 						}
 					}
 
+					pmsg.type = MESSAGE_KEYBOARD;
+					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
+					pmsg.keyboard.mod = msg.key.keysym.mod;
+					pmsg.keyboard.pressed = SDL_TRUE;
 					break;
 				case SDL_MOUSEMOTION:
 					pmsg.type = MESSAGE_MOUSE_MOTION;
