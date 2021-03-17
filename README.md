@@ -72,7 +72,7 @@ Features                | VDI Stream Client | Parsec
 Keyboard Input          | Full              | Partial
 Mouse Input             | Full              | Partial
 Gamepad Input           | No                | Yes
-Clipboard Sharing       | Yes               | Text only
+Clipboard Sharing       | Text only         | Text only
 Remote                  | Yes               | Yes
 DirectX                 | Yes               | Yes
 OpenGL                  | Yes               | Yes
@@ -123,11 +123,6 @@ without chroma subsampling for sharp and crystal clear text.
 * Screen saver and screen locker support. By default screen saver support is
   enabled but user can specify command line switch to avoid setting [SDL_EnableScreenSaver](https://wiki.libsdl.org/SDL_EnableScreenSaver)
   and disallow X server to lock the local screen.
-* Full clipboard sharing support between host and client. User can copy and
-  paste text and binary data like images between both environments using
-  built-in [Spice Protocol](https://www.spice-space.org/). Moreover Spice
-  Protocol is currently only supported if using KVM, Xen or Virtuozzo Hybrid
-  Server with QEMU.
 * Built-in USB redirection with automatic reconnect support using
   [usbredir protocol](https://gitlab.freedesktop.org/spice/usbredir). User can
   specify via command line which local USB devices will be redirected to the
@@ -236,6 +231,14 @@ reconnects to the host. Moreover, devices are reconnected to the host
 automatically when you unplug and plug them again to the USB port. If the
 devices are not connected during startup of the client, they are monitored and
 redirected as soon as they are attached to the client.
+
+# Notes
+
+USB redirection integration doesn't support any kind of encryption. The main
+goal of this client is to support in-house desktop streaming between client and
+host. Please use a VPN like [WireGuard](https://www.wireguard.com/) if you are
+using it across [WAN](https://en.wikipedia.org/wiki/Wide_area_network)
+connections.
 
 # Future
 
