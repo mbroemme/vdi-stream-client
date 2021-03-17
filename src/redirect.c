@@ -132,6 +132,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	struct timeval timeout;
 
 	/* initial values. */
+	Uint32 retry = 0;
 	Uint32 delay = 1000;
 	Sint32 option = 1;
 	Sint32 error = 0;
@@ -176,6 +177,20 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 				break;
 			}
 
+			/* check if we reached reconnect retry timeout. */
+			if (retry > 0 && retry <= 10) {
+
+				/* wait some time before reconnect. */
+				SDL_Delay(delay);
+				retry++;
+				continue;
+			}
+
+			/* check if we need to reset reconnect retry counter. */
+			if (retry > 10) {
+				retry = 0;
+			}
+
 			/* set ipv4 or ipv6 socket. */
 			if (redirect_context->server_addr.v4.sin_family == AF_INET) {
 				server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -189,9 +204,10 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 
 			/* connect to qemu usbredir guest service. */
 			if (connect(server_fd, (struct sockaddr *)&redirect_context->server_addr, sizeof(redirect_context->server_addr)) == -1) {
-				if (errno == EINTR) {
-					continue;
-				}
+				close(server_fd);
+				server_fd = -1;
+				retry++;
+				continue;
 			}
 
 			/* non-blocking client socket. */
