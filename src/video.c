@@ -28,7 +28,7 @@
 #include <unistd.h>
 
 /* quick utility function for texture creation. */
-static Sint32 vdi_stream__power_of_two(Sint32 input) {
+static Sint32 vdi_stream_client__power_of_two(Sint32 input) {
 	Sint32 value = 1;
 	while (value < input) {
 		value <<= 1;
@@ -37,7 +37,7 @@ static Sint32 vdi_stream__power_of_two(Sint32 input) {
 }
 
 /* convert text into opengl texture. */
-GLuint vdi_stream__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord) {
+GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord) {
 	GLuint texture;
 	Sint32 w, h;
 	SDL_Surface *image;
@@ -46,8 +46,8 @@ GLuint vdi_stream__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord)
 	SDL_BlendMode saved_mode;
 
 	/* use the surface width and height expanded to powers of 2. */
-	w = vdi_stream__power_of_two(surface->w);
-	h = vdi_stream__power_of_two(surface->h);
+	w = vdi_stream_client__power_of_two(surface->w);
+	h = vdi_stream_client__power_of_two(surface->h);
 	texture_coord[0] = 0.0f; /* min x */
 	texture_coord[1] = 0.0f; /* min y */
 	texture_coord[2] = (GLfloat)surface->w / w; /* max x */

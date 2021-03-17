@@ -130,44 +130,44 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.timeout = 100;
 
 	/* sdl init. */
-	vdi_stream__log_info("Initialize SDL\n");
+	vdi_stream_client__log_info("Initialize SDL\n");
 	error = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (error != 0) {
-		vdi_stream__log_error("Initialization failed: %s\n", SDL_GetError());
+		vdi_stream_client__log_error("Initialization failed: %s\n", SDL_GetError());
 		goto error;
 	}
 	SDL_VERSION(&wm_info.version);
 
 	/* ttf init. */
-	vdi_stream__log_info("Initialize TTF\n");
+	vdi_stream_client__log_info("Initialize TTF\n");
 	error = TTF_Init();
 	if (error != 0) {
-		vdi_stream__log_error("Initialization failed: %s\n", TTF_GetError());
+		vdi_stream_client__log_error("Initialization failed: %s\n", TTF_GetError());
 		goto error;
 	}
 
 	/* load font. */
 	font = TTF_OpenFontRW(SDL_RWFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), 1, 16);
 	if (font == NULL) {
-		vdi_stream__log_error("Loading font failed: %s\n", TTF_GetError());
+		vdi_stream_client__log_error("Loading font failed: %s\n", TTF_GetError());
 		goto error;
 	}
 
 	/* parsec init. */
-	vdi_stream__log_info("Initialize Parsec\n");
+	vdi_stream_client__log_info("Initialize Parsec\n");
 #ifdef HAVE_LIBPARSEC
 	e = ParsecInit(PARSEC_VER, &network_cfg, NULL, &parsec_context.parsec);
 #else
 	e = ParsecInit(NULL, &network_cfg, "libparsec.so", &parsec_context.parsec);
 #endif
 	if (e != PARSEC_OK) {
-		vdi_stream__log_error("Initialization failed with code: %d\n", e);
+		vdi_stream_client__log_error("Initialization failed with code: %d\n", e);
 		goto error;
 	}
 
 	/* use client resolution if specified. */
 	if (vdi_config->width > 0 && vdi_config->height > 0) {
-		vdi_stream__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
+		vdi_stream_client__log_info("Override resolution %dx%d\n", vdi_config->width, vdi_config->height);
 		cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
 		cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
 	}
@@ -177,7 +177,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].decoderH265 = 1;
 	}
 	if (vdi_config->hevc == 0) {
-		vdi_stream__log_info("Disable H.265 (HEVC) Video Codec\n");
+		vdi_stream_client__log_info("Disable H.265 (HEVC) Video Codec\n");
 		cfg.video[DEFAULT_STREAM].decoderH265 = 0;
 	}
 
@@ -186,12 +186,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].decoder444 = 1;
 	}
 	if (vdi_config->subsampling == 0) {
-		vdi_stream__log_info("Disable Chroma Subsampling\n");
+		vdi_stream_client__log_info("Disable Chroma Subsampling\n");
 		cfg.video[DEFAULT_STREAM].decoder444 = 0;
 
 		/* TODO: parsec sdk bug. */
-		vdi_stream__log_info("WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
-		vdi_stream__log_info("WARNING: https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
+		vdi_stream_client__log_info("WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
+		vdi_stream_client__log_info("WARNING: https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
 	}
 
 	/* configure client decoding acceleration. */
@@ -199,7 +199,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].decoderIndex = 1;
 	}
 	if (vdi_config->acceleration == 0) {
-		vdi_stream__log_info("Disable Hardware Accelerated Video Decoding\n");
+		vdi_stream_client__log_info("Disable Hardware Accelerated Video Decoding\n");
 		cfg.video[DEFAULT_STREAM].decoderIndex = 0;
 	}
 
@@ -208,23 +208,23 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		network_cfg.upnp = 1;
 	}
 	if (vdi_config->upnp == 0) {
-		vdi_stream__log_info("Disable UPnP\n");
+		vdi_stream_client__log_info("Disable UPnP\n");
 		network_cfg.upnp = 0;
 	}
 
 	/* check if reconnect should be disabled. */
 	if (vdi_config->reconnect == 0) {
-		vdi_stream__log_info("Disable automatic reconnect\n");
+		vdi_stream_client__log_info("Disable automatic reconnect\n");
 	}
 
 	/* check if exclusive mouse grab should be disabled. */
 	if (vdi_config->grab == 0) {
-		vdi_stream__log_info("Disable exclusive mouse grab\n");
+		vdi_stream_client__log_info("Disable exclusive mouse grab\n");
 	}
 
 	/* check if relative mouse grab should be disabled. */
 	if (vdi_config->relative == 0) {
-		vdi_stream__log_info("Disable relative mouse grab\n");
+		vdi_stream_client__log_info("Disable relative mouse grab\n");
 	}
 
 	/* configure screen saver. */
@@ -232,30 +232,30 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		SDL_EnableScreenSaver();
 	}
 	if (vdi_config->screensaver == 0) {
-		vdi_stream__log_info("Disable screen saver\n");
+		vdi_stream_client__log_info("Disable screen saver\n");
 		SDL_DisableScreenSaver();
 	}
 
 	/* check if clipboard should be disabled. */
 	if (vdi_config->clipboard == 0) {
-		vdi_stream__log_info("Disable clipboard sharing\n");
+		vdi_stream_client__log_info("Disable clipboard sharing\n");
 	}
 
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 0) {
-		vdi_stream__log_info("Disable audio streaming\n");
+		vdi_stream_client__log_info("Disable audio streaming\n");
 	}
 
 	/* parsec connect. */
-	vdi_stream__log_info("Connect to Parsec service\n");
+	vdi_stream_client__log_info("Connect to Parsec service\n");
 	e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 	if (e != PARSEC_OK) {
-		vdi_stream__log_error("Connection failed with code: %d\n", e);
+		vdi_stream_client__log_error("Connection failed with code: %d\n", e);
 		goto error;
 	}
 
 	/* wait until connection is established. */
-	vdi_stream__log_info("Connect to Parsec host\n");
+	vdi_stream_client__log_info("Connect to Parsec host\n");
 	while (parsec_context.decoder == SDL_FALSE) {
 
 		/* get client status. */
@@ -268,14 +268,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			if (parsec_context.client_status.decoder->width == 0 &&
 			    parsec_context.client_status.decoder->height == 0 &&
 			    parsec_context.connection == SDL_FALSE) {
-				vdi_stream__log_info("Initialize Video Decoder\n");
+				vdi_stream_client__log_info("Initialize Video Decoder\n");
 				parsec_context.connection = SDL_TRUE;
 			}
 
 			/* decoder initialized. */
 			if (parsec_context.client_status.decoder->width > 0 &&
 			    parsec_context.client_status.decoder->height > 0) {
-				vdi_stream__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+				vdi_stream_client__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
 				parsec_context.window_width = parsec_context.client_status.decoder->width;
 				parsec_context.window_height = parsec_context.client_status.decoder->height;
 				parsec_context.decoder = SDL_TRUE;
@@ -300,7 +300,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* check if connected and decoder initialized. */
 	if (parsec_context.connection == SDL_FALSE &&
 	    parsec_context.decoder == SDL_FALSE) {
-		vdi_stream__log_error("Connection failed with code: %d\n", e);
+		vdi_stream_client__log_error("Connection failed with code: %d\n", e);
 		goto error;
 	}
 
@@ -321,26 +321,26 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
 				);
 	if (parsec_context.window == NULL) {
-		vdi_stream__log_error("Window creation failed: %s\n", SDL_GetError());
+		vdi_stream_client__log_error("Window creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
 	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
 	if (parsec_context.gl == NULL) {
-		vdi_stream__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
+		vdi_stream_client__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
 	parsec_context.surface_ttf = TTF_RenderUTF8_Blended(font, "Reconnecting...", color);
 	if (parsec_context.surface_ttf == NULL) {
-		vdi_stream__log_error("TTF surface creation failed: %s\n", TTF_GetError());
+		vdi_stream_client__log_error("TTF surface creation failed: %s\n", TTF_GetError());
 		goto error;
 	}
 
 	/* convert the text into an opengl texture. */
-	parsec_context.texture_ttf = vdi_stream__gl_load_texture(parsec_context.surface_ttf, texture_coord);
+	parsec_context.texture_ttf = vdi_stream_client__gl_load_texture(parsec_context.surface_ttf, texture_coord);
 	if ((gl_error = glGetError()) != GL_NO_ERROR) {
-		vdi_stream__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
+		vdi_stream_client__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
 		goto error;
 	}
 
@@ -353,7 +353,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* sdl video thread. */
 	video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
 	if (video_thread == NULL) {
-		vdi_stream__log_error("Video thread creation failed: %s\n", SDL_GetError());
+		vdi_stream_client__log_error("Video thread creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
@@ -373,21 +373,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		/* sdl audio device. */
 		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
 		if (parsec_context.audio == 0) {
-			vdi_stream__log_error("Failed to open audio: %s\n", SDL_GetError());
+			vdi_stream_client__log_error("Failed to open audio: %s\n", SDL_GetError());
 			goto error;
 		}
 
 		/* sdl audio thread. */
 		audio_thread = SDL_CreateThread(vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context);
 		if (audio_thread == NULL) {
-			vdi_stream__log_error("Audio thread creation failed: %s\n", SDL_GetError());
+			vdi_stream_client__log_error("Audio thread creation failed: %s\n", SDL_GetError());
 			goto error;
 		}
 	}
 
 	/* configure usb. */
 	if (vdi_config->usb_devices[0].vendor != 0) {
-		vdi_stream__log_info("Initialize USB\n");
+		vdi_stream_client__log_info("Initialize USB\n");
 
 		/* one thread per one usb device redirect. */
 		for (device = 0; vdi_config->usb_devices[device].vendor != 0 ; device++) {
@@ -404,7 +404,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			/* sdl network thread. */
 			network_thread[device] = SDL_CreateThread(vdi_stream_client__network_thread, "vdi_stream_client__network_thread", &redirect_context[device]);
 			if (network_thread[device] == NULL) {
-				vdi_stream__log_error("Network thread creation failed: %s\n", SDL_GetError());
+				vdi_stream_client__log_error("Network thread creation failed: %s\n", SDL_GetError());
 				goto error;
 			}
 		}
@@ -581,7 +581,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
-			vdi_stream__log_error("Parsec disconnected\n");
+			vdi_stream_client__log_error("Parsec disconnected\n");
 			parsec_context.done = SDL_TRUE;
 		}
 		if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
@@ -594,7 +594,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* check network connection status. */
 		if (vdi_config->reconnect == 0 && parsec_context.client_status.networkFailure == 1) {
-			vdi_stream__log_error("Network disconnected\n");
+			vdi_stream_client__log_error("Network disconnected\n");
 			parsec_context.done = SDL_TRUE;
 		}
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
@@ -644,7 +644,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		    parsec_context.decoder == SDL_FALSE &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
-			vdi_stream__log_info("Use resolution %dx%d\n",
+			vdi_stream_client__log_info("Use resolution %dx%d\n",
 				parsec_context.client_status.decoder->width,
 				parsec_context.client_status.decoder->height
 			);
@@ -661,7 +661,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		if ((parsec_context.window_width != parsec_context.client_status.decoder->width || parsec_context.window_height != parsec_context.client_status.decoder->height) &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
-			vdi_stream__log_info("Change resolution from %dx%d to %dx%d\n",
+			vdi_stream_client__log_info("Change resolution from %dx%d to %dx%d\n",
 				parsec_context.window_width,
 				parsec_context.window_height,
 				parsec_context.client_status.decoder->width,
@@ -686,7 +686,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* stop network threads for usb redirection. */
 	if (vdi_config->usb_devices[0].vendor != 0) {
-		vdi_stream__log_info("Stop Network Thread\n");
+		vdi_stream_client__log_info("Stop Network Thread\n");
 		for (count = 0; count < USB_MAX ; count++) {
 			if (network_thread[count] == NULL) {
 				continue;
@@ -697,12 +697,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* stop audio thread. */
 	if (vdi_config->audio == 1) {
-		vdi_stream__log_info("Stop Audio Thread\n");
+		vdi_stream_client__log_info("Stop Audio Thread\n");
 		SDL_WaitThread(audio_thread, NULL);
 	}
 
 	/* stop video thread. */
-	vdi_stream__log_info("Stop Video Thread\n");
+	vdi_stream_client__log_info("Stop Video Thread\n");
 	SDL_WaitThread(video_thread, NULL);
 
 	/* parsec destroy. */

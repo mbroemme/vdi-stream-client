@@ -34,6 +34,10 @@
 /* define limits. */
 #define USB_MAX				8	/* maximum number of usb redirects. */
 
+/* define new print functions for logging. */
+#define vdi_stream_client__log_info(...) printf(__VA_ARGS__);
+#define vdi_stream_client__log_error(...) fprintf(stderr, __VA_ARGS__);
+
 /* stored command line options. */
 typedef struct {
 
@@ -69,9 +73,5 @@ typedef struct {
 		Sint32		product;		/* product id of usb devices for redirection. */
 	} usb_devices[USB_MAX];
 } vdi_config_s;
-
-/* define new print functions for logging. */
-#define vdi_stream__log_info(...) printf(__VA_ARGS__);
-#define vdi_stream__log_error(...) fprintf(stderr, __VA_ARGS__);
 
 #endif /* _CLIENT_H */

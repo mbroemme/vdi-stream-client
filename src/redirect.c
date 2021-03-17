@@ -122,12 +122,12 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	Sint32 error = 0;
 
 	/* user output. */
-	vdi_stream__log_info("Start USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
+	vdi_stream_client__log_info("Start USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
 
 	/* usb init. */
 	error = libusb_init(&usb_context);
 	if (error != 0) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect initialization failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
+		vdi_stream_client__log_error("USB Device %04x:%04x redirect initialization failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
 		goto error;
 	}
 
@@ -144,7 +144,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		&callback_handle
 	);
 	if (error != 0) {
-		vdi_stream__log_error("USB Device %04x:%04x redirect initialization failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
+		vdi_stream_client__log_error("USB Device %04x:%04x redirect initialization failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
 		goto error;
 	}
 
@@ -240,7 +240,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 
 				/* check if permission denied. */
 				if (error == LIBUSB_ERROR_ACCESS) {
-					vdi_stream__log_info("USB Device %04x:%04x redirect failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
+					vdi_stream_client__log_info("USB Device %04x:%04x redirect failed: %s\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product, libusb_strerror(error));
 				}
 
 				/* free list of usb devices after successful open. */
@@ -268,7 +268,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		if (host != NULL) {
 
 			/* user output. */
-			vdi_stream__log_info("USB Device %04x:%04x connected\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
+			vdi_stream_client__log_info("USB Device %04x:%04x connected\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
 		}
 
 		/* data processing loop. */
@@ -374,7 +374,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		if (host != NULL) {
 
 			/* user output. */
-			vdi_stream__log_info("USB Device %04x:%04x removed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
+			vdi_stream_client__log_info("USB Device %04x:%04x removed\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
 
 			usbredirhost_close(host);
 			device_handle = NULL;
@@ -387,7 +387,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	libusb_exit(usb_context);
 
 	/* user output. */
-	vdi_stream__log_info("Stop USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
+	vdi_stream_client__log_info("Stop USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor, redirect_context->usb_device.product);
 
 	/* terminate loop. */
 	return VDI_STREAM_CLIENT_SUCCESS;

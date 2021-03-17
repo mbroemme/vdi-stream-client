@@ -28,7 +28,7 @@
 #include <GL/gl.h>
 
 /* video thread. */
-GLuint vdi_stream__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
+GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
 Sint32 vdi_stream_client__video_thread(void *opaque);
 
 #endif /* _VIDEO_H */
