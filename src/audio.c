@@ -32,8 +32,8 @@ static void vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opa
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 
 	Uint32 size = SDL_GetQueuedAudioSize(parsec_context->audio);
-	Uint32 queued_frames = size / (VDI_AUDIO_CHANNELS * sizeof(Sint16));
-	Uint32 queued_packets = queued_frames / VDI_AUDIO_FRAMES_PER_PACKET;
+	Uint32 queued_frames = size / (PARSEC_AUDIO_CHANNELS * sizeof(Sint16));
+	Uint32 queued_packets = queued_frames / PARSEC_AUDIO_FRAMES_PER_PACKET;
 
 	if (parsec_context->playing == SDL_TRUE && queued_packets > parsec_context->max_buffer) {
 		SDL_ClearQueuedAudio(parsec_context->audio);
@@ -44,7 +44,7 @@ static void vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opa
 		parsec_context->playing = SDL_TRUE;
 	}
 
-	SDL_QueueAudio(parsec_context->audio, pcm, frames * VDI_AUDIO_CHANNELS * sizeof(Sint16));
+	SDL_QueueAudio(parsec_context->audio, pcm, frames * PARSEC_AUDIO_CHANNELS * sizeof(Sint16));
 }
 
 /* sdl audio thread. */

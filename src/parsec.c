@@ -359,9 +359,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
-		want.freq = VDI_AUDIO_SAMPLE_RATE;
+		want.freq = PARSEC_AUDIO_SAMPLE_RATE;
 		want.format = AUDIO_S16;
-		want.channels = VDI_AUDIO_CHANNELS;
+		want.channels = PARSEC_AUDIO_CHANNELS;
 		want.samples = 2048;
 
 		/* the number of audio packets (960 frames) to buffer before we begin playing. */

@@ -43,9 +43,9 @@
 #include <arpa/inet.h>
 
 /* define audio defaults. */
-#define VDI_AUDIO_CHANNELS		2
-#define VDI_AUDIO_SAMPLE_RATE		48000
-#define VDI_AUDIO_FRAMES_PER_PACKET	960
+#define PARSEC_AUDIO_CHANNELS		2
+#define PARSEC_AUDIO_SAMPLE_RATE	48000
+#define PARSEC_AUDIO_FRAMES_PER_PACKET	960
 
 /* define parsec messages. */
 #define PARSEC_CLIPBOARD_MSG		7
