@@ -17,8 +17,9 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* configuration includes. */
-#include "config.h"
+/* internal includes. */
+#include "client.h"
+#include "parsec.h"
 
 /* system includes. */
 #include <errno.h>
@@ -28,31 +29,12 @@
 #include <stdio.h>
 #include <unistd.h>
 
-/* opengl includes. */
-#include <GL/gl.h>
-
-/* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
-
 /* network includes. */
-#include <arpa/inet.h>
 #include <netinet/tcp.h>
 
 /* usb includes. */
 #include <libusb.h>
 #include <usbredirhost.h>
-
-/* parsec includes. */
-#ifdef HAVE_LIBPARSEC
-#include <parsec/parsec.h>
-#else
-#include "../parsec-sdk/sdk/parsec-dso.h"
-#endif
-
-/* vdi-stream-client header includes. */
-#include "vdi-stream-client.h"
-#include "parsec.h"
 
 /* thread specific variables. */
 static __thread Sint32 server_fd = -1;

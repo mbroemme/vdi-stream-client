@@ -20,6 +20,10 @@
 #ifndef _REDIRECT_H
 #define _REDIRECT_H
 
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+
 /* usb redirection thread. */
 Sint32 vdi_stream_client__network_thread(void *opaque);
 

@@ -20,6 +20,10 @@
 #ifndef _AUDIO_H
 #define _AUDIO_H
 
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+
 /* audio thread. */
 Sint32 vdi_stream_client__audio_thread(void *opaque);
 

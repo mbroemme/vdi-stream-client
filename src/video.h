@@ -20,6 +20,13 @@
 #ifndef _VIDEO_H
 #define _VIDEO_H
 
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+
+/* opengl includes. */
+#include <GL/gl.h>
+
 /* video thread. */
 GLuint vdi_stream__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
 Sint32 vdi_stream_client__video_thread(void *opaque);

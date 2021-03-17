@@ -20,6 +20,28 @@
 #ifndef _PARSEC_H
 #define _PARSEC_H
 
+/* configuration includes. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
+/* parsec includes. */
+#ifdef HAVE_LIBPARSEC
+#include <parsec/parsec.h>
+#else
+#include "../parsec-sdk/sdk/parsec-dso.h"
+#endif
+
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+
+/* opengl includes. */
+#include <GL/gl.h>
+
+/* network includes. */
+#include <arpa/inet.h>
+
 /* define audio defaults. */
 #define VDI_AUDIO_CHANNELS		2
 #define VDI_AUDIO_SAMPLE_RATE		48000

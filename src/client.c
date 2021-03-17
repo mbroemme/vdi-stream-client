@@ -1,5 +1,5 @@
 /*
- *  vdi-stream-client.c -- gpu accelerated streaming client
+ *  client.c -- gpu accelerated streaming client
  *
  *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,35 +17,15 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* configuration includes. */
-#include "config.h"
+/* internal includes. */
+#include "client.h"
+#include "parsec.h"
 
 /* system includes. */
 #include <getopt.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-/* opengl includes. */
-#include <GL/gl.h>
-
-/* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
-
-/* network includes. */
-#include <arpa/inet.h>
-
-/* parsec includes. */
-#ifdef HAVE_LIBPARSEC
-#include <parsec/parsec.h>
-#else
-#include "../parsec-sdk/sdk/parsec-dso.h"
-#endif
-
-/* vdi-stream-client header includes. */
-#include "vdi-stream-client.h"
-#include "parsec.h"
 
 /* this function show the usage. */
 Sint32 vdi_stream_client__usage(char *program_name) {

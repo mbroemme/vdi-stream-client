@@ -1,5 +1,5 @@
 /*
- *  vdi-stream-client.h -- default types and defines
+ *  client.h -- default types and defines
  *
  *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
  *
@@ -17,8 +17,15 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef _VDI_STREAM_CLIENT_H
-#define _VDI_STREAM_CLIENT_H
+#ifndef _CLIENT_H
+#define _CLIENT_H
+
+/* sdl includes. */
+#define SDL_MAIN_HANDLED
+#include <SDL2/SDL.h>
+
+/* network includes. */
+#include <arpa/inet.h>
 
 /* define return values. */
 #define VDI_STREAM_CLIENT_SUCCESS	0	/* return value for all functions which success. */
@@ -67,4 +74,4 @@ typedef struct {
 #define vdi_stream__log_info(...) printf(__VA_ARGS__);
 #define vdi_stream__log_error(...) fprintf(stderr, __VA_ARGS__);
 
-#endif /* _VDI_STREAM_CLIENT_H */
+#endif /* _CLIENT_H */

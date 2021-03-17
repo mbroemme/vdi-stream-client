@@ -17,8 +17,15 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* configuration includes. */
-#include "config.h"
+/* internal includes. */
+#include "audio.h"
+#include "client.h"
+#include "parsec.h"
+#include "redirect.h"
+#include "video.h"
+
+/* font include. */
+#include "../include/font.h"
 
 /* system includes. */
 #include <limits.h>
@@ -26,38 +33,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-/* x11 includes. */
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
-
-/* network includes. */
-#include <arpa/inet.h>
-
-/* opengl includes. */
-#include <GL/gl.h>
-
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 #include <SDL2/SDL_ttf.h>
-
-/* parsec includes. */
-#ifdef HAVE_LIBPARSEC
-#include <parsec/parsec.h>
-#else
-#include "../parsec-sdk/sdk/parsec-dso.h"
-#endif
-
-/* font include. */
-#include "../include/font.h"
-
-/* vdi-stream-client header includes. */
-#include "vdi-stream-client.h"
-#include "audio.h"
-#include "video.h"
-#include "parsec.h"
-#include "redirect.h"
 
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
