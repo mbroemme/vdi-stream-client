@@ -188,8 +188,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 			setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
 			/* connect to qemu usbredir guest service. */
-			n = connect(server_fd, (struct sockaddr *)&redirect_context->server_addr, sizeof(redirect_context->server_addr));
-			if (n == -1) {
+			if (connect(server_fd, (struct sockaddr *)&redirect_context->server_addr, sizeof(redirect_context->server_addr)) == -1) {
 				if (errno == EINTR) {
 					continue;
 				}
