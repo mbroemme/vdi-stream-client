@@ -26,17 +26,15 @@
 #include <stdio.h>
 #include <string.h>
 
-/* network includes. */
-#include <arpa/inet.h>
-
 /* opengl includes. */
 #include <GL/gl.h>
 
 /* sdl includes. */
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_syswm.h>
-#include <SDL2/SDL_ttf.h>
+
+/* network includes. */
+#include <arpa/inet.h>
 
 /* parsec includes. */
 #ifdef HAVE_LIBPARSEC
@@ -323,7 +321,7 @@ Sint32 main(Sint32 argc, char **argv) {
 							}
 						}
 
-						/* listen address. */
+						/* address. */
 						if (type == 1) {
 
 							/* check if ipv4 address. */
@@ -339,19 +337,19 @@ Sint32 main(Sint32 argc, char **argv) {
 							/* check if bad formatted address. */
 							if (vdi_config->server_addrs[device].v4.sin_family != AF_INET &&
 							    vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
-								fprintf(stderr, "%s: invalid listen address in usb device: %s\n", program_name, item);
+								fprintf(stderr, "%s: invalid address in usb device: %s\n", program_name, item);
 								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 								goto error;
 							}
 						}
 
-						/* listen port. */
+						/* port. */
 						if (type == 2) {
 							port = strtol(item, NULL, 10);
 
-							/* check if listen port is out of range. */
+							/* check if port is out of range. */
 							if (port <= 0 || port >= 65536) {
-								fprintf(stderr, "%s: invalid listen port in usb device: %s\n", program_name, item);
+								fprintf(stderr, "%s: invalid port in usb device: %s\n", program_name, item);
 								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 								goto error;
 							}

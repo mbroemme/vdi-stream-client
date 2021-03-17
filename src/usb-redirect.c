@@ -34,8 +34,6 @@
 /* sdl includes. */
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_syswm.h>
-#include <SDL2/SDL_ttf.h>
 
 /* network includes. */
 #include <arpa/inet.h>

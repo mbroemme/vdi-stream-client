@@ -54,8 +54,8 @@ typedef struct {
 
 	/* usb options. */
 	union {
-		struct		sockaddr_in v4;		/* listen address for incoming qemu connections. */
-		struct		sockaddr_in6 v6;	/* listen port for incoming qemu connections. */
+		struct		sockaddr_in v4;		/* address (ipv4) to connect for usb redirection. */
+		struct		sockaddr_in6 v6;	/* address (ipv6) to connect for usb redirection. */
 	} server_addrs[USB_MAX];
 	struct {
 		Sint32		vendor;			/* vendor id of usb devices for redirection. */
