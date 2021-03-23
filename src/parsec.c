@@ -477,10 +477,22 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 						/* check if we need to toggle forced grab. */
 						if (msg.key.keysym.sym == SDLK_F12) {
 							if (grab_forced == SDL_TRUE) {
+
+								/* re-enable screensaver if leaving forced lock. */
+								if (vdi_config->screensaver == 1) {
+									SDL_EnableScreenSaver();
+								}
+
 								SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
 								grab_forced = SDL_FALSE;
 							} else {
+
+								/* disable screensaver if entering forced lock. */
+								if (vdi_config->screensaver == 1) {
+									SDL_DisableScreenSaver();
+								}
+
 								SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Shift+F12 to release forced grab)");
 								grab_forced = SDL_TRUE;

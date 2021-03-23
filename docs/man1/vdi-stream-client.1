@@ -195,11 +195,13 @@ See \-\-no\-grab option for more details.
 .B  Shift+F12
 .ti 15
 Toggle mouse and keyboard grab regardless if exclusive grab is enabled
-or disabled. If enabling grab state, it will lock the cursor to the window
-and pass all keys, except Shift+F12 to the window. The Ctrl+Alt key
-combination will not release a forced grab. If disabling the grab state, it
-will release the mouse from the window and don't pass window manager key
-combinations anymore.
+or disabled. If enabling forced grab, it will lock the cursor to the window
+and pass all keys, except Shift+F12 to the window. The client configured
+screen saver and screen locker is disabled and host must process locking.
+The Ctrl+Alt key combination will not release a forced grab. If disabling
+forced grab, it will release the mouse from the window, don't pass window
+manager key combinations anymore and re-enable screen saver and screen
+locker if necessary.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS
