@@ -1,0 +1,22 @@
+# environment settings.
+dist: bionic
+os: linux
+language: c
+compiler: gcc
+
+# variables.
+env:
+  - PARSEC_VERSION=5.0
+
+# dependencies.
+install:
+  - sudo apt-get install libgl-dev libsdl2-dev libsdl2-ttf-dev libusb-1.0-0-dev libusbredirhost-dev libusbredirparser-dev libx11-dev sudo tar wget
+
+# preparation.
+before_script:
+  - sh autogen.sh
+
+# compilation.
+script:
+  - set -o errexit; source .travis/01-shared-linking.sh
+  - set -o errexit; source .travis/02-dso-linking.sh
