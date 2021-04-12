@@ -22,7 +22,7 @@ export PARSEC_HOST="https://kessel-api.parsecgaming.com"
 
 # runtime config section. (don't edit)
 export PARSEC_PROCESS="${0##*/}"
-export PARSEC_VERSION="0.0.0"
+export PARSEC_VERSION="0.1.0"
 export PARSEC_AUTHOR="Maik Broemme"
 export PARSEC_EMAIL="mbroemme@libmpq.org"
 
@@ -88,7 +88,7 @@ for LOOP__index in "${!GLOBAL__parameters[@]}" ; do
 		-u|--username)
 
 			# check if we miss some parameter.
-			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}" ] && {
 
 				# show the help for the missing parameter.
 				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
@@ -99,16 +99,16 @@ for LOOP__index in "${!GLOBAL__parameters[@]}" ; do
 			}
 
 			# store username.
-			declare -g GLOBAL__username="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+			declare -g GLOBAL__username="${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}"
 
 			# unset array items.
 			unset GLOBAL__parameters[${LOOP__index}]
-			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]
 		;;
 		-p|--password)
 
 			# check if we miss some parameter.
-			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}" ] && {
 
 				# show the help for the missing parameter.
 				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
@@ -119,16 +119,16 @@ for LOOP__index in "${!GLOBAL__parameters[@]}" ; do
 			}
 
 			# store password.
-			declare -g GLOBAL__password="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+			declare -g GLOBAL__password="${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}"
 
 			# unset array items.
 			unset GLOBAL__parameters[${LOOP__index}]
-			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]
 		;;
 		-t|--tfa)
 
 			# check if we miss some parameter.
-			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}" ] && {
+			[ -z "${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}" ] && {
 
 				# show the help for the missing parameter.
 				printf "${PARSEC_PROCESS}: option \`${GLOBAL__parameters[${LOOP__index}]}' requires 1 argument\n"
@@ -139,11 +139,11 @@ for LOOP__index in "${!GLOBAL__parameters[@]}" ; do
 			}
 
 			# store password.
-			declare -g GLOBAL__tfa="${GLOBAL__parameters[$(( ${LOOP__index} + 1))]}"
+			declare -g GLOBAL__tfa="${GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]}"
 
 			# unset array items.
 			unset GLOBAL__parameters[${LOOP__index}]
-			unset GLOBAL__parameters[$(( ${LOOP__index} + 1))]
+			unset GLOBAL__parameters[$(( ${LOOP__index} + 1 ))]
 		;;
 		*)
 
