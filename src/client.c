@@ -358,7 +358,7 @@ Sint32 main(Sint32 argc, char **argv) {
 
 			/* unknown switches. */
 			case '?':
-				fprintf(stderr, "%s: unrecognized option `%s'\n", program_name, argv[optind]);
+				fprintf(stderr, "%s: unrecognized option `%s'\n", program_name, argv[optind - 1]);
 				fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 				goto error;
                 }
