@@ -1,6 +1,6 @@
 #!/bin/env bash
 #
-# 01-shared-linking.sh -- shared linking against parsec sdk.
+# 02-dso-linking.sh -- dso linking against parsec sdk.
 #
 # Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
 #
