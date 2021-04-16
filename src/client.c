@@ -284,10 +284,17 @@ Sint32 main(Sint32 argc, char **argv) {
 						if (type == 0) {
 
 							/* check if usb vendor is out of range. */
-							delim = strchr(item, ':');
 							vdi_config->usb_devices[device].vendor = strtol(item, &endptr, 16);
-							if (*endptr != ':' || vdi_config->usb_devices[device].vendor <= 0 || vdi_config->usb_devices[device].vendor > 0xffff) {
+							if (vdi_config->usb_devices[device].vendor <= 0 || vdi_config->usb_devices[device].vendor > 0xffff) {
 								fprintf(stderr, "%s: invalid vendor identifier in usb device: %s\n", program_name, item);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+
+							/* check if usb product is given. */
+							delim = strchr(item, ':');
+							if (*endptr != ':' || delim == NULL || strlen(delim) == 1) {
+								fprintf(stderr, "%s: no product identifier in usb device\n", program_name);
 								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 								goto error;
 							}
@@ -304,6 +311,13 @@ Sint32 main(Sint32 argc, char **argv) {
 						/* address. */
 						if (type == 1) {
 
+							/* check if empty ip address given. */
+							if (item[0] == '\0') {
+								fprintf(stderr, "%s: no ip address in usb redirection\n", program_name);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+
 							/* check if ipv4 address. */
 							if (inet_pton(AF_INET, item, &vdi_config->server_addrs[device].v4.sin_addr) == 1) {
 								vdi_config->server_addrs[device].v4.sin_family = AF_INET;
@@ -317,7 +331,7 @@ Sint32 main(Sint32 argc, char **argv) {
 							/* check if bad formatted address. */
 							if (vdi_config->server_addrs[device].v4.sin_family != AF_INET &&
 							    vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
-								fprintf(stderr, "%s: invalid address in usb device: %s\n", program_name, item);
+								fprintf(stderr, "%s: invalid address in usb redirection: %s\n", program_name, item);
 								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 								goto error;
 							}
@@ -325,11 +339,20 @@ Sint32 main(Sint32 argc, char **argv) {
 
 						/* port. */
 						if (type == 2) {
+
+							/* check if empty port given. */
+							if (item[0] == '\0') {
+								fprintf(stderr, "%s: no port in usb redirection\n", program_name);
+								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+								goto error;
+							}
+
+							/* convert port string to integer. */
 							port = strtol(item, NULL, 10);
 
 							/* check if port is out of range. */
 							if (port <= 0 || port >= 65536) {
-								fprintf(stderr, "%s: invalid port in usb device: %s\n", program_name, item);
+								fprintf(stderr, "%s: invalid port in usb redirection: %s\n", program_name, item);
 								fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 								goto error;
 							}
@@ -345,6 +368,20 @@ Sint32 main(Sint32 argc, char **argv) {
 							}
 						}
 						type++;
+					}
+
+					/* check if no ip address was given. */
+					if (type == 1) {
+						fprintf(stderr, "%s: no ip address in usb redirection\n", program_name);
+						fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+						goto error;
+					}
+
+					/* check if no port was given. */
+					if (type == 2) {
+						fprintf(stderr, "%s: no port in usb redirection\n", program_name);
+						fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+						goto error;
 					}
 					device++;
 				}
