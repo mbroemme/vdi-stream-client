@@ -32,7 +32,7 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 
 	/* show the help. */
 	printf("Usage: %s [session] [peer] (options)...\n", program_name);
-	printf("GPU accelerated remote host graphical console\n", program_name);
+	printf("GPU accelerated remote host graphical console\n");
 	printf("\n");
 	printf("Help Options:\n");
 	printf("  -h, --help               show this help screen\n");
@@ -403,14 +403,14 @@ Sint32 main(Sint32 argc, char **argv) {
 
 	/* mandatory arguments not given. */
 	if (strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
-		fprintf(stderr, "%s: mandatory arguments missing\n", program_name, argv[optind]);
+		fprintf(stderr, "%s: mandatory arguments missing\n", program_name);
 		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 		goto error;
 	}
 
 	/* additional non-option arguments given. */
 	if (argc > optind) {
-		fprintf(stderr, "%s: non-option arguments given\n", program_name, argv[optind]);
+		fprintf(stderr, "%s: non-option argument `%s'\n", program_name, argv[optind]);
 		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 		goto error;
 	}
