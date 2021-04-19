@@ -1,5 +1,13 @@
 # VDI Stream Client
 
+[![Build Status](https://travis-ci.com/mbroemme/vdi-stream-client.svg?branch=main)](https://travis-ci.com/mbroemme/vdi-stream-client)
+[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![GitHub license](https://img.shields.io/github/license/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/blob/main/LICENSE)
+[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
+
 A very tiny and low latency desktop streaming client for remote Windows guests
 with GPU passthrough which supports [Nvidia NVENC](https://en.wikipedia.org/wiki/Nvidia_NVENC),
 [AMD VCE](https://en.wikipedia.org/wiki/Video_Coding_Engine), [VCN](https://en.wikipedia.org/wiki/Video_Core_Next)
@@ -52,15 +60,16 @@ guest environment as virtual machine on-top of a Linux host and access either
 its local display or via remote display protocol, all of them have their pros
 and cons. Look at the table below for brief comparison.
 
-Method          | Local | Remote | 3D
-----------------|-------|--------|------------------
-[QXL with Spice](https://www.spice-space.org/)  | Yes   | Yes    | No
-[GPU Passthrough](https://www.kernel.org/doc/Documentation/vfio.txt) | Yes   | No     | Yes
-[KVM FrameRelay](https://looking-glass.io/)  | Yes   | No     | Yes
-[iGVT-g](https://www.kernel.org/doc/Documentation/vfio-mediated-device.txt)          | Yes   | No     | Yes (Intel only)
-[Virgil 3D](https://virgil3d.github.io/)       | Yes   | Yes    | Yes (Linux only)
-[Moonlight](https://moonlight-stream.org/)       | Yes   | Yes    | Yes (Nvidia only)
-[Parsec](https://parsec.app/)          | Yes   | Yes    | Yes
+Method                | Local | Remote | 3D
+----------------------|-------|--------|------------------
+[QXL with Spice](https://www.spice-space.org/)        | Yes   | Yes    | No
+[GPU Passthrough](https://www.kernel.org/doc/Documentation/vfio.txt)       | Yes   | No     | Yes
+[KVM FrameRelay](https://looking-glass.io/)        | Yes   | No     | Yes
+[iGVT-g](https://www.kernel.org/doc/Documentation/vfio-mediated-device.txt)                | Yes   | No     | Yes (Intel only)
+[Virgil 3D](https://virgil3d.github.io/)             | Yes   | Yes    | Yes (Linux only)
+[SPICE Streaming Agent](https://gitlab.freedesktop.org/spice/spice-streaming-agent) | Yes   | Yes    | Yes (Linux only)
+[Moonlight](https://moonlight-stream.org/)             | Yes   | Yes    | Yes (Nvidia only)
+[Parsec](https://parsec.app/)                | Yes   | Yes    | Yes
 
 So why another streaming client is needed if one for Windows, Linux and macOS
 exist already? Well the Parsec client is focusing on gaming capabilities while
@@ -168,7 +177,7 @@ make install
 ```
 
 Arch Linux users can download ready-to-use `PKGBUILD` file available from
-[Arch User Repository (AUR)](https://aur.archlinux.org/packages/vdi-stream-client/), following [these](https://wiki.archlinux.org/index.php/Arch_User_Repository#Build_and_install_the_package) build and install instructions.
+[Arch User Repository (AUR)](https://aur.archlinux.org/packages/vdi-stream-client/), following these [build](https://wiki.archlinux.org/index.php/Arch_User_Repository#Build_the_package) and [install](https://wiki.archlinux.org/index.php/Arch_User_Repository#Install_the_package) instructions.
 
 # Usage
 
