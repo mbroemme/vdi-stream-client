@@ -35,6 +35,7 @@
 /* sdl includes. */
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 
 /* opengl includes. */
 #include <GL/gl.h>
@@ -81,6 +82,7 @@ struct parsec_context_s {
 	GLfloat texture_min_y;
 	GLfloat texture_max_x;
 	GLfloat texture_max_y;
+	TTF_Font *font;
 
 	/* audio. */
 	SDL_AudioDeviceID audio;

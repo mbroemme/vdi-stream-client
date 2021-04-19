@@ -35,7 +35,6 @@
 
 /* sdl includes. */
 #include <SDL2/SDL_syswm.h>
-#include <SDL2/SDL_ttf.h>
 
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
@@ -89,6 +88,37 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 	}
 }
 
+/* render text. */
+Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
+	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+	SDL_Color color = { 0x88, 0x88, 0x88, 0xFF };
+	GLfloat texture_coord[4];
+	GLenum gl_error;
+
+	/* create the text surface. */
+	parsec_context->surface_ttf = TTF_RenderUTF8_Blended(parsec_context->font, text, color);
+	if (parsec_context->surface_ttf == NULL) {
+		vdi_stream_client__log_error("TTF surface creation failed: %s\n", TTF_GetError());
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+
+	/* convert the text into an opengl texture. */
+	parsec_context->texture_ttf = vdi_stream_client__gl_load_texture(parsec_context->surface_ttf, texture_coord);
+	if ((gl_error = glGetError()) != GL_NO_ERROR) {
+		vdi_stream_client__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
+		return VDI_STREAM_CLIENT_ERROR;
+	}
+
+	/* make texture coordinates easy to understand. */
+	parsec_context->texture_min_x = texture_coord[0];
+	parsec_context->texture_min_y = texture_coord[1];
+	parsec_context->texture_max_x = texture_coord[2];
+	parsec_context->texture_max_y = texture_coord[3];
+
+	/* no error. */
+	return VDI_STREAM_CLIENT_SUCCESS;
+}
+
 /* parsec event loop. */
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
@@ -100,13 +130,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	Sint32 error = 0;
 	Sint32 x = 0;
 	Sint32 y = 0;
-	GLenum gl_error;
-	GLfloat texture_coord[4];
 	SDL_AudioSpec want = {0};
 	SDL_AudioSpec have = {0};
 	SDL_SysWMinfo wm_info;
-	SDL_Color color = { 0x88, 0x88, 0x88, 0xFF };
-	TTF_Font *font;
 	ParsecStatus e;
 	ParsecConfig network_cfg = PARSEC_DEFAULTS;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
@@ -137,8 +163,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* load font. */
-	font = TTF_OpenFontRW(SDL_RWFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), 1, 16);
-	if (font == NULL) {
+	parsec_context.font = TTF_OpenFontRW(SDL_RWFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), 1, 16);
+	if (parsec_context.font == NULL) {
 		vdi_stream_client__log_error("Loading font failed: %s\n", TTF_GetError());
 		goto error;
 	}
@@ -321,25 +347,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	parsec_context.surface_ttf = TTF_RenderUTF8_Blended(font, "Reconnecting...", color);
-	if (parsec_context.surface_ttf == NULL) {
-		vdi_stream_client__log_error("TTF surface creation failed: %s\n", TTF_GetError());
-		goto error;
-	}
-
-	/* convert the text into an opengl texture. */
-	parsec_context.texture_ttf = vdi_stream_client__gl_load_texture(parsec_context.surface_ttf, texture_coord);
-	if ((gl_error = glGetError()) != GL_NO_ERROR) {
-		vdi_stream_client__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
-		goto error;
-	}
-
-	/* make texture coordinates easy to understand. */
-	parsec_context.texture_min_x = texture_coord[0];
-	parsec_context.texture_min_y = texture_coord[1];
-	parsec_context.texture_max_x = texture_coord[2];
-	parsec_context.texture_max_y = texture_coord[3];
-
 	/* sdl video thread. */
 	video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
 	if (video_thread == NULL) {
@@ -410,6 +417,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			switch (msg.type) {
 				case SDL_QUIT:
 					parsec_context.done = SDL_TRUE;
+
+					/* render shutdown text. */
+					vdi_stream_client__render_text(&parsec_context, "Closing...");
 					break;
 				case SDL_KEYUP:
 
@@ -570,6 +580,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 		if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
+
+			/* render reconnect text. */
+			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
+
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = SDL_FALSE;
@@ -583,6 +597,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
+
+			/* render reconnect text. */
+			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
+
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = SDL_FALSE;
@@ -693,7 +711,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	ParsecDestroy(parsec_context.parsec);
 
 	/* ttf destroy. */
-	TTF_CloseFont(font);
+	TTF_CloseFont(parsec_context.font);
 	TTF_Quit();
 
 	/* sdl destroy. */
@@ -713,7 +731,7 @@ error:
 	ParsecDestroy(parsec_context.parsec);
 
 	/* ttf destroy. */
-	TTF_CloseFont(font);
+	TTF_CloseFont(parsec_context.font);
 	TTF_Quit();
 
 	/* sdl destroy. */

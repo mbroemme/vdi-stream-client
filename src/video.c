@@ -199,6 +199,10 @@ Sint32 vdi_stream_client__video_thread(void *opaque) {
 		SDL_GL_SwapWindow(parsec_context->window);
 	}
 
+	/* show closing text. */
+	vdi_stream_client__frame_text(parsec_context);
+	SDL_GL_SwapWindow(parsec_context->window);
+
 	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
 	SDL_GL_DeleteContext(parsec_context->gl);
 
