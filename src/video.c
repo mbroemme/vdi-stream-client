@@ -70,7 +70,7 @@ GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture
 #endif
 	);
 	if (image == NULL) {
-		return 0;
+		return VDI_STREAM_CLIENT_SUCCESS;
 	}
 
 	/* save the alpha blending attributes. */

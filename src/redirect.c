@@ -49,9 +49,9 @@ static Sint32 vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
 	Sint32 r = read(server_fd, data, count);
 	if (r < 0) {
 		if (errno == EAGAIN) {
-			return 0;
+			return VDI_STREAM_CLIENT_SUCCESS;
 		}
-		return -1;
+		return VDI_STREAM_CLIENT_ERROR;
 	}
 
 	/* client disconnected. */
@@ -67,16 +67,16 @@ static Sint32 vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count
 	Sint32 r = write(server_fd, data, count);
 	if (r < 0) {
 		if (errno == EAGAIN) {
-			return 0;
+			return VDI_STREAM_CLIENT_SUCCESS;
 		}
 
 		/* client disconnected. */
 		if (errno == EPIPE) {
 			close(server_fd);
 			server_fd = -1;
-			return 0;
+			return VDI_STREAM_CLIENT_SUCCESS;
 		}
-		return -1;
+		return VDI_STREAM_CLIENT_ERROR;
 	}
 	return r;
 }
