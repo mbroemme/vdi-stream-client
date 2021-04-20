@@ -513,15 +513,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 						SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 					}
 
-					/* check if we need to grab mouse in relative mode. */
-					if (vdi_config->relative == 1 && parsec_context.relative == SDL_TRUE) {
-
-						/* avoid cursor flickering. */
-						SDL_ShowCursor(SDL_FALSE);
-						SDL_SetRelativeMouseMode(SDL_TRUE);
-						SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
-					}
-
 					/* store mouse button state for use in cursor update. */
 					parsec_context.pressed = SDL_TRUE;
 
