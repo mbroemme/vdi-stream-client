@@ -566,6 +566,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
+
+			/* render shutdown text. */
+			vdi_stream_client__render_text(&parsec_context, "Closing...");
 			vdi_stream_client__log_error("Parsec disconnected\n");
 			parsec_context.done = SDL_TRUE;
 		}
@@ -574,7 +577,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* render reconnect text. */
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
-
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = SDL_FALSE;
@@ -583,6 +585,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* check network connection status. */
 		if (vdi_config->reconnect == 0 && parsec_context.client_status.networkFailure == 1) {
+
+			/* render shutdown text. */
+			vdi_stream_client__render_text(&parsec_context, "Closing...");
 			vdi_stream_client__log_error("Network disconnected\n");
 			parsec_context.done = SDL_TRUE;
 		}
@@ -591,7 +596,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* render reconnect text. */
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
-
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = SDL_FALSE;
