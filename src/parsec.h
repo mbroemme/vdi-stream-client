@@ -59,6 +59,7 @@ struct parsec_context_s {
 	SDL_bool connection;
 	SDL_bool decoder;
 	SDL_bool focus;
+	SDL_bool relative;
 	SDL_bool pressed;
 #ifdef HAVE_LIBPARSEC
 	Parsec *parsec;

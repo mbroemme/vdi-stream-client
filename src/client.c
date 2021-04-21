@@ -54,7 +54,6 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 	printf("      --no-upnp            disable upnp nat traversal\n");
 	printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
-	printf("      --no-relative        disable relative mouse grab\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("      --no-audio           disable audio streaming\n");
@@ -126,7 +125,6 @@ Sint32 main(Sint32 argc, char **argv) {
 		{"no-upnp", no_argument, NULL, 'b'},
 		{"no-reconnect", no_argument, NULL, 'r'},
 		{"no-grab", no_argument, NULL, 'g'},
-		{"no-relative", no_argument, NULL, 'e'},
 		{"no-screensaver", no_argument, NULL, 'z'},
 		{"no-clipboard", no_argument, NULL, 'p'},
 		{"no-audio", no_argument, NULL, 'a'},
@@ -164,7 +162,6 @@ Sint32 main(Sint32 argc, char **argv) {
 	vdi_config->upnp = 1;
 	vdi_config->reconnect = 1;
 	vdi_config->grab = 1;
-	vdi_config->relative = 1;
 	vdi_config->screensaver = 1;
 	vdi_config->clipboard = 1;
 	vdi_config->audio = 1;
@@ -242,9 +239,6 @@ Sint32 main(Sint32 argc, char **argv) {
 				continue;
 			case 'g':
 				vdi_config->grab = 0;
-				continue;
-			case 'e':
-				vdi_config->relative = 0;
 				continue;
 			case 'z':
 				vdi_config->screensaver = 0;

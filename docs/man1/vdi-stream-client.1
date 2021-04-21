@@ -117,19 +117,12 @@ unstable and slow network link. It is enabled by default.
 Disable exclusive mouse grab. If disabled, the mouse is passive grabbed
 and can enter and leave the window when mouse is moved. If enabled, the
 first press of any mouse button will lock the mouse into the window. To
-release the mouse grab you need to press "Ctrl+Alt". It is enabled by
-default.
-.TP 8
-.B  \-\-no\-relative
-.ti 15
-Disable relative mouse grab. If disabled, the mouse is never put into
-relative mode and grabbed by the host application. If enabled, the mouse
-is grabbed when host applications requests it, mostly the case for
-DirectX fullscreen applications and during login of the Windows user.
-The \-\-no\-grab option will not disable relative grabbing. Both options
-must be used to disable grabbing completely. Without relative grabbing
-most fullscreen games will behave unpredictable. To release the mouse
-grab you need to press "Ctrl+Alt". It is enabled by default.
+release the mouse grab you need to press "Ctrl+Alt". If an application
+requests relative mode it is being grabbed regardless of this option,
+mostly the case for DirectX applications and during login of the Windows
+user. Without relative grabbing most games would behave unpredictable.
+A relative grabe can be released with "Ctrl+Alt". A relative grab can be
+noticed in the Window title and with an invisible the mouse cursor.
 .TP 8
 .B  \-\-no\-screensaver
 .ti 15

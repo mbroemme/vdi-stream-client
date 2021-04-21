@@ -52,7 +52,7 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 }
 
 /* parsec cursor event. */
-static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, SDL_bool relative) {
+static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, SDL_bool grab) {
 	if (cursor->imageUpdate == SDL_TRUE) {
 		Uint8 *image = ParsecGetBuffer(parsec_context->parsec, buffer_key);
 
@@ -73,18 +73,29 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->modeUpdate == SDL_TRUE && relative == SDL_TRUE) {
+	if (cursor->modeUpdate == SDL_TRUE) {
 		if (parsec_context->focus == SDL_TRUE) {
 			if (SDL_GetRelativeMouseMode() == SDL_TRUE && cursor->relative == SDL_FALSE) {
 				SDL_SetRelativeMouseMode(SDL_FALSE);
 				SDL_ShowCursor(SDL_TRUE);
 				SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
+				if (parsec_context->pressed == SDL_FALSE && grab == SDL_FALSE) {
+					SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
+				}
 			}
 			if (SDL_GetRelativeMouseMode() == SDL_FALSE && cursor->relative == SDL_TRUE) {
 				SDL_ShowCursor(SDL_FALSE);
 				SDL_SetRelativeMouseMode(SDL_TRUE);
+				if (parsec_context->pressed == SDL_FALSE) {
+					SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+				}
+			}
+			if (SDL_GetRelativeMouseMode() == SDL_FALSE && cursor->relative == SDL_TRUE && parsec_context->pressed == SDL_TRUE) {
+				SDL_ShowCursor(SDL_FALSE);
+				SDL_SetRelativeMouseMode(SDL_TRUE);
 			}
 		}
+		parsec_context->relative = cursor->relative;
 	}
 }
 
@@ -236,11 +247,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* check if exclusive mouse grab should be disabled. */
 	if (vdi_config->grab == 0) {
 		vdi_stream_client__log_info("Disable exclusive mouse grab\n");
-	}
-
-	/* check if relative mouse grab should be disabled. */
-	if (vdi_config->relative == 0) {
-		vdi_stream_client__log_info("Disable relative mouse grab\n");
 	}
 
 	/* configure screen saver. */
@@ -437,19 +443,31 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					if ((msg.key.keysym.mod & KMOD_LCTRL) != 0 &&
 					    (msg.key.keysym.mod & KMOD_LALT) != 0) {
 
-						/* check if we need to release mouse grab. */
-						if (vdi_config->grab == 1 && grab_forced == SDL_FALSE && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
+						/* check if no forced grab. */
+						if (grab_forced == SDL_FALSE) {
 
 							/* check if no mouse button is hold down. */
 							if ((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
 							    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
 							    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
-								SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
-								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
-							}
 
-							/* don't send hotkey to host and break execution. */
-							break;
+								/* check if we need to release mouse grab. */
+								if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
+									SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+								}
+
+								/* check if we need to release relative grab. */
+								if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
+									SDL_SetRelativeMouseMode(SDL_FALSE);
+									SDL_ShowCursor(SDL_TRUE);
+								}
+
+								/* remove grab information from window title. */
+								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
+
+								/* don't send hotkey to host and break execution. */
+								break;
+							}
 						}
 					}
 
@@ -465,6 +483,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 									SDL_EnableScreenSaver();
 								}
 
+								/* check if we need to release relative grab. */
+								if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
+									SDL_SetRelativeMouseMode(SDL_FALSE);
+									SDL_ShowCursor(SDL_TRUE);
+								}
+
 								SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
 								grab_forced = SDL_FALSE;
@@ -473,6 +497,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								/* disable screensaver if entering forced lock. */
 								if (vdi_config->screensaver == 1) {
 									SDL_DisableScreenSaver();
+								}
+
+								/* check if we need to grab mouse in relative mode. */
+								if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
+									SDL_ShowCursor(SDL_FALSE);
+									SDL_SetRelativeMouseMode(SDL_TRUE);
 								}
 
 								SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
@@ -491,6 +521,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					pmsg.keyboard.pressed = SDL_TRUE;
 					break;
 				case SDL_MOUSEMOTION:
+
+					/* check if we released relative mouse grab. */
+					if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
+
+						/* no mouse motion events should be forwarded. */
+						break;
+					}
+
 					pmsg.type = MESSAGE_MOUSE_MOTION;
 					pmsg.mouseMotion.relative = SDL_GetRelativeMouseMode();
 					pmsg.mouseMotion.x = pmsg.mouseMotion.relative ? msg.motion.xrel : msg.motion.x + 1;
@@ -507,10 +545,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					break;
 				case SDL_MOUSEBUTTONDOWN:
 
-					/* check if we need to grab mouse. */
-					if (vdi_config->grab == 1 && grab_forced == SDL_FALSE) {
-						SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
-						SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+					/* check if no forced grab. */
+					if (grab_forced == SDL_FALSE) {
+
+						/* check if we need to grab mouse. */
+						if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_FALSE) {
+							SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
+							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+						}
+
+						/* check if we need to grab mouse in relative mode. */
+						if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
+							SDL_ShowCursor(SDL_FALSE);
+							SDL_SetRelativeMouseMode(SDL_TRUE);
+							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+						}
 					}
 
 					/* store mouse button state for use in cursor update. */
@@ -611,7 +660,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
 			switch (event.type) {
 				case CLIENT_EVENT_CURSOR:
-					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->relative);
+					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->grab);
 					break;
 				case CLIENT_EVENT_USER_DATA:
 					if (vdi_config->clipboard == 1) {
