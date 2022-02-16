@@ -73,7 +73,7 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->modeUpdate == SDL_TRUE) {
+	if (cursor->relative == SDL_TRUE || cursor->hidden == SDL_TRUE) {
 		if (parsec_context->focus == SDL_TRUE) {
 			if (SDL_GetRelativeMouseMode() == SDL_TRUE && cursor->relative == SDL_FALSE) {
 				SDL_SetRelativeMouseMode(SDL_FALSE);
