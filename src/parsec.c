@@ -52,7 +52,7 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 }
 
 /* parsec cursor event. */
-static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, SDL_bool grab) {
+static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, SDL_bool grab, SDL_bool grab_forced) {
 	if (cursor->imageUpdate == SDL_TRUE) {
 		Uint8 *image = ParsecGetBuffer(parsec_context->parsec, buffer_key);
 
@@ -73,27 +73,20 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->relative == SDL_TRUE || cursor->hidden == SDL_TRUE) {
-		if (parsec_context->focus == SDL_TRUE) {
-			if (SDL_GetRelativeMouseMode() == SDL_TRUE && cursor->relative == SDL_FALSE) {
-				SDL_SetRelativeMouseMode(SDL_FALSE);
-				SDL_ShowCursor(SDL_TRUE);
-				SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
-				if (parsec_context->pressed == SDL_FALSE && grab == SDL_FALSE) {
-					SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
-				}
-			}
-			if (SDL_GetRelativeMouseMode() == SDL_FALSE && cursor->relative == SDL_TRUE) {
-				SDL_ShowCursor(SDL_FALSE);
-				SDL_SetRelativeMouseMode(SDL_TRUE);
-				if (parsec_context->pressed == SDL_FALSE) {
-					SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
-				}
-			}
-			if (SDL_GetRelativeMouseMode() == SDL_FALSE && cursor->relative == SDL_TRUE && parsec_context->pressed == SDL_TRUE) {
-				SDL_ShowCursor(SDL_FALSE);
-				SDL_SetRelativeMouseMode(SDL_TRUE);
-			}
+	if (cursor->relative == SDL_TRUE && cursor->hidden == SDL_TRUE) {
+		SDL_ShowCursor(SDL_FALSE);
+		SDL_SetRelativeMouseMode(SDL_TRUE);
+		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE) {
+			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+		}
+		parsec_context->relative = cursor->relative;
+	}
+	if (cursor->relative == SDL_FALSE && cursor->hidden == SDL_FALSE) {
+		SDL_SetRelativeMouseMode(SDL_FALSE);
+		SDL_ShowCursor(SDL_TRUE);
+		SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
+		if (parsec_context->pressed == SDL_FALSE && grab == SDL_FALSE && grab_forced == SDL_FALSE) {
+			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
 		}
 		parsec_context->relative = cursor->relative;
 	}
@@ -660,7 +653,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
 			switch (event.type) {
 				case CLIENT_EVENT_CURSOR:
-					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->grab);
+					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->grab, grab_forced);
 					break;
 				case CLIENT_EVENT_USER_DATA:
 					if (vdi_config->clipboard == 1) {
