@@ -49,6 +49,7 @@ if test "x$enable_internal_parsec_sdk" != "xyes"; then
 	# checking for external parsec sdk.
 	AC_CHECK_HEADER([parsec/parsec.h], [], [AC_MSG_ERROR([*** parsec/parsec.h is required, install parsec-sdk header files])])
 	AC_CHECK_LIB([parsec], [ParsecInit], [], [AC_MSG_ERROR([*** ParsecInit is required, install parsec-sdk library files])])
+	AC_CHECK_MEMBER([struct ParsecCursor.hidden], [], [AC_MSG_ERROR([*** struct ParsecCursor.hidden is required, install parsec-sdk >= 6.0])], [[#include <parsec/parsec.h>]])
 fi
 
 # condition for parsec sdk to usage.
