@@ -74,22 +74,18 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 	}
 
 	if (SDL_GetRelativeMouseMode() == SDL_FALSE &&
-	    cursor->relative == SDL_TRUE &&
-	    cursor->hidden == SDL_TRUE) {
+	   (cursor->relative == SDL_TRUE || cursor->hidden == SDL_TRUE)) {
 		SDL_ShowCursor(SDL_FALSE);
 		SDL_SetRelativeMouseMode(SDL_TRUE);
 		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE) {
 			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 		}
 		parsec_context->relative = cursor->relative;
-	}
-	if (SDL_GetRelativeMouseMode() == SDL_TRUE &&
-	    cursor->relative == SDL_FALSE &&
-	    cursor->hidden == SDL_FALSE) {
+	} else if (SDL_GetRelativeMouseMode() == SDL_TRUE &&
+	   (cursor->relative == SDL_FALSE || cursor->hidden == SDL_FALSE)) {
 		SDL_SetRelativeMouseMode(SDL_FALSE);
 		SDL_ShowCursor(SDL_TRUE);
-		SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
-		if (parsec_context->pressed == SDL_FALSE && grab == SDL_FALSE && grab_forced == SDL_FALSE) {
+		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE && grab == SDL_FALSE) {
 			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
 		}
 		parsec_context->relative = cursor->relative;
