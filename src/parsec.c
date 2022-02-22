@@ -73,7 +73,9 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (cursor->relative == SDL_TRUE && cursor->hidden == SDL_TRUE) {
+	if (SDL_GetRelativeMouseMode() == SDL_FALSE &&
+	    cursor->relative == SDL_TRUE &&
+	    cursor->hidden == SDL_TRUE) {
 		SDL_ShowCursor(SDL_FALSE);
 		SDL_SetRelativeMouseMode(SDL_TRUE);
 		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE) {
@@ -81,7 +83,9 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 		parsec_context->relative = cursor->relative;
 	}
-	if (cursor->relative == SDL_FALSE && cursor->hidden == SDL_FALSE) {
+	if (SDL_GetRelativeMouseMode() == SDL_TRUE &&
+	    cursor->relative == SDL_FALSE &&
+	    cursor->hidden == SDL_FALSE) {
 		SDL_SetRelativeMouseMode(SDL_FALSE);
 		SDL_ShowCursor(SDL_TRUE);
 		SDL_WarpMouseInWindow(parsec_context->window, cursor->positionX, cursor->positionY);
