@@ -127,7 +127,6 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
 	struct redirect_context_s redirect_context[USB_MAX] = {0};
-	SDL_bool focus = SDL_FALSE;
 	SDL_bool grab_forced = SDL_FALSE;
 	Uint32 wait_time = 0;
 	Uint32 last_time = 0;
@@ -421,10 +420,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					vdi_stream_client__render_text(&parsec_context, "Closing...");
 					break;
 				case SDL_KEYUP:
-
-					/* TODO: we need to re-grab keyboard later. (workaround for buggy x11 and sdl) */
-					focus = SDL_FALSE;
-
 					pmsg.type = MESSAGE_KEYBOARD;
 					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
 					pmsg.keyboard.mod = msg.key.keysym.mod;
@@ -574,27 +569,15 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					break;
 				case SDL_WINDOWEVENT:
 					switch (msg.window.event) {
-						case SDL_WINDOWEVENT_FOCUS_GAINED:
+						case SDL_WINDOWEVENT_ENTER:
 							SDL_EventState(SDL_KEYDOWN, SDL_ENABLE);
 							SDL_EventState(SDL_KEYUP, SDL_ENABLE);
-							XGrabKeyboard(wm_info.info.x11.display, wm_info.info.x11.window, False, GrabModeAsync, GrabModeAsync, CurrentTime);
-
-							/* TODO: copy client to host clipboard. (workaround for buggy x11 and sdl) */
-							if (vdi_config->clipboard == 1 && SDL_HasClipboardText() == SDL_TRUE) {
-								ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
-							}
-
-							break;
-						case SDL_WINDOWEVENT_FOCUS_LOST:
-							SDL_EventState(SDL_KEYDOWN, SDL_DISABLE);
-							SDL_EventState(SDL_KEYUP, SDL_DISABLE);
-							XUngrabKeyboard(wm_info.info.x11.display, CurrentTime);
-							break;
-						case SDL_WINDOWEVENT_ENTER:
-							parsec_context.focus = SDL_TRUE;
+							SDL_SetWindowKeyboardGrab(parsec_context.window, SDL_TRUE);
 							break;
 						case SDL_WINDOWEVENT_LEAVE:
-							parsec_context.focus = SDL_FALSE;
+							SDL_EventState(SDL_KEYDOWN, SDL_DISABLE);
+							SDL_EventState(SDL_KEYUP, SDL_DISABLE);
+							SDL_SetWindowKeyboardGrab(parsec_context.window, SDL_FALSE);
 							break;
 					}
 					break;
@@ -663,9 +646,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				default:
 					break;
 			}
-
-			/* TODO: we need to re-grab keyboard later. (workaround for buggy x11 and sdl) */
-			focus = SDL_FALSE;
 		}
 
 		/* TODO: check if we need to grab input to force decoder initialization. (workaround for buggy parsec sdk) */
@@ -711,17 +691,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
 		}
 
-		/* check if we need to regrab keyboard on modifier keypress. */
-		if (focus == SDL_FALSE && (SDL_GetWindowFlags(parsec_context.window) & SDL_WINDOW_INPUT_FOCUS) != 0) {
-			XGrabKeyboard(wm_info.info.x11.display, wm_info.info.x11.window, False, GrabModeAsync, GrabModeAsync, CurrentTime);
-			focus = SDL_TRUE;
-		}
-
 		SDL_Delay(1);
 	}
 
 	/* already release any grabbed keyboard because thread termination can take some time. */
-	XUngrabKeyboard(wm_info.info.x11.display, CurrentTime);
+	SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
 
 	/* stop network threads for usb redirection. */
 	if (vdi_config->usb_devices[0].vendor != 0) {

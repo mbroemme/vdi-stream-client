@@ -21,14 +21,11 @@ PKG_PROG_PKG_CONFIG
 AC_CHECK_HEADER([dlfcn.h], [], [AC_MSG_ERROR([*** dlfcn.h is required, install glibc header files])])
 AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_ERROR([*** dlopen is required, install glibc library files])])
 
-# checking for libx11 library.
-PKG_CHECK_MODULES([X11], [x11])
-
 # checking for libglvnd library.
 PKG_CHECK_MODULES([GL], [gl])
 
 # checking for sdl2 library.
-PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.5])
+PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.16])
 
 # checking for sdl2_ttf library.
 PKG_CHECK_MODULES([SDL2_TTF], [SDL2_ttf >= 2.0.5])

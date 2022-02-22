@@ -113,8 +113,7 @@ without chroma subsampling for sharp and crystal clear text.
 * Fully CLI based customization. User can specify all required parameters via
   command line switches, allow perfect integration into different window
   managers.
-* Desktop in window support with [XGrabKeyboard](https://tronche.com/gui/x/xlib/input/XGrabKeyboard.html)
-  and [XUngrabKeyboard](https://tronche.com/gui/x/xlib/input/XUngrabKeyboard.html)
+* Desktop in window support with [SDL_SetWindowKeyboardGrab](https://wiki.libsdl.org/SDL_SetWindowKeyboardGrab)
   while leaving mouse pointer ungrabbed. Supporting Alt+Tab and Windows special
   keys grab, even if assigned to the window manager.
 * SDL window is created without `SDL_WINDOW_RESIZABLE` flag set, so window
@@ -160,14 +159,14 @@ without chroma subsampling for sharp and crystal clear text.
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl2`, `sdl2_ttf`, `libx11`, `libglvnd`, `libusb`,
-`usbredir` and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk).
-The build system will search the SDK first in build directory and use DSO
-linking, the resulting binary will be redistributable but you need to ship
-Parsec library somehow. If not found, it will search in system-wide include and
-library directories and link accordingly, binary may not be redistributable.
-For build and install use the commands below and if `--prefix=/usr` is used,
-the `make install` command must be run as root user.
+application. It requires `sdl2`, `sdl2_ttf`, `libglvnd`, `libusb`, `usbredir`
+and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
+system will search the SDK first in build directory and use DSO linking, the
+resulting binary will be redistributable but you need to ship Parsec library
+somehow. If not found, it will search in system-wide include and library
+directories and link accordingly, binary may not be redistributable. For build
+and install use the commands below and if `--prefix=/usr` is used, the
+`make install` command must be run as root user.
 
 ```
 git clone https://github.com/parsec-cloud/parsec-sdk
