@@ -256,6 +256,11 @@ solution requires a host service running inside the Windows environment.
 Hardware encoding is supported by FFmpeg for the major GPU vendors. VDI Stream
 Host application seems reasonable.
 
+# Thanks
+
+A special thanks goes to Parsec Cloud, Inc. as they provided a Parsec Warp
+subscription to support this project.
+
 # Support
 
 If you want to help out with development without providing code yourself, you
