@@ -148,7 +148,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		goto error;
 	}
 
-	while (redirect_context->parsec_context->done == SDL_FALSE) {
+	while (!redirect_context->parsec_context->done) {
 		memset(&timeout, 0, sizeof(timeout));
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
@@ -157,7 +157,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (server_fd == -1) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -207,7 +207,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (host == NULL) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -275,7 +275,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (server_fd != -1) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -395,7 +395,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 error:
 
 	/* stop main thread. */
-	redirect_context->parsec_context->done = SDL_TRUE;
+	redirect_context->parsec_context->done = true;
 
 	/* close client socket. */
 	if (server_fd != -1) {

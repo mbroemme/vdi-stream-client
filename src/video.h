@@ -21,8 +21,7 @@
 #define _VIDEO_H
 
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 /* opengl includes. */
 #include <GL/gl.h>

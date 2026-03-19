@@ -34,7 +34,6 @@
 #include <unistd.h>
 
 /* sdl includes. */
-#include <SDL2/SDL_syswm.h>
 
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
@@ -52,18 +51,25 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 }
 
 /* parsec cursor event. */
-static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, SDL_bool grab, SDL_bool grab_forced) {
-	if (cursor->imageUpdate == SDL_TRUE) {
+static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, bool grab, bool grab_forced) {
+	if (cursor->imageUpdate) {
 		Uint8 *image = ParsecGetBuffer(parsec_context->parsec, buffer_key);
 
 		if (image != NULL) {
-			SDL_Surface *surface = SDL_CreateRGBSurfaceFrom(image, cursor->width, cursor->height,
-				32, cursor->width * 4, 0xff, 0xff00, 0xff0000, 0xff000000);
-			SDL_Cursor *sdlCursor = SDL_CreateColorCursor(surface, cursor->hotX, cursor->hotY);
-			SDL_SetCursor(sdlCursor);
+			SDL_Surface *surface = SDL_CreateSurfaceFrom(cursor->width, cursor->height,
+				SDL_PIXELFORMAT_RGBA32, image, cursor->width * 4);
+			SDL_Cursor *sdlCursor = NULL;
 
-			SDL_FreeCursor(parsec_context->cursor);
-			parsec_context->cursor = sdlCursor;
+			if (surface != NULL) {
+				sdlCursor = SDL_CreateColorCursor(surface, cursor->hotX, cursor->hotY);
+				SDL_DestroySurface(surface);
+			}
+
+			if (sdlCursor != NULL) {
+				SDL_SetCursor(sdlCursor);
+				SDL_DestroyCursor(parsec_context->cursor);
+				parsec_context->cursor = sdlCursor;
+			}
 
 #ifdef HAVE_LIBPARSEC
 			ParsecFree(image);
@@ -73,19 +79,19 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 		}
 	}
 
-	if (SDL_GetRelativeMouseMode() == SDL_FALSE &&
-	   (cursor->relative == SDL_TRUE || cursor->hidden == SDL_TRUE)) {
-		SDL_ShowCursor(SDL_FALSE);
-		SDL_SetRelativeMouseMode(SDL_TRUE);
-		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE) {
+	if (!SDL_GetWindowRelativeMouseMode(parsec_context->window) &&
+	   (cursor->relative || cursor->hidden)) {
+		SDL_HideCursor();
+		SDL_SetWindowRelativeMouseMode(parsec_context->window, true);
+		if (!parsec_context->pressed && !grab_forced) {
 			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 		}
 		parsec_context->relative = cursor->relative;
-	} else if (SDL_GetRelativeMouseMode() == SDL_TRUE &&
-	   (cursor->relative == SDL_FALSE || cursor->hidden == SDL_FALSE)) {
-		SDL_SetRelativeMouseMode(SDL_FALSE);
-		SDL_ShowCursor(SDL_TRUE);
-		if (parsec_context->pressed == SDL_FALSE && grab_forced == SDL_FALSE && grab == SDL_FALSE) {
+	} else if (SDL_GetWindowRelativeMouseMode(parsec_context->window) &&
+	   (!cursor->relative || !cursor->hidden)) {
+		SDL_SetWindowRelativeMouseMode(parsec_context->window, false);
+		SDL_ShowCursor();
+		if (!parsec_context->pressed && !grab_forced && !grab) {
 			SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
 		}
 		parsec_context->relative = cursor->relative;
@@ -100,9 +106,9 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 	GLenum gl_error;
 
 	/* create the text surface. */
-	parsec_context->surface_ttf = TTF_RenderUTF8_Blended(parsec_context->font, text, color);
+	parsec_context->surface_ttf = TTF_RenderText_Blended(parsec_context->font, text, 0, color);
 	if (parsec_context->surface_ttf == NULL) {
-		vdi_stream_client__log_error("TTF surface creation failed: %s\n", TTF_GetError());
+		vdi_stream_client__log_error("TTF surface creation failed: %s\n", SDL_GetError());
 		return VDI_STREAM_CLIENT_ERROR;
 	}
 
@@ -127,15 +133,12 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	struct parsec_context_s parsec_context = {0};
 	struct redirect_context_s redirect_context[USB_MAX] = {0};
-	SDL_bool grab_forced = SDL_FALSE;
+	bool grab_forced = false;
 	Uint32 wait_time = 0;
-	Uint32 last_time = 0;
-	Sint32 error = 0;
-	Sint32 x = 0;
-	Sint32 y = 0;
+	Uint64 last_time = 0;
+	float x = 0.0f;
+	float y = 0.0f;
 	SDL_AudioSpec want = {0};
-	SDL_AudioSpec have = {0};
-	SDL_SysWMinfo wm_info;
 	ParsecStatus e;
 	ParsecConfig network_cfg = PARSEC_DEFAULTS;
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
@@ -150,25 +153,22 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* sdl init. */
 	vdi_stream_client__log_info("Initialize SDL\n");
-	error = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
-	if (error != 0) {
+	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
 		vdi_stream_client__log_error("Initialization failed: %s\n", SDL_GetError());
 		goto error;
 	}
-	SDL_VERSION(&wm_info.version);
 
 	/* ttf init. */
 	vdi_stream_client__log_info("Initialize TTF\n");
-	error = TTF_Init();
-	if (error != 0) {
-		vdi_stream_client__log_error("Initialization failed: %s\n", TTF_GetError());
+	if (!TTF_Init()) {
+		vdi_stream_client__log_error("Initialization failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
 	/* load font. */
-	parsec_context.font = TTF_OpenFontRW(SDL_RWFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), 1, 16);
+	parsec_context.font = TTF_OpenFontIO(SDL_IOFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), true, 16.0f);
 	if (parsec_context.font == NULL) {
-		vdi_stream_client__log_error("Loading font failed: %s\n", TTF_GetError());
+		vdi_stream_client__log_error("Loading font failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
@@ -270,7 +270,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* wait until connection is established. */
 	vdi_stream_client__log_info("Connect to Parsec host\n");
-	while (parsec_context.decoder == SDL_FALSE) {
+	while (!parsec_context.decoder) {
 
 		/* get client status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
@@ -281,9 +281,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			/* decoder not yet initialized. */
 			if (parsec_context.client_status.decoder->width == 0 &&
 			    parsec_context.client_status.decoder->height == 0 &&
-			    parsec_context.connection == SDL_FALSE) {
+			    !parsec_context.connection) {
 				vdi_stream_client__log_info("Initialize Video Decoder\n");
-				parsec_context.connection = SDL_TRUE;
+				parsec_context.connection = true;
 			}
 
 			/* decoder initialized. */
@@ -292,7 +292,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				vdi_stream_client__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
 				parsec_context.window_width = parsec_context.client_status.decoder->width;
 				parsec_context.window_height = parsec_context.client_status.decoder->height;
-				parsec_context.decoder = SDL_TRUE;
+				parsec_context.decoder = true;
 			}
 		}
 
@@ -312,15 +312,15 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* check if connected and decoder initialized. */
-	if (parsec_context.connection == SDL_FALSE &&
-	    parsec_context.decoder == SDL_FALSE) {
+	if (!parsec_context.connection &&
+	    !parsec_context.decoder) {
 		vdi_stream_client__log_error("Connection failed with code: %d\n", e);
 		goto error;
 	}
 
 	/* check if connected but decoder initialization failed. */
-	if (parsec_context.connection == SDL_TRUE &&
-	    parsec_context.decoder == SDL_FALSE) {
+	if (parsec_context.connection &&
+	    !parsec_context.decoder) {
 
 		/* TODO: workaround if decoder initialization failed. (workaround for buggy parsec sdk) */
 		parsec_context.window_width = 640;
@@ -328,11 +328,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
-					SDL_WINDOWPOS_UNDEFINED,
-					SDL_WINDOWPOS_UNDEFINED,
 					parsec_context.window_width,
 					parsec_context.window_height,
-					SDL_WINDOW_OPENGL | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_INPUT_FOCUS
+					SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream_client__log_error("Window creation failed: %s\n", SDL_GetError());
@@ -355,9 +353,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
 		want.freq = PARSEC_AUDIO_SAMPLE_RATE;
-		want.format = AUDIO_S16;
+		want.format = SDL_AUDIO_S16;
 		want.channels = PARSEC_AUDIO_CHANNELS;
-		want.samples = 2048;
 
 		/* the number of audio packets (960 frames) to buffer before we begin playing. */
 		parsec_context.min_buffer = 1;
@@ -366,8 +363,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		parsec_context.max_buffer = 6;
 
 		/* sdl audio device. */
-		parsec_context.audio = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-		if (parsec_context.audio == 0) {
+		parsec_context.audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, NULL, NULL);
+		if (parsec_context.audio == NULL) {
 			vdi_stream_client__log_error("Failed to open audio: %s\n", SDL_GetError());
 			goto error;
 		}
@@ -405,34 +402,32 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 	}
 
-	SDL_GetWindowWMInfo(parsec_context.window, &wm_info);
-
 	/* event loop. */
-	while (parsec_context.done == SDL_FALSE) {
+	while (!parsec_context.done) {
 		for (SDL_Event msg; SDL_PollEvent(&msg);) {
 			ParsecMessage pmsg = {0};
 
 			switch (msg.type) {
-				case SDL_QUIT:
-					parsec_context.done = SDL_TRUE;
+				case SDL_EVENT_QUIT:
+					parsec_context.done = true;
 
 					/* render shutdown text. */
 					vdi_stream_client__render_text(&parsec_context, "Closing...");
 					break;
-				case SDL_KEYUP:
+				case SDL_EVENT_KEY_UP:
 					pmsg.type = MESSAGE_KEYBOARD;
-					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
-					pmsg.keyboard.mod = msg.key.keysym.mod;
-					pmsg.keyboard.pressed = SDL_FALSE;
+					pmsg.keyboard.code = (ParsecKeycode) msg.key.scancode;
+					pmsg.keyboard.mod = msg.key.mod;
+					pmsg.keyboard.pressed = false;
 					break;
-				case SDL_KEYDOWN:
+				case SDL_EVENT_KEY_DOWN:
 
 					/* check if we need to switch window grab state. */
-					if ((msg.key.keysym.mod & KMOD_LCTRL) != 0 &&
-					    (msg.key.keysym.mod & KMOD_LALT) != 0) {
+					if ((msg.key.mod & SDL_KMOD_LCTRL) != 0 &&
+					    (msg.key.mod & SDL_KMOD_LALT) != 0) {
 
 						/* check if no forced grab. */
-						if (grab_forced == SDL_FALSE) {
+						if (!grab_forced) {
 
 							/* check if no mouse button is hold down. */
 							if ((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
@@ -440,14 +435,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 							    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
 
 								/* check if we need to release mouse grab. */
-								if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE) {
-									SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+								if (vdi_config->grab == 1 && SDL_GetWindowMouseGrab(parsec_context.window)) {
+									SDL_SetWindowMouseGrab(parsec_context.window, false);
 								}
 
 								/* check if we need to release relative grab. */
-								if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
-									SDL_SetRelativeMouseMode(SDL_FALSE);
-									SDL_ShowCursor(SDL_TRUE);
+								if (SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
+									SDL_SetWindowRelativeMouseMode(parsec_context.window, false);
+									SDL_ShowCursor();
 								}
 
 								/* remove grab information from window title. */
@@ -460,11 +455,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					}
 
 					/* check if we need to toggle runtime configuration. */
-					if ((msg.key.keysym.mod & KMOD_LSHIFT) != 0) {
+					if ((msg.key.mod & SDL_KMOD_LSHIFT) != 0) {
 
 						/* check if we need to toggle forced grab. */
-						if (msg.key.keysym.sym == SDLK_F12) {
-							if (grab_forced == SDL_TRUE) {
+						if (msg.key.key == SDLK_F12) {
+							if (grab_forced) {
 
 								/* re-enable screensaver if leaving forced lock. */
 								if (vdi_config->screensaver == 1) {
@@ -472,14 +467,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								}
 
 								/* check if we need to release relative grab. */
-								if (SDL_GetRelativeMouseMode() == SDL_TRUE) {
-									SDL_SetRelativeMouseMode(SDL_FALSE);
-									SDL_ShowCursor(SDL_TRUE);
+								if (SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
+									SDL_SetWindowRelativeMouseMode(parsec_context.window, false);
+									SDL_ShowCursor();
 								}
 
-								SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+								SDL_SetWindowMouseGrab(parsec_context.window, false);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client");
-								grab_forced = SDL_FALSE;
+								grab_forced = false;
 							} else {
 
 								/* disable screensaver if entering forced lock. */
@@ -488,14 +483,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 								}
 
 								/* check if we need to grab mouse in relative mode. */
-								if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
-									SDL_ShowCursor(SDL_FALSE);
-									SDL_SetRelativeMouseMode(SDL_TRUE);
+								if (parsec_context.relative && !SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
+									SDL_HideCursor();
+									SDL_SetWindowRelativeMouseMode(parsec_context.window, true);
 								}
 
-								SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
+								SDL_SetWindowMouseGrab(parsec_context.window, true);
 								SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Shift+F12 to release forced grab)");
-								grab_forced = SDL_TRUE;
+								grab_forced = true;
 							}
 
 							/* don't send hotkey to host and break execution. */
@@ -504,82 +499,83 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					}
 
 					pmsg.type = MESSAGE_KEYBOARD;
-					pmsg.keyboard.code = (ParsecKeycode) msg.key.keysym.scancode;
-					pmsg.keyboard.mod = msg.key.keysym.mod;
-					pmsg.keyboard.pressed = SDL_TRUE;
+					pmsg.keyboard.code = (ParsecKeycode) msg.key.scancode;
+					pmsg.keyboard.mod = msg.key.mod;
+					pmsg.keyboard.pressed = true;
 					break;
-				case SDL_MOUSEMOTION:
+				case SDL_EVENT_MOUSE_MOTION:
 
 					/* check if we released relative mouse grab. */
-					if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
+					if (parsec_context.relative && !SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
 
 						/* no mouse motion events should be forwarded. */
 						break;
 					}
 
 					pmsg.type = MESSAGE_MOUSE_MOTION;
-					pmsg.mouseMotion.relative = SDL_GetRelativeMouseMode();
-					pmsg.mouseMotion.x = pmsg.mouseMotion.relative ? msg.motion.xrel : msg.motion.x + 1;
-					pmsg.mouseMotion.y = pmsg.mouseMotion.relative ? msg.motion.yrel : msg.motion.y + 1;
+					pmsg.mouseMotion.relative = SDL_GetWindowRelativeMouseMode(parsec_context.window);
+					pmsg.mouseMotion.x = pmsg.mouseMotion.relative ? (Sint32) msg.motion.xrel : (Sint32) msg.motion.x + 1;
+					pmsg.mouseMotion.y = pmsg.mouseMotion.relative ? (Sint32) msg.motion.yrel : (Sint32) msg.motion.y + 1;
 					break;
-				case SDL_MOUSEBUTTONUP:
+				case SDL_EVENT_MOUSE_BUTTON_UP:
 
 					/* store mouse button state for use in cursor update. */
-					parsec_context.pressed = SDL_FALSE;
+					parsec_context.pressed = false;
 
 					pmsg.type = MESSAGE_MOUSE_BUTTON;
 					pmsg.mouseButton.button = msg.button.button;
-					pmsg.mouseButton.pressed = SDL_FALSE;
+					pmsg.mouseButton.pressed = false;
 					break;
-				case SDL_MOUSEBUTTONDOWN:
+				case SDL_EVENT_MOUSE_BUTTON_DOWN:
 
 					/* check if no forced grab. */
-					if (grab_forced == SDL_FALSE) {
+					if (!grab_forced) {
 
 						/* check if we need to grab mouse. */
-						if (vdi_config->grab == 1 && SDL_GetWindowGrab(parsec_context.window) == SDL_FALSE) {
-							SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
+						if (vdi_config->grab == 1 && !SDL_GetWindowMouseGrab(parsec_context.window)) {
+							SDL_SetWindowMouseGrab(parsec_context.window, true);
 							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 						}
 
 						/* check if we need to grab mouse in relative mode. */
-						if (parsec_context.relative == SDL_TRUE && SDL_GetRelativeMouseMode() == SDL_FALSE) {
-							SDL_ShowCursor(SDL_FALSE);
-							SDL_SetRelativeMouseMode(SDL_TRUE);
+						if (parsec_context.relative && !SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
+							SDL_HideCursor();
+							SDL_SetWindowRelativeMouseMode(parsec_context.window, true);
 							SDL_SetWindowTitle(parsec_context.window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
 						}
 					}
 
 					/* store mouse button state for use in cursor update. */
-					parsec_context.pressed = SDL_TRUE;
+					parsec_context.pressed = true;
 
 					pmsg.type = MESSAGE_MOUSE_BUTTON;
 					pmsg.mouseButton.button = msg.button.button;
-					pmsg.mouseButton.pressed = SDL_TRUE;
+					pmsg.mouseButton.pressed = true;
 					break;
-				case SDL_MOUSEWHEEL:
+				case SDL_EVENT_MOUSE_WHEEL:
 					pmsg.type = MESSAGE_MOUSE_WHEEL;
 					pmsg.mouseWheel.x = msg.wheel.x * vdi_config->speed;
 					pmsg.mouseWheel.y = msg.wheel.y * vdi_config->speed;
 					break;
-				case SDL_CLIPBOARDUPDATE:
+				case SDL_EVENT_CLIPBOARD_UPDATE:
 					if (vdi_config->clipboard == 1) {
-						ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, SDL_GetClipboardText());
+						char *clipboard = SDL_GetClipboardText();
+
+						if (clipboard != NULL) {
+							ParsecClientSendUserData(parsec_context.parsec, PARSEC_CLIPBOARD_MSG, clipboard);
+							SDL_free(clipboard);
+						}
 					}
 					break;
-				case SDL_WINDOWEVENT:
-					switch (msg.window.event) {
-						case SDL_WINDOWEVENT_ENTER:
-							SDL_EventState(SDL_KEYDOWN, SDL_ENABLE);
-							SDL_EventState(SDL_KEYUP, SDL_ENABLE);
-							SDL_SetWindowKeyboardGrab(parsec_context.window, SDL_TRUE);
-							break;
-						case SDL_WINDOWEVENT_LEAVE:
-							SDL_EventState(SDL_KEYDOWN, SDL_DISABLE);
-							SDL_EventState(SDL_KEYUP, SDL_DISABLE);
-							SDL_SetWindowKeyboardGrab(parsec_context.window, SDL_FALSE);
-							break;
-					}
+				case SDL_EVENT_WINDOW_MOUSE_ENTER:
+					SDL_SetEventEnabled(SDL_EVENT_KEY_DOWN, true);
+					SDL_SetEventEnabled(SDL_EVENT_KEY_UP, true);
+					SDL_SetWindowKeyboardGrab(parsec_context.window, true);
+					break;
+				case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+					SDL_SetEventEnabled(SDL_EVENT_KEY_DOWN, false);
+					SDL_SetEventEnabled(SDL_EVENT_KEY_UP, false);
+					SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 					break;
 			}
 
@@ -595,7 +591,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			/* render shutdown text. */
 			vdi_stream_client__render_text(&parsec_context, "Closing...");
 			vdi_stream_client__log_error("Parsec disconnected\n");
-			parsec_context.done = SDL_TRUE;
+			parsec_context.done = true;
 		}
 		if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
@@ -604,7 +600,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
-			parsec_context.connection = SDL_FALSE;
+			parsec_context.connection = false;
 			last_time = SDL_GetTicks();
 		}
 
@@ -614,7 +610,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			/* render shutdown text. */
 			vdi_stream_client__render_text(&parsec_context, "Closing...");
 			vdi_stream_client__log_error("Network disconnected\n");
-			parsec_context.done = SDL_TRUE;
+			parsec_context.done = true;
 		}
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
@@ -623,14 +619,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
-			parsec_context.connection = SDL_FALSE;
+			parsec_context.connection = false;
 			last_time = SDL_GetTicks();
 		}
 
 		/* set connection status if reconnected. */
 		if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 0 &&
-		    e == PARSEC_OK && parsec_context.connection == SDL_FALSE) {
-			parsec_context.connection = SDL_TRUE;
+		    e == PARSEC_OK && !parsec_context.connection) {
+			parsec_context.connection = true;
 		}
 
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
@@ -649,31 +645,32 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 
 		/* TODO: check if we need to grab input to force decoder initialization. (workaround for buggy parsec sdk) */
-		if (vdi_config->grab == 0 && SDL_GetWindowGrab(parsec_context.window) == SDL_FALSE &&
-		    parsec_context.decoder == SDL_FALSE &&
+		if (vdi_config->grab == 0 && !SDL_GetWindowMouseGrab(parsec_context.window) &&
+		    !parsec_context.decoder &&
 		    parsec_context.client_status.decoder->width == 0 &&
 		    parsec_context.client_status.decoder->height == 0) {
-			SDL_ShowCursor(SDL_FALSE);
+			SDL_HideCursor();
 			SDL_GetGlobalMouseState(&x, &y);
-			SDL_SetWindowGrab(parsec_context.window, SDL_TRUE);
+			SDL_SetWindowMouseGrab(parsec_context.window, true);
 		}
 
 		/* TODO: check if we need to ungrab input due to forced decoder initialization. (workaround for buggy parsec sdk) */
-		if (vdi_config->grab == 0 && SDL_GetWindowGrab(parsec_context.window) == SDL_TRUE &&
-		    parsec_context.decoder == SDL_FALSE &&
+		if (vdi_config->grab == 0 && SDL_GetWindowMouseGrab(parsec_context.window) &&
+		    !parsec_context.decoder &&
 		    parsec_context.client_status.decoder->width > 0 &&
 		    parsec_context.client_status.decoder->height > 0) {
 			vdi_stream_client__log_info("Use resolution %dx%d\n",
 				parsec_context.client_status.decoder->width,
 				parsec_context.client_status.decoder->height
 			);
-			SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+			SDL_SetWindowMouseGrab(parsec_context.window, false);
 			SDL_WarpMouseGlobal(x, y);
-			SDL_ShowCursor(SDL_TRUE);
+			SDL_ShowCursor();
 			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+			SDL_SyncWindow(parsec_context.window);
 			parsec_context.window_width = parsec_context.client_status.decoder->width;
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
-			parsec_context.decoder = SDL_TRUE;
+			parsec_context.decoder = true;
 		}
 
 		/* check if we need to resize window due to client resolution change. */
@@ -687,6 +684,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				parsec_context.client_status.decoder->height
 			);
 			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
+			SDL_SyncWindow(parsec_context.window);
 			parsec_context.window_width = parsec_context.client_status.decoder->width;
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
 		}
@@ -695,7 +693,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* already release any grabbed keyboard because thread termination can take some time. */
-	SDL_SetWindowGrab(parsec_context.window, SDL_FALSE);
+	SDL_SetWindowMouseGrab(parsec_context.window, false);
+	SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 
 	/* stop network threads for usb redirection. */
 	if (vdi_config->usb_devices[0].vendor != 0) {
@@ -727,9 +726,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* sdl destroy. */
 	if (vdi_config->audio == 1) {
-		SDL_CloseAudioDevice(parsec_context.audio);
+		SDL_DestroyAudioStream(parsec_context.audio);
 	}
-	SDL_FreeSurface(parsec_context.surface_ttf);
+	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
 
@@ -747,9 +746,9 @@ error:
 
 	/* sdl destroy. */
 	if (vdi_config->audio == 1) {
-		SDL_CloseAudioDevice(parsec_context.audio);
+		SDL_DestroyAudioStream(parsec_context.audio);
 	}
-	SDL_FreeSurface(parsec_context.surface_ttf);
+	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
 

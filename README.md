@@ -24,7 +24,7 @@ Server](https://www.virtuozzo.com/support/all-products/virtuozzo-hybrid-server.h
 [KVM](https://www.linux-kvm.org/page/Main_Page) or [Xen](https://xenproject.org/).
 It can also connect to public clouds like [Amazon (EC2 G3 Accelerated)](https://aws.amazon.com/ec2/instance-types/g3/)
 or [Microsoft Azure (NV6)](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/windows/).
-It uses [Simple DirectMedia Layer (SDL2)](https://libsdl.org/) for low-level
+It uses [Simple DirectMedia Layer (SDL3)](https://libsdl.org/) for low-level
 access to audio, video, keyboard, mouse and clipboard.
 
 # Motivation
@@ -88,7 +88,7 @@ OpenGL                  | Yes               | Yes
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
 Minimal GUI             | Yes               | No
-System SDL2             | Yes               | No
+System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
@@ -159,7 +159,7 @@ without chroma subsampling for sharp and crystal clear text.
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl2`, `sdl2_ttf`, `libglvnd`, `libusb`, `usbredir`
+application. It requires `sdl3`, `sdl3-ttf`, `libglvnd`, `libusb`, `usbredir`
 and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
 system will search the SDK first in build directory and use DSO linking, the
 resulting binary will be redistributable but you need to ship Parsec library

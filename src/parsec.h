@@ -33,9 +33,8 @@
 #endif
 
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 /* opengl includes. */
 #include <GL/gl.h>
@@ -55,12 +54,12 @@
 struct parsec_context_s {
 
 	/* parsec. */
-	SDL_bool done;
-	SDL_bool connection;
-	SDL_bool decoder;
-	SDL_bool focus;
-	SDL_bool relative;
-	SDL_bool pressed;
+	bool done;
+	bool connection;
+	bool decoder;
+	bool focus;
+	bool relative;
+	bool pressed;
 #ifdef HAVE_LIBPARSEC
 	Parsec *parsec;
 #else
@@ -70,7 +69,7 @@ struct parsec_context_s {
 
 	/* video. */
 	SDL_Window *window;
-	SDL_GLContext *gl;
+	SDL_GLContext gl;
 	SDL_Cursor *cursor;
 	Sint32 window_width;
 	Sint32 window_height;
@@ -85,8 +84,8 @@ struct parsec_context_s {
 	TTF_Font *font;
 
 	/* audio. */
-	SDL_AudioDeviceID audio;
-	Sint32 playing;
+	SDL_AudioStream *audio;
+	bool playing;
 	Uint32 min_buffer;
 	Uint32 max_buffer;
 

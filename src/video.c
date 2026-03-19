@@ -50,27 +50,12 @@ GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture
 	h = vdi_stream_client__power_of_two(surface->h);
 	texture_coord[0] = 0.0f; /* min x */
 	texture_coord[1] = 0.0f; /* min y */
-	texture_coord[2] = (GLfloat)surface->w / w; /* max x */
-	texture_coord[3] = (GLfloat)surface->h / h; /* max y */
+	texture_coord[2] = (GLfloat) surface->w / w; /* max x */
+	texture_coord[3] = (GLfloat) surface->h / h; /* max y */
 
-	image = SDL_CreateRGBSurface(
-		SDL_SWSURFACE,
-		w, h,
-		32,
-#if SDL_BYTEORDER == SDL_LIL_ENDIAN /* opengl rgba masks. */
-		0x000000FF,
-		0x0000FF00,
-		0x00FF0000,
-		0xFF000000
-#else
-		0xFF000000,
-		0x00FF0000,
-		0x0000FF00,
-		0x000000FF
-#endif
-	);
+	image = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA8888);
 	if (image == NULL) {
-		return VDI_STREAM_CLIENT_SUCCESS;
+		return 0;
 	}
 
 	/* save the alpha blending attributes. */
@@ -98,7 +83,7 @@ GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->pixels);
 
 	/* no longer needed. */
-	SDL_FreeSurface(image);
+	SDL_DestroySurface(image);
 
 	return texture;
 }
@@ -184,15 +169,15 @@ Sint32 vdi_stream_client__video_thread(void *opaque) {
 	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
 	SDL_GL_SetSwapInterval(1);
 
-	while (parsec_context->done == SDL_FALSE) {
+	while (!parsec_context->done) {
 
 		/* show parsec frame. */
-		if (parsec_context->connection == SDL_TRUE) {
+		if (parsec_context->connection) {
 			vdi_stream_client__frame_video(parsec_context);
 		}
 
 		/* show reconnecting text. */
-		if (parsec_context->connection == SDL_FALSE) {
+		if (!parsec_context->connection) {
 			vdi_stream_client__frame_text(parsec_context);
 		}
 
@@ -204,7 +189,7 @@ Sint32 vdi_stream_client__video_thread(void *opaque) {
 	SDL_GL_SwapWindow(parsec_context->window);
 
 	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
-	SDL_GL_DeleteContext(parsec_context->gl);
+	SDL_GL_DestroyContext(parsec_context->gl);
 
 	return VDI_STREAM_CLIENT_SUCCESS;
 }

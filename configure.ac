@@ -24,11 +24,11 @@ AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_ERROR([*** dlopen is required, install 
 # checking for libglvnd library.
 PKG_CHECK_MODULES([GL], [gl])
 
-# checking for sdl2 library.
-PKG_CHECK_MODULES([SDL2], [sdl2 >= 2.0.16])
+# checking for sdl3 library.
+PKG_CHECK_MODULES([SDL3], [sdl3 >= 3.2.0])
 
-# checking for sdl2_ttf library.
-PKG_CHECK_MODULES([SDL2_TTF], [SDL2_ttf >= 2.0.5])
+# checking for sdl3_ttf library.
+PKG_CHECK_MODULES([SDL3_TTF], [sdl3-ttf >= 3.0.0])
 
 # checking for libusb library.
 PKG_CHECK_MODULES([USB], [libusb-1.0 >= 1.0.9])

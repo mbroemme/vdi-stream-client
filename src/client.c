@@ -17,6 +17,9 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+/* sdl main include. */
+#include <SDL3/SDL_main.h>
+
 /* internal includes. */
 #include "client.h"
 #include "parsec.h"
@@ -85,7 +88,7 @@ Sint32 vdi_stream_client__version(char *program_name) {
 }
 
 /* main function to initialize structs and parse command line options. */
-Sint32 main(Sint32 argc, char **argv) {
+int main(int argc, char **argv) {
 
 	/* variables. */
 	Sint32 option_index = 0;
