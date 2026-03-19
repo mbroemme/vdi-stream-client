@@ -118,7 +118,6 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	/* initial values. */
 	Uint32 retry = 0;
 	Uint32 delay = 1000;
-	Sint32 option = 1;
 	Sint32 error = 0;
 
 	/* user output. */
