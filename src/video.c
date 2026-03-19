@@ -162,34 +162,46 @@ static void vdi_stream_client__frame_video(void *opaque) {
 	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, parsec_context->timeout);
 }
 
-/* sdl video thread. */
-Sint32 vdi_stream_client__video_thread(void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+/* initialize video rendering on the main thread. */
+void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
+	(void) parsec_context;
 
-	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
-	SDL_GL_SetSwapInterval(1);
+	if (!SDL_GL_SetSwapInterval(1)) {
+		vdi_stream_client__log_error("SDL_GL_SetSwapInterval failed: %s\n", SDL_GetError());
+	}
+}
 
-	while (!parsec_context->done) {
+/* render a single frame on the main thread. */
+void vdi_stream_client__video_render(struct parsec_context_s *parsec_context) {
 
-		/* show parsec frame. */
-		if (parsec_context->connection) {
-			vdi_stream_client__frame_video(parsec_context);
+	/* show parsec frame. */
+	if (parsec_context->connection) {
+		vdi_stream_client__frame_video(parsec_context);
+		if (!SDL_GL_SwapWindow(parsec_context->window)) {
+			vdi_stream_client__log_error("SDL_GL_SwapWindow failed: %s\n", SDL_GetError());
 		}
-
-		/* show reconnecting text. */
-		if (!parsec_context->connection) {
-			vdi_stream_client__frame_text(parsec_context);
-		}
-
-		SDL_GL_SwapWindow(parsec_context->window);
+		return;
 	}
 
-	/* show closing text. */
-	vdi_stream_client__frame_text(parsec_context);
-	SDL_GL_SwapWindow(parsec_context->window);
+	/* show reconnecting/shutdown text if available. */
+	if (parsec_context->surface_ttf != NULL) {
+		vdi_stream_client__frame_text(parsec_context);
+		if (!SDL_GL_SwapWindow(parsec_context->window)) {
+			vdi_stream_client__log_error("SDL_GL_SwapWindow failed: %s\n", SDL_GetError());
+		}
+	}
+}
 
-	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
-	SDL_GL_DestroyContext(parsec_context->gl);
+/* release video resources on the main thread. */
+void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context) {
+	if (parsec_context->texture_ttf != 0) {
+		glDeleteTextures(1, &parsec_context->texture_ttf);
+		parsec_context->texture_ttf = 0;
+	}
 
-	return VDI_STREAM_CLIENT_SUCCESS;
+	if (parsec_context->gl != NULL) {
+		ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
+		SDL_GL_DestroyContext(parsec_context->gl);
+		parsec_context->gl = NULL;
+	}
 }

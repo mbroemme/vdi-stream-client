@@ -26,8 +26,12 @@
 /* opengl includes. */
 #include <GL/gl.h>
 
-/* video thread. */
+struct parsec_context_s;
+
+/* video rendering. */
 GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
-Sint32 vdi_stream_client__video_thread(void *opaque);
+void vdi_stream_client__video_init(struct parsec_context_s *parsec_context);
+void vdi_stream_client__video_render(struct parsec_context_s *parsec_context);
+void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
 
 #endif /* _VIDEO_H */

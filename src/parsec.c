@@ -105,6 +105,16 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 	GLfloat texture_coord[4];
 	GLenum gl_error;
 
+	if (parsec_context->texture_ttf != 0) {
+		glDeleteTextures(1, &parsec_context->texture_ttf);
+		parsec_context->texture_ttf = 0;
+	}
+
+	if (parsec_context->surface_ttf != NULL) {
+		SDL_DestroySurface(parsec_context->surface_ttf);
+		parsec_context->surface_ttf = NULL;
+	}
+
 	/* create the text surface. */
 	parsec_context->surface_ttf = TTF_RenderText_Blended(parsec_context->font, text, 0, color);
 	if (parsec_context->surface_ttf == NULL) {
@@ -144,7 +154,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
 	Uint32 device;
 	Uint32 count;
-	SDL_Thread *video_thread = NULL;
 	SDL_Thread *audio_thread = NULL;
 	SDL_Thread *network_thread[USB_MAX] = {0};
 
@@ -343,12 +352,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	/* sdl video thread. */
-	video_thread = SDL_CreateThread(vdi_stream_client__video_thread, "vdi_stream_client__video_thread", &parsec_context);
-	if (video_thread == NULL) {
-		vdi_stream_client__log_error("Video thread creation failed: %s\n", SDL_GetError());
+	if (!SDL_GL_MakeCurrent(parsec_context.window, parsec_context.gl)) {
+		vdi_stream_client__log_error("OpenGL context activation failed: %s\n", SDL_GetError());
 		goto error;
 	}
+
+	vdi_stream_client__video_init(&parsec_context);
 
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
@@ -673,6 +682,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.decoder = true;
 		}
 
+		vdi_stream_client__video_render(&parsec_context);
+
 		/* check if we need to resize window due to client resolution change. */
 		if ((parsec_context.window_width != parsec_context.client_status.decoder->width || parsec_context.window_height != parsec_context.client_status.decoder->height) &&
 		    parsec_context.client_status.decoder->width > 0 &&
@@ -713,9 +724,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		SDL_WaitThread(audio_thread, NULL);
 	}
 
-	/* stop video thread. */
-	vdi_stream_client__log_info("Stop Video Thread\n");
-	SDL_WaitThread(video_thread, NULL);
 
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);
@@ -728,6 +736,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	if (vdi_config->audio == 1) {
 		SDL_DestroyAudioStream(parsec_context.audio);
 	}
+	vdi_stream_client__video_destroy(&parsec_context);
 	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
@@ -748,6 +757,7 @@ error:
 	if (vdi_config->audio == 1) {
 		SDL_DestroyAudioStream(parsec_context.audio);
 	}
+	vdi_stream_client__video_destroy(&parsec_context);
 	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
