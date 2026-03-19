@@ -146,6 +146,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	bool grab_forced = false;
 	Uint32 wait_time = 0;
 	Uint64 last_time = 0;
+	bool force_redraw = false;
 	float x = 0.0f;
 	float y = 0.0f;
 	SDL_AudioSpec want = {0};
@@ -159,6 +160,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* default values. */
 	parsec_context.timeout = 100;
+	parsec_context.render_timeout = 5;
+	parsec_context.next_overlay_tick = 0;
 
 	/* sdl init. */
 	vdi_stream_client__log_info("Initialize SDL\n");
@@ -413,8 +416,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* event loop. */
 	while (!parsec_context.done) {
+		force_redraw = false;
+
 		for (SDL_Event msg; SDL_PollEvent(&msg);) {
 			ParsecMessage pmsg = {0};
+			force_redraw = true;
 
 			switch (msg.type) {
 				case SDL_EVENT_QUIT:
@@ -422,6 +428,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 					/* render shutdown text. */
 					vdi_stream_client__render_text(&parsec_context, "Closing...");
+					force_redraw = true;
 					break;
 				case SDL_EVENT_KEY_UP:
 					pmsg.type = MESSAGE_KEYBOARD;
@@ -593,12 +600,16 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			}
 		}
 
+		/* prioritize SDL responsiveness after local interaction. */
+		parsec_context.render_timeout = force_redraw ? 0 : 5;
+
 		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 		if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
 
 			/* render shutdown text. */
 			vdi_stream_client__render_text(&parsec_context, "Closing...");
+			force_redraw = true;
 			vdi_stream_client__log_error("Parsec disconnected\n");
 			parsec_context.done = true;
 		}
@@ -607,6 +618,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* render reconnect text. */
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
+			force_redraw = true;
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = false;
@@ -618,6 +630,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* render shutdown text. */
 			vdi_stream_client__render_text(&parsec_context, "Closing...");
+			force_redraw = true;
 			vdi_stream_client__log_error("Network disconnected\n");
 			parsec_context.done = true;
 		}
@@ -626,6 +639,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 			/* render reconnect text. */
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
+			force_redraw = true;
 			ParsecClientDisconnect(parsec_context.parsec);
 			ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
 			parsec_context.connection = false;
@@ -682,7 +696,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.decoder = true;
 		}
 
-		vdi_stream_client__video_render(&parsec_context);
+		vdi_stream_client__video_render(&parsec_context, force_redraw);
 
 		/* check if we need to resize window due to client resolution change. */
 		if ((parsec_context.window_width != parsec_context.client_status.decoder->width || parsec_context.window_height != parsec_context.client_status.decoder->height) &&

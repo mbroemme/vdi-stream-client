@@ -31,7 +31,7 @@ struct parsec_context_s;
 /* video rendering. */
 GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
 void vdi_stream_client__video_init(struct parsec_context_s *parsec_context);
-void vdi_stream_client__video_render(struct parsec_context_s *parsec_context);
+void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
 void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
 
 #endif /* _VIDEO_H */

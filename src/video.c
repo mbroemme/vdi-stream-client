@@ -145,8 +145,6 @@ static void vdi_stream_client__frame_text(void *opaque) {
 	/* remove attributes. */
 	glPopAttrib();
 
-	/* static text and no need to render it frequently. */
-	SDL_Delay(parsec_context->timeout);
 }
 
 /* opengl frame video event. */
@@ -159,7 +157,7 @@ static void vdi_stream_client__frame_video(void *opaque) {
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
-	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, parsec_context->timeout);
+	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, parsec_context->render_timeout);
 }
 
 /* initialize video rendering on the main thread. */
@@ -172,7 +170,7 @@ void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
 }
 
 /* render a single frame on the main thread. */
-void vdi_stream_client__video_render(struct parsec_context_s *parsec_context) {
+void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw) {
 
 	/* show parsec frame. */
 	if (parsec_context->connection) {
@@ -184,11 +182,13 @@ void vdi_stream_client__video_render(struct parsec_context_s *parsec_context) {
 	}
 
 	/* show reconnecting/shutdown text if available. */
-	if (parsec_context->surface_ttf != NULL) {
+	if (parsec_context->surface_ttf != NULL &&
+	    (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
 		vdi_stream_client__frame_text(parsec_context);
 		if (!SDL_GL_SwapWindow(parsec_context->window)) {
 			vdi_stream_client__log_error("SDL_GL_SwapWindow failed: %s\n", SDL_GetError());
 		}
+		parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
 	}
 }
 

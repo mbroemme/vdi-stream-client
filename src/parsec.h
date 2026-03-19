@@ -91,6 +91,8 @@ struct parsec_context_s {
 
 	/* timeouts. */
 	Uint32 timeout;
+	Uint32 render_timeout;
+	Uint64 next_overlay_tick;
 };
 
 /* usb redirect. */
