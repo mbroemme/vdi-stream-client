@@ -739,6 +739,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 
+	/* destroy parsec GL resources before releasing the parsec client. */
+	vdi_stream_client__video_destroy(&parsec_context);
+
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);
 
@@ -750,7 +753,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	if (vdi_config->audio == 1) {
 		SDL_DestroyAudioStream(parsec_context.audio);
 	}
-	vdi_stream_client__video_destroy(&parsec_context);
 	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
@@ -760,6 +762,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 error:
 
+	/* destroy parsec GL resources before releasing the parsec client. */
+	vdi_stream_client__video_destroy(&parsec_context);
+
 	/* parsec destroy. */
 	ParsecDestroy(parsec_context.parsec);
 
@@ -771,7 +776,6 @@ error:
 	if (vdi_config->audio == 1) {
 		SDL_DestroyAudioStream(parsec_context.audio);
 	}
-	vdi_stream_client__video_destroy(&parsec_context);
 	SDL_DestroySurface(parsec_context.surface_ttf);
 	SDL_DestroyWindow(parsec_context.window);
 	SDL_Quit();
