@@ -214,11 +214,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* configure host color mode. */
 	if (vdi_config->subsampling == 1) {
-		cfg.video[DEFAULT_STREAM].decoder444 = 1;
+		cfg.video[DEFAULT_STREAM].decoder444 = 0;
 	}
 	if (vdi_config->subsampling == 0) {
 		vdi_stream_client__log_info("Disable Chroma Subsampling\n");
-		cfg.video[DEFAULT_STREAM].decoder444 = 0;
+		cfg.video[DEFAULT_STREAM].decoder444 = 1;
 
 		/* TODO: parsec sdk bug. */
 		vdi_stream_client__log_info("WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");

@@ -50,7 +50,7 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 	printf("      --height <height>    vertical resolution (default: host resolution)\n");
 	printf("\n");
 	printf("Parsec Warp Options:\n");
-	printf("      --no-subsampling     disable compression with chroma subsampling\n");
+	printf("      --no-subsampling     request 4:4:4 video without chroma subsampling\n");
 	printf("\n");
 	printf("Client Options:\n");
 	printf("      --no-acceleration    disable hardware accelerated decoding\n");
