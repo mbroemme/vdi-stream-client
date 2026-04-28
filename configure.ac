@@ -21,9 +21,6 @@ PKG_PROG_PKG_CONFIG
 AC_CHECK_HEADER([dlfcn.h], [], [AC_MSG_ERROR([*** dlfcn.h is required, install glibc header files])])
 AC_CHECK_LIB([dl], [dlopen], [], [AC_MSG_ERROR([*** dlopen is required, install glibc library files])])
 
-# checking for libglvnd library.
-PKG_CHECK_MODULES([GL], [gl])
-
 # checking for sdl3 library.
 PKG_CHECK_MODULES([SDL3], [sdl3 >= 3.2.0])
 

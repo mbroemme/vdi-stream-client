@@ -36,9 +36,6 @@
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
-/* opengl includes. */
-#include <GL/gl.h>
-
 /* network includes. */
 #include <arpa/inet.h>
 
@@ -69,18 +66,18 @@ struct parsec_context_s {
 
 	/* video. */
 	SDL_Window *window;
-	SDL_GLContext gl;
+	SDL_Renderer *renderer;
 	SDL_Cursor *cursor;
 	Sint32 window_width;
 	Sint32 window_height;
 
-	/* opengl texture for ttf rendering. */
+	/* sdl textures for rendering. */
 	SDL_Surface *surface_ttf;
-	GLuint texture_ttf;
-	GLfloat texture_min_x;
-	GLfloat texture_min_y;
-	GLfloat texture_max_x;
-	GLfloat texture_max_y;
+	SDL_Texture *texture_ttf;
+	SDL_Texture *texture_video;
+	ParsecColorFormat format_video;
+	Sint32 texture_width;
+	Sint32 texture_height;
 	TTF_Font *font;
 
 	/* audio. */

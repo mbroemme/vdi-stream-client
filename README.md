@@ -84,7 +84,7 @@ Gamepad Input           | No                | Yes
 Clipboard Sharing       | Text only         | Text only
 Remote                  | Yes               | Yes
 DirectX                 | Yes               | Yes
-OpenGL                  | Yes               | Yes
+SDL Renderer            | Yes               | No
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
 Minimal GUI             | Yes               | No
@@ -96,15 +96,15 @@ USB Redirection         | Yes               | No
 
 # Requirements
 
-Any recent GPU with [OpenGL](https://en.wikipedia.org/wiki/OpenGL) and [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
-support will work. When it comes to 4:4:4 color mode, part of the decoding work
-is made with [FFmpeg](https://ffmpeg.org/) (see notes below regarding 4:4:4
-status). Nothing exist without drawbacks and that one for Parsec is that it is
-mandatory to have an [account](https://parsec.app/signup) which is
-completely free. However communication between client and host is always made
-directly. Also the SDK is only available as pre-compiled library, so for those
-who fully rely on an open-source system, stop reading here. Some features are
-only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
+Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
+support will work. Frames are rendered through the SDL renderer. When it comes
+to 4:4:4 color mode, part of the decoding work is made with [FFmpeg](https://ffmpeg.org/)
+(see notes below regarding 4:4:4 status). Nothing exist without drawbacks and
+that one for Parsec is that it is mandatory to have an [account](https://parsec.app/signup)
+which is completely free. However communication between client and host is
+always made directly. Also the SDK is only available as pre-compiled library,
+so for those who fully rely on an open-source system, stop reading here. Some
+features are only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
 It applies to 4:4:4 color mode which is required to encode images and streams
 without chroma subsampling for sharp and crystal clear text.
 
@@ -159,7 +159,7 @@ without chroma subsampling for sharp and crystal clear text.
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl3`, `sdl3-ttf`, `libglvnd`, `libusb`, `usbredir`
+application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`
 and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
 system will search the SDK first in build directory and use DSO linking, the
 resulting binary will be redistributable but you need to ship Parsec library

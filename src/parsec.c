@@ -102,13 +102,9 @@ static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, P
 Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 	SDL_Color color = { 0x88, 0x88, 0x88, 0xFF };
-	GLfloat texture_coord[4];
-	GLenum gl_error;
 
-	if (parsec_context->texture_ttf != 0) {
-		glDeleteTextures(1, &parsec_context->texture_ttf);
-		parsec_context->texture_ttf = 0;
-	}
+	SDL_DestroyTexture(parsec_context->texture_ttf);
+	parsec_context->texture_ttf = NULL;
 
 	if (parsec_context->surface_ttf != NULL) {
 		SDL_DestroySurface(parsec_context->surface_ttf);
@@ -122,18 +118,12 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 		return VDI_STREAM_CLIENT_ERROR;
 	}
 
-	/* convert the text into an opengl texture. */
-	parsec_context->texture_ttf = vdi_stream_client__gl_load_texture(parsec_context->surface_ttf, texture_coord);
-	if ((gl_error = glGetError()) != GL_NO_ERROR) {
-		vdi_stream_client__log_error("TTF OpenGL texture creation failed: 0x%x\n", gl_error);
+	/* convert the text into an sdl texture. */
+	parsec_context->texture_ttf = SDL_CreateTextureFromSurface(parsec_context->renderer, parsec_context->surface_ttf);
+	if (parsec_context->texture_ttf == NULL) {
+		vdi_stream_client__log_error("TTF texture creation failed: %s\n", SDL_GetError());
 		return VDI_STREAM_CLIENT_ERROR;
 	}
-
-	/* make texture coordinates easy to understand. */
-	parsec_context->texture_min_x = texture_coord[0];
-	parsec_context->texture_min_y = texture_coord[1];
-	parsec_context->texture_max_x = texture_coord[2];
-	parsec_context->texture_max_y = texture_coord[3];
 
 	/* no error. */
 	return VDI_STREAM_CLIENT_SUCCESS;
@@ -342,21 +332,16 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
 					parsec_context.window_height,
-					SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY
+					SDL_WINDOW_HIGH_PIXEL_DENSITY
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream_client__log_error("Window creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
-	parsec_context.gl = SDL_GL_CreateContext(parsec_context.window);
-	if (parsec_context.gl == NULL) {
-		vdi_stream_client__log_error("OpenGL context creation failed: %s\n", SDL_GetError());
-		goto error;
-	}
-
-	if (!SDL_GL_MakeCurrent(parsec_context.window, parsec_context.gl)) {
-		vdi_stream_client__log_error("OpenGL context activation failed: %s\n", SDL_GetError());
+	parsec_context.renderer = SDL_CreateRenderer(parsec_context.window, NULL);
+	if (parsec_context.renderer == NULL) {
+		vdi_stream_client__log_error("Renderer creation failed: %s\n", SDL_GetError());
 		goto error;
 	}
 
@@ -739,7 +724,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 
-	/* destroy parsec GL resources before releasing the parsec client. */
+	/* destroy video resources before releasing the parsec client. */
 	vdi_stream_client__video_destroy(&parsec_context);
 
 	/* parsec destroy. */
@@ -762,7 +747,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 error:
 
-	/* destroy parsec GL resources before releasing the parsec client. */
+	/* destroy video resources before releasing the parsec client. */
 	vdi_stream_client__video_destroy(&parsec_context);
 
 	/* parsec destroy. */
