@@ -1,6 +1,6 @@
 # VDI Stream Client
 
-[![Build Status](https://travis-ci.com/mbroemme/vdi-stream-client.svg?branch=main)](https://travis-ci.com/mbroemme/vdi-stream-client)
+[![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
 [![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
 [![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/network/members)
