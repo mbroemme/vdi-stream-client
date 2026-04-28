@@ -106,35 +106,56 @@ int main(int argc, char **argv) {
 	Uint64 port;
 
 	/* command line options. */
+	enum {
+		OPTION_HELP = 1,
+		OPTION_VERSION = 2,
+		OPTION_SESSION = 3,
+		OPTION_PEER = 4,
+		OPTION_TIMEOUT = 5,
+		OPTION_SPEED = 6,
+		OPTION_WIDTH = 7,
+		OPTION_HEIGHT = 8,
+		OPTION_NO_SUBSAMPLING = 9,
+		OPTION_NO_ACCELERATION = 10,
+		OPTION_NO_UPNP = 11,
+		OPTION_NO_RECONNECT = 12,
+		OPTION_NO_GRAB = 13,
+		OPTION_NO_SCREENSAVER = 14,
+		OPTION_NO_CLIPBOARD = 15,
+		OPTION_NO_AUDIO = 16,
+		OPTION_NO_HEVC = 17,
+		OPTION_REDIRECT = 18,
+	};
+
 	struct option long_options[] = {
 
 		/* help options. */
-		{"help", no_argument, NULL, 'h'},
-		{"version", no_argument, NULL, 'v'},
+		{"help", no_argument, NULL, OPTION_HELP},
+		{"version", no_argument, NULL, OPTION_VERSION},
 
 		/* parsec options. */
-		{"session", required_argument, NULL, 'x'},
-		{"peer", required_argument, NULL, 'y'},
-		{"timeout", required_argument, NULL, 't'},
-		{"speed", required_argument, NULL, 's'},
-		{"width", required_argument, NULL, 'w'},
-		{"height", required_argument, NULL, 'u'},
+		{"session", required_argument, NULL, OPTION_SESSION},
+		{"peer", required_argument, NULL, OPTION_PEER},
+		{"timeout", required_argument, NULL, OPTION_TIMEOUT},
+		{"speed", required_argument, NULL, OPTION_SPEED},
+		{"width", required_argument, NULL, OPTION_WIDTH},
+		{"height", required_argument, NULL, OPTION_HEIGHT},
 
 		/* parsec warp options. */
-		{"no-subsampling", no_argument, NULL, 'm'},
+		{"no-subsampling", no_argument, NULL, OPTION_NO_SUBSAMPLING},
 
 		/* client options. */
-		{"no-acceleration", no_argument, NULL, 'd'},
-		{"no-upnp", no_argument, NULL, 'b'},
-		{"no-reconnect", no_argument, NULL, 'r'},
-		{"no-grab", no_argument, NULL, 'g'},
-		{"no-screensaver", no_argument, NULL, 'z'},
-		{"no-clipboard", no_argument, NULL, 'p'},
-		{"no-audio", no_argument, NULL, 'a'},
-		{"no-hevc", no_argument, NULL, 'c'},
+		{"no-acceleration", no_argument, NULL, OPTION_NO_ACCELERATION},
+		{"no-upnp", no_argument, NULL, OPTION_NO_UPNP},
+		{"no-reconnect", no_argument, NULL, OPTION_NO_RECONNECT},
+		{"no-grab", no_argument, NULL, OPTION_NO_GRAB},
+		{"no-screensaver", no_argument, NULL, OPTION_NO_SCREENSAVER},
+		{"no-clipboard", no_argument, NULL, OPTION_NO_CLIPBOARD},
+		{"no-audio", no_argument, NULL, OPTION_NO_AUDIO},
+		{"no-hevc", no_argument, NULL, OPTION_NO_HEVC},
 
 		/* usb options. */
-		{"redirect", required_argument, NULL, 'f'},
+		{"redirect", required_argument, NULL, OPTION_REDIRECT},
 
 		/* end options. */
 		{0, 0, 0, 0},
@@ -193,23 +214,25 @@ int main(int argc, char **argv) {
 
 			/* help options. */
 			case 'h':
+			case OPTION_HELP:
 				vdi_stream_client__usage(program_name);
                                 return VDI_STREAM_CLIENT_SUCCESS;
 			case 'v':
+			case OPTION_VERSION:
 				vdi_stream_client__version(program_name);
                                 return VDI_STREAM_CLIENT_SUCCESS;
 
 			/* parsec options. */
-			case 'x':
+			case OPTION_SESSION:
 				vdi_config->session = strdup(argv[optind - 1]);
 				continue;
-			case 'y':
+			case OPTION_PEER:
 				vdi_config->peer = strdup(argv[optind - 1]);
 				continue;
-			case 't':
+			case OPTION_TIMEOUT:
 				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
 				continue;
-			case 's':
+			case OPTION_SPEED:
 				vdi_config->speed = strtol(argv[optind - 1], NULL, 10);
 				if (vdi_config->speed < 0) {
 					vdi_config->speed = 0;
@@ -218,46 +241,46 @@ int main(int argc, char **argv) {
 					vdi_config->speed = 500;
 				}
 				continue;
-			case 'w':
+			case OPTION_WIDTH:
 				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
 				continue;
-			case 'u':
+			case OPTION_HEIGHT:
 				vdi_config->height = strtol(argv[optind - 1], NULL, 10);
 				continue;
 
 			/* parsec warp options. */
-			case 'm':
+			case OPTION_NO_SUBSAMPLING:
 				vdi_config->subsampling = 0;
 				continue;
 
 			/* client options. */
-			case 'd':
+			case OPTION_NO_ACCELERATION:
 				vdi_config->acceleration = 0;
 				continue;
-			case 'b':
+			case OPTION_NO_UPNP:
 				vdi_config->upnp = 0;
 				continue;
-			case 'r':
+			case OPTION_NO_RECONNECT:
 				vdi_config->reconnect = 0;
 				continue;
-			case 'g':
+			case OPTION_NO_GRAB:
 				vdi_config->grab = 0;
 				continue;
-			case 'z':
+			case OPTION_NO_SCREENSAVER:
 				vdi_config->screensaver = 0;
 				continue;
-			case 'p':
+			case OPTION_NO_CLIPBOARD:
 				vdi_config->clipboard = 0;
 				continue;
-			case 'a':
+			case OPTION_NO_AUDIO:
 				vdi_config->audio = 0;
 				continue;
-			case 'c':
+			case OPTION_NO_HEVC:
 				vdi_config->hevc = 0;
 				continue;
 
 			/* usb options. */
-			case 'f':
+			case OPTION_REDIRECT:
 
 				/* loop through multiple redirect configs. */
 				device = 0;
