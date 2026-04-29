@@ -107,6 +107,10 @@ int main(int argc, char **argv) {
 	char *delim;
 	char *endptr;
 	Uint64 port;
+	Sint64 timeout;
+	Sint64 speed;
+	Sint64 width;
+	Sint64 height;
 	Sint64 stats_period;
 
 	/* command line options. */
@@ -248,22 +252,46 @@ int main(int argc, char **argv) {
 				vdi_config->peer = strdup(argv[optind - 1]);
 				continue;
 			case OPTION_TIMEOUT:
-				vdi_config->timeout = strtol(argv[optind - 1], NULL, 10) * 1000;
+				timeout = strtol(optarg, &endptr, 10);
+				if (*endptr != '\0' || timeout <= 0) {
+					fprintf(stderr, "%s: invalid timeout: %s\n", program_name, optarg);
+					fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+					goto error;
+				}
+				vdi_config->timeout = timeout * 1000;
 				continue;
 			case OPTION_SPEED:
-				vdi_config->speed = strtol(argv[optind - 1], NULL, 10);
-				if (vdi_config->speed < 0) {
-					vdi_config->speed = 0;
+				speed = strtol(optarg, &endptr, 10);
+				if (endptr == optarg || *endptr != '\0') {
+					fprintf(stderr, "%s: invalid speed: %s\n", program_name, optarg);
+					fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+					goto error;
 				}
-				if (vdi_config->speed > 500) {
-					vdi_config->speed = 500;
+				if (speed < 0) {
+					speed = 0;
 				}
+				if (speed > 500) {
+					speed = 500;
+				}
+				vdi_config->speed = speed;
 				continue;
 			case OPTION_WIDTH:
-				vdi_config->width = strtol(argv[optind - 1], NULL, 10);
+				width = strtol(optarg, &endptr, 10);
+				if (endptr == optarg || *endptr != '\0' || width < 0 || width > UINT16_MAX) {
+					fprintf(stderr, "%s: invalid width: %s\n", program_name, optarg);
+					fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+					goto error;
+				}
+				vdi_config->width = width;
 				continue;
 			case OPTION_HEIGHT:
-				vdi_config->height = strtol(argv[optind - 1], NULL, 10);
+				height = strtol(optarg, &endptr, 10);
+				if (endptr == optarg || *endptr != '\0' || height < 0 || height > UINT16_MAX) {
+					fprintf(stderr, "%s: invalid height: %s\n", program_name, optarg);
+					fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+					goto error;
+				}
+				vdi_config->height = height;
 				continue;
 
 			/* parsec warp options. */
