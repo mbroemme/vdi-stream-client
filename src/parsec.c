@@ -33,8 +33,6 @@
 #include <stdio.h>
 #include <unistd.h>
 
-/* sdl includes. */
-
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
 	char *msg = ParsecGetBuffer(parsec_context->parsec, buffer_key);
@@ -49,7 +47,6 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 	ParsecFree(parsec_context->parsec, msg);
 #endif
 }
-
 
 /* log render stats at the configured interval. */
 static void vdi_stream_client__render_stats(struct parsec_context_s *parsec_context) {
@@ -454,6 +451,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		Uint64 loop_parsec_events = 0;
 		Uint64 loop_frames = 0;
 		Uint64 loop_presents = 0;
+		Uint64 idle_start = 0;
+		bool local_interaction = false;
+		bool rendered = false;
 
 		force_redraw = false;
 		if (parsec_context.stats_enabled) {
@@ -469,7 +469,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				parsec_context.stats_sdl_events++;
 			}
 			ParsecMessage pmsg = {0};
-			force_redraw = true;
+			local_interaction = true;
+
+			/* Only the overlay needs a forced redraw for arbitrary SDL events; the
+			 * connected video path should present on new frames instead of repainting
+			 * the same texture for every keyboard/mouse event. */
+			if (!parsec_context.connection) {
+				force_redraw = true;
+			}
 
 			switch (msg.type) {
 				case SDL_EVENT_QUIT:
@@ -495,9 +502,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 						if (!grab_forced) {
 
 							/* check if no mouse button is hold down. */
-							if ((SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_LMASK) == 0 &&
-							    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_MMASK) == 0 &&
-							    (SDL_GetMouseState(NULL, NULL) & SDL_BUTTON_RMASK) == 0) {
+							SDL_MouseButtonFlags mouse_buttons = SDL_GetMouseState(NULL, NULL);
+							if ((mouse_buttons & SDL_BUTTON_LMASK) == 0 &&
+							    (mouse_buttons & SDL_BUTTON_MMASK) == 0 &&
+							    (mouse_buttons & SDL_BUTTON_RMASK) == 0) {
 
 								/* check if we need to release mouse grab. */
 								if (vdi_config->grab == 1 && SDL_GetWindowMouseGrab(parsec_context.window)) {
@@ -568,20 +576,22 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 					pmsg.keyboard.mod = msg.key.mod;
 					pmsg.keyboard.pressed = true;
 					break;
-				case SDL_EVENT_MOUSE_MOTION:
+				case SDL_EVENT_MOUSE_MOTION: {
+					bool relative_mouse = SDL_GetWindowRelativeMouseMode(parsec_context.window);
 
 					/* check if we released relative mouse grab. */
-					if (parsec_context.relative && !SDL_GetWindowRelativeMouseMode(parsec_context.window)) {
+					if (parsec_context.relative && !relative_mouse) {
 
 						/* no mouse motion events should be forwarded. */
 						break;
 					}
 
 					pmsg.type = MESSAGE_MOUSE_MOTION;
-					pmsg.mouseMotion.relative = SDL_GetWindowRelativeMouseMode(parsec_context.window);
-					pmsg.mouseMotion.x = pmsg.mouseMotion.relative ? (Sint32) msg.motion.xrel : (Sint32) msg.motion.x + 1;
-					pmsg.mouseMotion.y = pmsg.mouseMotion.relative ? (Sint32) msg.motion.yrel : (Sint32) msg.motion.y + 1;
+					pmsg.mouseMotion.relative = relative_mouse;
+					pmsg.mouseMotion.x = relative_mouse ? (Sint32) msg.motion.xrel : (Sint32) msg.motion.x + 1;
+					pmsg.mouseMotion.y = relative_mouse ? (Sint32) msg.motion.yrel : (Sint32) msg.motion.y + 1;
 					break;
+				}
 				case SDL_EVENT_MOUSE_BUTTON_UP:
 
 					/* store mouse button state for use in cursor update. */
@@ -649,8 +659,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			}
 		}
 
-		/* prioritize SDL responsiveness after local interaction. */
-		parsec_context.render_timeout = force_redraw ? 0 : 5;
+		/* prioritize SDL responsiveness after local interaction without forcing
+		 * redundant presents of the last video frame. */
+		parsec_context.render_timeout = local_interaction ? 0 : 5;
 
 		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
@@ -749,7 +760,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.decoder = true;
 		}
 
-		vdi_stream_client__video_render(&parsec_context, force_redraw);
+		if (parsec_context.stats_enabled) {
+			idle_start = SDL_GetTicks();
+		}
+		rendered = vdi_stream_client__video_render(&parsec_context, force_redraw);
 
 		/* check if we need to resize window due to client resolution change. */
 		if ((parsec_context.window_width != parsec_context.client_status.decoder->width || parsec_context.window_height != parsec_context.client_status.decoder->height) &&
@@ -767,18 +781,24 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
 		}
 
+		/* Do not add a blanket SDL_Delay(1) to the streaming hot path. When
+		 * connected, ParsecClientPollFrame(timeout) and SDL_RenderPresent(vsync)
+		 * are the pacing points. Sleeping here adds latency and can cap/jitter
+		 * frame delivery. When disconnected, no frame source is blocking this
+		 * loop, so keep a small coarse idle sleep to avoid busy-spinning while
+		 * reconnecting or showing the overlay. */
+		if (!parsec_context.connection && !rendered && parsec_context.render_timeout > 0) {
+			SDL_Delay(parsec_context.render_timeout);
+		}
+
 		if (parsec_context.stats_enabled &&
 		    parsec_context.stats_sdl_events == loop_sdl_events &&
 		    parsec_context.stats_parsec_events == loop_parsec_events &&
 		    parsec_context.stats_frames == loop_frames &&
-		    parsec_context.stats_presents == loop_presents) {
-			Uint64 idle_start = SDL_GetTicks();
-
-			SDL_Delay(1);
+		    parsec_context.stats_presents == loop_presents &&
+		    !rendered) {
 			parsec_context.stats_idle_waits++;
 			parsec_context.stats_idle_wait_ms += SDL_GetTicks() - idle_start;
-		} else {
-			SDL_Delay(1);
 		}
 
 		vdi_stream_client__render_stats(&parsec_context);

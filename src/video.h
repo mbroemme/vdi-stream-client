@@ -27,7 +27,7 @@ struct parsec_context_s;
 
 /* video rendering. */
 void vdi_stream_client__video_init(struct parsec_context_s *parsec_context);
-void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
+bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
 void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
 
 #endif /* _VIDEO_H */

@@ -116,6 +116,7 @@ static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, cons
 		parsec_context->stats_frames++;
 		parsec_context->stats_last_frame_tick = SDL_GetTicks();
 	}
+	parsec_context->frame_video_updated = true;
 }
 
 /* sdl frame text event. */
@@ -139,18 +140,29 @@ static void vdi_stream_client__frame_text(void *opaque) {
 }
 
 /* sdl frame video event. */
-static void vdi_stream_client__frame_video(void *opaque) {
+static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 	SDL_FRect src;
 
-	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
+	if (parsec_context->requested_width != parsec_context->window_width ||
+	    parsec_context->requested_height != parsec_context->window_height) {
+		ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
+		parsec_context->requested_width = parsec_context->window_width;
+		parsec_context->requested_height = parsec_context->window_height;
+	}
+
+	parsec_context->frame_video_updated = false;
 	ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, parsec_context->render_timeout, parsec_context);
+
+	if (!force_redraw && !parsec_context->frame_video_updated) {
+		return false;
+	}
 
 	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
 	SDL_RenderClear(parsec_context->renderer);
 
 	if (parsec_context->texture_video == NULL) {
-		return;
+		return force_redraw;
 	}
 
 	src.x = 0.0f;
@@ -158,6 +170,7 @@ static void vdi_stream_client__frame_video(void *opaque) {
 	src.w = parsec_context->window_width;
 	src.h = parsec_context->window_height;
 	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_video, &src, NULL);
+	return true;
 }
 
 /* initialize video rendering on the main thread. */
@@ -168,17 +181,19 @@ void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
 }
 
 /* render a single frame on the main thread. */
-void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw) {
+bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw) {
 
 	/* show parsec frame. */
 	if (parsec_context->connection) {
-		vdi_stream_client__frame_video(parsec_context);
+		if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
+			return false;
+		}
 		if (!SDL_RenderPresent(parsec_context->renderer)) {
 			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
 		} else if (parsec_context->stats_enabled) {
 			parsec_context->stats_presents++;
 		}
-		return;
+		return true;
 	}
 
 	/* show reconnecting/shutdown text if available. */
@@ -191,7 +206,10 @@ void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bo
 			parsec_context->stats_presents++;
 		}
 		parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
+		return true;
 	}
+
+	return false;
 }
 
 /* release video resources on the main thread. */

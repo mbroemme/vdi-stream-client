@@ -70,11 +70,14 @@ struct parsec_context_s {
 	SDL_Cursor *cursor;
 	Sint32 window_width;
 	Sint32 window_height;
+	Sint32 requested_width;
+	Sint32 requested_height;
 
 	/* sdl textures for rendering. */
 	SDL_Surface *surface_ttf;
 	SDL_Texture *texture_ttf;
 	SDL_Texture *texture_video;
+	bool frame_video_updated;
 	ParsecColorFormat format_video;
 	Sint32 texture_width;
 	Sint32 texture_height;
