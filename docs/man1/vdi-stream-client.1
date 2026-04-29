@@ -33,51 +33,42 @@ audio, video, keyboard, mouse and clipboard.
 Help options:
 .TP 8
 .B  \-h|\-\-help
-.ti 15
 Print the usage message on the standard output.
 .TP 8
 .B  \-v|\-\-version
-.ti 15
 Print the currently installed version on the standard output.
 .PP
 Debug options:
 .TP 8
 .B  \-\-stats <\fIseconds\fP>
-.ti 15
 Show render statistics every \fIseconds\fP seconds. It is disabled by
 default.
 .PP
 Parsec options:
 .TP 8
 .B  \-\-session <\fIid\fP>
-.ti 15
 The session ID to connect to Parsec service. This option is mandatory.
 .TP 8
 .B  \-\-peer <\fIid\fP>
-.ti 15
 The peer ID of the remote Parsec host. This option is mandatory.
 .TP 8
 .B  \-\-timeout <\fIseconds\fP>
-.ti 15
 The connection timeout when first connection to host is established.
 There will be no reconnect in this case. The default timeout is 5
 seconds.
 .TP 8
 .B  \-\-speed <\fIspeed\fP>
-.ti 15
-The mouse wheel snesitivity to use, supported range is between 0
+The mouse wheel sensitivity to use, supported range is between 0
 (disable mouse wheel completely) up to 500. The value is in pixel. The
 default value is 100.
 .TP 8
 .B  \-\-width <\fIwidth\fP>
-.ti 15
 The host screen and window width to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host width. The value is in pixel.
 .TP 8
 .B  \-\-height <\fIheight\fP>
-.ti 15
 The host screen and window height to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
@@ -86,7 +77,6 @@ configured host height. The value is in pixel.
 Parsec Warp options:
 .TP 8
 .B  \-\-no\-subsampling
-.ti 15
 Request 4:4:4 color mode without chroma subsampling. By default, the host
 compresses the video stream and applies chroma subsampling with mode 4:2:0
 to reduce data transfers. With this option, no chroma subsampling is
@@ -96,7 +86,6 @@ This option is only available under the commercial Parsec Warp subscription.
 Client options:
 .TP 8
 .B  \-\-no\-acceleration
-.ti 15
 Disable hardware accelerated client decoding. If disabled, client will
 decode frames in software on CPU. If enabled, client will decode frames
 acclerated with the help of GPU. Frames are rendered with the SDL
@@ -104,14 +93,12 @@ renderer. With software implementation it is almost impossible to reach
 smooth client rendering. It is enabled by default.
 .TP 8
 .B  \-\-no\-upnp
-.ti 15
 Disable UPnP NAT traversal support. If disabled, client may not be
 able to connect to host. If enabled, client will use UPnP to assist
 NAT traversal. It is not recommended to turn it off due to UDP
 client listening. It is enabled by default.
 .TP 8
 .B  \-\-no\-reconnect
-.ti 15
 Disable automatic reconnect in case of network or service failures. If
 disabled, client will immediately terminate on failures. If enabled a
 black window with text "Reconnecting..." is shown in case of failures.
@@ -119,7 +106,6 @@ It is recommended to leave it enabled if you are on roaming or an
 unstable and slow network link. It is enabled by default.
 .TP 8
 .B  \-\-no\-grab
-.ti 15
 Disable exclusive mouse grab. If disabled, the mouse is passive grabbed
 and can enter and leave the window when mouse is moved. If enabled, the
 first press of any mouse button will lock the mouse into the window. To
@@ -131,14 +117,12 @@ A relative grabe can be released with "Ctrl+Alt". A relative grab can be
 noticed in the Window title and with an invisible the mouse cursor.
 .TP 8
 .B  \-\-no\-screensaver
-.ti 15
 Disable screen saver and screen locker support on client machine. If
 disabled, configured screen saver and lockers are ignored and will never
 be started. If enabled, screen saver and lockers will work as usual. It
 is enabled by default.
 .TP 8
 .B  \-\-no\-clipboard
-.ti 15
 Disable clipboard sharing between client and host. If disabled, the
 clipboards of client and host are independent and never synchronized. It
 helps to avoid occasional leaks of sensitive information made by copy
@@ -146,14 +130,12 @@ and paste mistakes. If enabled, both clipboards are always synchronized
 in bi-directional mode. It is enabled by default.
 .TP 8
 .B  \-\-no\-audio
-.ti 15
 Disable audio streaming support. If disabled, no audio from host is
 streamed and played on client machine. If enabled, audio is streamed
 and played with default audio device used by SDL. It is enabled by
 default.
 .TP 8
 .B  \-\-no\-hevc
-.ti 15
 Disable H.265 (HEVC) video codec. If disabled, client will use H.264
 (AVC) video codec. If enabled, client will use H.265 (HEVC) video codec.
 There is a trade-off between CPU performance and network latency and
@@ -166,7 +148,6 @@ by default.
 USB options:
 .TP 8
 .B  \-\-redirect <\fIvendorID\fP>:<\fIproductID\fP>@<\fIip\fP>#<\fIport\fP>,[...]
-.ti 15
 The USB devices to redirect to the host. The client will monitor the
 specified USB device with <\fIvendorID\fP> and <\fIproductID\fP> for
 hotplug events (attach and detach). To get a list of available USB devices
@@ -184,14 +165,12 @@ During connection to the host, you can use certain key combinations to
 release keyboard grab or to switch into force grab mode.
 .TP 8
 .B  Ctrl+Alt
-.ti 15
 Toggle mouse and keyboard grab if exclusive mouse grab is enabled. If any
 mouse button is pressed, the cursor will be locked into the window and all
 keys are passed. The Ctrl+Alt key combination will release the grab.
 See \-\-no\-grab option for more details.
 .TP 8
 .B  Shift+F12
-.ti 15
 Toggle mouse and keyboard grab regardless if exclusive grab is enabled
 or disabled. If enabling forced grab, it will lock the cursor to the window
 and pass all keys, except Shift+F12 to the window. The client configured
