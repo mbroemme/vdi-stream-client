@@ -60,6 +60,8 @@ typedef struct {
 	Uint16		clipboard;		/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
 	Uint16		audio;			/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
 	Uint16		hevc;			/* streaming codec to use. (0 = h264, 1 = h265) */
+	Uint16		stats;			/* render stats logging. (0 = disable, 1 = enable) */
+	Uint64		stats_period;		/* render stats logging interval in seconds. */
 
 	/* usb options. */
 	union {

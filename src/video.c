@@ -85,22 +85,36 @@ static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, cons
 
 	switch (frame->format) {
 		case FORMAT_NV12:
-			SDL_UpdateNVTexture(parsec_context->texture_video, NULL,
-				pixels, frame->fullWidth,
-				pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth);
+			if (!SDL_UpdateNVTexture(parsec_context->texture_video, NULL,
+			    pixels, frame->fullWidth,
+			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
 			break;
 		case FORMAT_I420:
-			SDL_UpdateYUVTexture(parsec_context->texture_video, NULL,
-				pixels, frame->fullWidth,
-				pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
-				pixels + frame->fullWidth * frame->fullHeight + (frame->fullWidth / 2) * (frame->fullHeight / 2), frame->fullWidth / 2);
+			if (!SDL_UpdateYUVTexture(parsec_context->texture_video, NULL,
+			    pixels, frame->fullWidth,
+			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
+			    pixels + frame->fullWidth * frame->fullHeight + (frame->fullWidth / 2) * (frame->fullHeight / 2), frame->fullWidth / 2)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
 			break;
 		case FORMAT_BGRA:
 		case FORMAT_RGBA:
-			SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4);
+			if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
 			break;
 		default:
-			break;
+			return;
+	}
+
+	if (parsec_context->stats_enabled) {
+		parsec_context->stats_frames++;
+		parsec_context->stats_last_frame_tick = SDL_GetTicks();
 	}
 }
 
@@ -161,6 +175,8 @@ void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bo
 		vdi_stream_client__frame_video(parsec_context);
 		if (!SDL_RenderPresent(parsec_context->renderer)) {
 			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
+		} else if (parsec_context->stats_enabled) {
+			parsec_context->stats_presents++;
 		}
 		return;
 	}
@@ -171,6 +187,8 @@ void vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bo
 		vdi_stream_client__frame_text(parsec_context);
 		if (!SDL_RenderPresent(parsec_context->renderer)) {
 			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
+		} else if (parsec_context->stats_enabled) {
+			parsec_context->stats_presents++;
 		}
 		parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
 	}

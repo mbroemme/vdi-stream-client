@@ -90,6 +90,19 @@ struct parsec_context_s {
 	Uint32 timeout;
 	Uint32 render_timeout;
 	Uint64 next_overlay_tick;
+
+	/* render stats. */
+	Uint16 stats_enabled;
+	Uint64 stats_period_ms;
+	Uint64 stats_next_tick;
+	Uint64 stats_last_frame_tick;
+	Uint64 stats_loops;
+	Uint64 stats_sdl_events;
+	Uint64 stats_parsec_events;
+	Uint64 stats_frames;
+	Uint64 stats_presents;
+	Uint64 stats_idle_waits;
+	Uint64 stats_idle_wait_ms;
 };
 
 /* usb redirect. */

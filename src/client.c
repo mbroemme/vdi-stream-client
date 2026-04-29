@@ -41,6 +41,9 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 	printf("  -h, --help               show this help screen\n");
 	printf("  -v, --version            show the version information\n");
 	printf("\n");
+	printf("Debug Options:\n");
+	printf("      --stats <seconds>    show render stats every <seconds> seconds\n");
+	printf("\n");
 	printf("Parsec Options:\n");
 	printf("      --session <id>       session id for connection (mandatory)\n");
 	printf("      --peer <id>          peer id for connection (mandatory)\n");
@@ -104,6 +107,7 @@ int main(int argc, char **argv) {
 	char *delim;
 	char *endptr;
 	Uint64 port;
+	Sint64 stats_period;
 
 	/* command line options. */
 	enum {
@@ -125,6 +129,7 @@ int main(int argc, char **argv) {
 		OPTION_NO_AUDIO = 16,
 		OPTION_NO_HEVC = 17,
 		OPTION_REDIRECT = 18,
+		OPTION_STATS = 19,
 	};
 
 	struct option long_options[] = {
@@ -132,6 +137,9 @@ int main(int argc, char **argv) {
 		/* help options. */
 		{"help", no_argument, NULL, OPTION_HELP},
 		{"version", no_argument, NULL, OPTION_VERSION},
+
+		/* debug options. */
+		{"stats", required_argument, NULL, OPTION_STATS},
 
 		/* parsec options. */
 		{"session", required_argument, NULL, OPTION_SESSION},
@@ -190,6 +198,8 @@ int main(int argc, char **argv) {
 	vdi_config->clipboard = 1;
 	vdi_config->audio = 1;
 	vdi_config->hevc = 1;
+	vdi_config->stats = 0;
+	vdi_config->stats_period = 0;
 
 	program_name = argv[0];
 	if (program_name && strrchr(program_name, '/')) {
@@ -199,6 +209,14 @@ int main(int argc, char **argv) {
 	if (argc <= 1) {
 		vdi_stream_client__usage(program_name);
 		return VDI_STREAM_CLIENT_SUCCESS;
+	}
+
+	for (opt = 1; opt < argc; opt++) {
+		if (strncmp(argv[opt], "--stats=", 8) == 0) {
+			fprintf(stderr, "%s: --stats requires a separate <seconds> argument\n", program_name);
+			fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+			goto error;
+		}
 	}
 
 	/* parse command line. */
@@ -277,6 +295,16 @@ int main(int argc, char **argv) {
 				continue;
 			case OPTION_NO_HEVC:
 				vdi_config->hevc = 0;
+				continue;
+			case OPTION_STATS:
+				stats_period = strtol(optarg, &endptr, 10);
+				if (*endptr != '\0' || stats_period <= 0) {
+					fprintf(stderr, "%s: invalid stats period: %s\n", program_name, optarg);
+					fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+					goto error;
+				}
+				vdi_config->stats = 1;
+				vdi_config->stats_period = stats_period;
 				continue;
 
 			/* usb options. */

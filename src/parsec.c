@@ -50,6 +50,53 @@ static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context
 #endif
 }
 
+
+/* log render stats at the configured interval. */
+static void vdi_stream_client__render_stats(struct parsec_context_s *parsec_context) {
+	Uint64 now;
+
+	if (!parsec_context->stats_enabled) {
+		return;
+	}
+
+	now = SDL_GetTicks();
+	Uint64 last_frame_age_ms = parsec_context->stats_last_frame_tick == 0 ? 0 : now - parsec_context->stats_last_frame_tick;
+
+	if (parsec_context->stats_next_tick == 0) {
+		parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;
+		return;
+	}
+
+	if (now < parsec_context->stats_next_tick) {
+		return;
+	}
+
+	vdi_stream_client__log_info(
+		"Render:\n"
+		"  loop: loops=%llu, presents=%llu\n"
+		"  events: sdl=%llu, parsec=%llu\n"
+		"  frames: frames=%llu, age=%llums\n"
+		"  idle: waits=%llu, ms=%llu\n",
+		(unsigned long long) parsec_context->stats_loops,
+		(unsigned long long) parsec_context->stats_presents,
+		(unsigned long long) parsec_context->stats_sdl_events,
+		(unsigned long long) parsec_context->stats_parsec_events,
+		(unsigned long long) parsec_context->stats_frames,
+		(unsigned long long) last_frame_age_ms,
+		(unsigned long long) parsec_context->stats_idle_waits,
+		(unsigned long long) parsec_context->stats_idle_wait_ms
+	);
+
+	parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;
+	parsec_context->stats_loops = 0;
+	parsec_context->stats_sdl_events = 0;
+	parsec_context->stats_parsec_events = 0;
+	parsec_context->stats_frames = 0;
+	parsec_context->stats_presents = 0;
+	parsec_context->stats_idle_waits = 0;
+	parsec_context->stats_idle_wait_ms = 0;
+}
+
 /* parsec cursor event. */
 static void vdi_stream_client__cursor(struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, bool grab, bool grab_forced) {
 	if (cursor->imageUpdate) {
@@ -152,6 +199,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.timeout = 100;
 	parsec_context.render_timeout = 5;
 	parsec_context.next_overlay_tick = 0;
+	parsec_context.stats_enabled = vdi_config->stats;
+	parsec_context.stats_period_ms = vdi_config->stats_period * 1000;
 
 	/* sdl init. */
 	vdi_stream_client__log_info("Initialize SDL\n");
@@ -401,9 +450,24 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 	/* event loop. */
 	while (!parsec_context.done) {
+		Uint64 loop_sdl_events = 0;
+		Uint64 loop_parsec_events = 0;
+		Uint64 loop_frames = 0;
+		Uint64 loop_presents = 0;
+
 		force_redraw = false;
+		if (parsec_context.stats_enabled) {
+			loop_sdl_events = parsec_context.stats_sdl_events;
+			loop_parsec_events = parsec_context.stats_parsec_events;
+			loop_frames = parsec_context.stats_frames;
+			loop_presents = parsec_context.stats_presents;
+			parsec_context.stats_loops++;
+		}
 
 		for (SDL_Event msg; SDL_PollEvent(&msg);) {
+			if (parsec_context.stats_enabled) {
+				parsec_context.stats_sdl_events++;
+			}
 			ParsecMessage pmsg = {0};
 			force_redraw = true;
 
@@ -638,6 +702,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 
 		for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
+			if (parsec_context.stats_enabled) {
+				parsec_context.stats_parsec_events++;
+			}
+
 			switch (event.type) {
 				case CLIENT_EVENT_CURSOR:
 					vdi_stream_client__cursor(&parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->grab, grab_forced);
@@ -699,7 +767,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			parsec_context.window_height = parsec_context.client_status.decoder->height;
 		}
 
-		SDL_Delay(1);
+		if (parsec_context.stats_enabled &&
+		    parsec_context.stats_sdl_events == loop_sdl_events &&
+		    parsec_context.stats_parsec_events == loop_parsec_events &&
+		    parsec_context.stats_frames == loop_frames &&
+		    parsec_context.stats_presents == loop_presents) {
+			Uint64 idle_start = SDL_GetTicks();
+
+			SDL_Delay(1);
+			parsec_context.stats_idle_waits++;
+			parsec_context.stats_idle_wait_ms += SDL_GetTicks() - idle_start;
+		} else {
+			SDL_Delay(1);
+		}
+
+		vdi_stream_client__render_stats(&parsec_context);
 	}
 
 	/* already release any grabbed keyboard because thread termination can take some time. */
