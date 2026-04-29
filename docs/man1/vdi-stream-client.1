@@ -42,7 +42,10 @@ Debug options:
 .TP 8
 .B  \-\-stats <\fIseconds\fP>
 Show render statistics every \fIseconds\fP seconds. It is disabled by
-default.
+default. See
+.BR "PERFORMANCE TIPS"
+for guidance on interpreting idle frame delivery and Parsec host-side
+FPS settings.
 .PP
 Parsec options:
 .TP 8
@@ -179,6 +182,34 @@ The Ctrl+Alt key combination will not release a forced grab. If disabling
 forced grab, it will release the mouse from the window, don't pass window
 manager key combinations anymore and re-enable screen saver and screen
 locker if necessary.
+.SH PERFORMANCE TIPS
+Parsec hosts expose several performance-related options that affect
+host-side encoding CPU usage and client-side decoding workload.
+.TP 8
+.B  host_full_fps=<boolean>
+When set to <false> allows the host to reduce idle frame delivery when the
+screen is not changing. It reduces unnecessary host encoding work, network
+traffic, client decoding work and render wakeups. The option is configured
+on the Parsec host side; it is not a client side option and cannot be forced
+by vdi-stream-client through the Parsec client SDK.
+
+When set to <true>, the host attempts to keep streaming at the full stream
+frame rate even after the desktop becomes static. On VDI style workloads
+this can look like the client is still receiving and rendering 60 frames per
+second on an idle Windows login screen or empty desktop. For desktop and VDI
+usage, keep this host option disabled.
+
+If idle frame delivery is still high with <false>, check the host desktop
+for small continuous changes such as a blinking text caret, animated cursor,
+clock widget, wallpaper animation, notifications or other compositor activity.
+.TP 8
+.B  encoder_fps=<fps>
+For desktop-focused VDI workloads, consider setting the Parsec host option
+to <30>. This limits the host encoder to 30 frames per second. This is
+usually sufficient for login screens, office applications, terminals,
+browsers, and other mostly static workflows, while still feeling responsive
+for mouse and keyboard input. For animation-heavy, video, or gaming use
+cases, <60> may be preferable.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS
