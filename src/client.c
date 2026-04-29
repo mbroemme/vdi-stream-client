@@ -215,14 +215,6 @@ int main(int argc, char **argv) {
 		return VDI_STREAM_CLIENT_SUCCESS;
 	}
 
-	for (opt = 1; opt < argc; opt++) {
-		if (strncmp(argv[opt], "--stats=", 8) == 0) {
-			fprintf(stderr, "%s: --stats requires a separate <seconds> argument\n", program_name);
-			fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
-			goto error;
-		}
-	}
-
 	/* parse command line. */
 	while ((opt = getopt_long(argc, argv, ":hv", long_options, &option_index)) != -1) {
 
@@ -480,6 +472,13 @@ int main(int argc, char **argv) {
 	/* mandatory arguments not given. */
 	if (strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
 		fprintf(stderr, "%s: mandatory arguments missing\n", program_name);
+		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+		goto error;
+	}
+
+	/* width and height must be specified together. */
+	if ((vdi_config->width == 0) != (vdi_config->height == 0)) {
+		fprintf(stderr, "%s: --width and --height must be specified together\n", program_name);
 		fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
 		goto error;
 	}
