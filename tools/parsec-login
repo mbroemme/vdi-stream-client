@@ -2,7 +2,7 @@
 #
 # parsec-login -- Parsec API tool to get session and list available peers.
 #
-# Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
+# Copyright (c) 2021-2026 Maik Broemme <mbroemme@libmpq.org>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ function parsec_login__usage() {
 
 # show version.
 function parsec_login__version() {
-	printf "${PARSEC_PROCESS} version ${PARSEC_VERSION} Copyright (c) 2021 The VDI Stream developers\n"
+	printf "${PARSEC_PROCESS} version ${PARSEC_VERSION} Copyright (c) 2021-2026 The VDI Stream developers\n"
 	printf "Written by ${PARSEC_AUTHOR} <${PARSEC_EMAIL}>\n"
 	printf "\n"
 	printf "This is free software; see the source for copying conditions.  There is NO\n"

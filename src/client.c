@@ -80,7 +80,7 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 Sint32 vdi_stream_client__version(char *program_name) {
 
 	/* show the version. */
-	printf("%s version %s Copyright (c) 2020 The VDI Stream developers\n", program_name, VERSION);
+	printf("%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n", program_name, VERSION);
 	printf("Written by %s\n", AUTHOR);
 	printf("\n");
 	printf("This is free software; see the source for copying conditions.  There is NO\n");

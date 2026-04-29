@@ -1,7 +1,7 @@
 /*
  *  video.c -- video rendering thread via sdl
  *
- *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
