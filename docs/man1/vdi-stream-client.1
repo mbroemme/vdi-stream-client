@@ -182,6 +182,43 @@ The Ctrl+Alt key combination will not release a forced grab. If disabling
 forced grab, it will release the mouse from the window, don't pass window
 manager key combinations anymore and re-enable screen saver and screen
 locker if necessary.
+.SH WAYLAND TIPS
+Wayland compositors normally keep ownership of global shortcuts such as
+Alt+Tab, Alt+F4 or Super based key bindings. For VDI, virtual machine,
+remote desktop and game streaming clients this means that some key
+combinations may be handled by the local compositor instead of being
+forwarded to the streamed Windows desktop.
+.PP
+The Wayland protocol
+.BR keyboard-shortcuts-inhibit-unstable-v1
+allows a client to request that compositor shortcuts are inhibited for its
+surface while it has keyboard focus. If the compositor supports and honors
+this protocol, SDL can use it for keyboard grab requests so that shortcuts
+such as Alt+Tab can be delivered to vdi-stream-client and forwarded to the
+host. If the compositor does not support shortcut inhibition, these
+combinations remain under compositor control even when keyboard grab is
+requested by the client.
+.PP
+Some compositors provide compositor-specific configuration as an alternative
+or supplement. For example, labwc can disable its own key bindings for a
+matching window with a window rule. Add a rule like the following to the
+labwc configuration:
+.PP
+.RS
+.nf
+<!-- vdi stream client specific settings. -->
+<windowRule identifier="vdi-stream-client">
+
+  <!-- allow A-Tab and similar keybinds to be delivered. -->
+  <action name="ToggleKeybinds" />
+</windowRule>
+.fi
+.RE
+.PP
+With such a rule, labwc will stop handling its own key bindings for the
+vdi-stream-client window, allowing Alt+Tab and similar shortcuts to reach
+the remote session. Other Wayland compositors may require different options,
+or may not provide an equivalent mechanism.
 .SH PERFORMANCE TIPS
 Parsec hosts expose several performance-related options that affect
 host-side encoding CPU usage and client-side decoding workload.
