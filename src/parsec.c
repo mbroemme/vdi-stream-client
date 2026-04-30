@@ -366,15 +366,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	/* check if connected but decoder initialization failed. */
-	if (parsec_context.connection &&
-	    !parsec_context.decoder) {
-
-		/* TODO: workaround if decoder initialization failed. (workaround for buggy parsec sdk) */
-		parsec_context.window_width = 640;
-		parsec_context.window_height = 480;
-	}
-
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
 					parsec_context.window_height,
@@ -729,35 +720,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				default:
 					break;
 			}
-		}
-
-		/* TODO: check if we need to grab input to force decoder initialization. (workaround for buggy parsec sdk) */
-		if (vdi_config->grab == 0 && !SDL_GetWindowMouseGrab(parsec_context.window) &&
-		    !parsec_context.decoder &&
-		    parsec_context.client_status.decoder->width == 0 &&
-		    parsec_context.client_status.decoder->height == 0) {
-			SDL_HideCursor();
-			SDL_GetGlobalMouseState(&x, &y);
-			SDL_SetWindowMouseGrab(parsec_context.window, true);
-		}
-
-		/* TODO: check if we need to ungrab input due to forced decoder initialization. (workaround for buggy parsec sdk) */
-		if (vdi_config->grab == 0 && SDL_GetWindowMouseGrab(parsec_context.window) &&
-		    !parsec_context.decoder &&
-		    parsec_context.client_status.decoder->width > 0 &&
-		    parsec_context.client_status.decoder->height > 0) {
-			vdi_stream_client__log_info("Use resolution %dx%d\n",
-				parsec_context.client_status.decoder->width,
-				parsec_context.client_status.decoder->height
-			);
-			SDL_SetWindowMouseGrab(parsec_context.window, false);
-			SDL_WarpMouseGlobal(x, y);
-			SDL_ShowCursor();
-			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder->width, parsec_context.client_status.decoder->height);
-			SDL_SyncWindow(parsec_context.window);
-			parsec_context.window_width = parsec_context.client_status.decoder->width;
-			parsec_context.window_height = parsec_context.client_status.decoder->height;
-			parsec_context.decoder = true;
 		}
 
 		if (parsec_context.stats_enabled) {
