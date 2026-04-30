@@ -56,6 +56,7 @@ typedef struct {
 	Uint16		upnp;			/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
 	Uint16		reconnect;		/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
 	Uint16		grab;			/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
+	Uint16		decoration;		/* window manager decoration support. (0 = borderless window, 1 = decorated window) */
 	Uint16		screensaver;		/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
 	Uint16		clipboard;		/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
 	Uint16		audio;			/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */

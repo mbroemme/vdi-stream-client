@@ -60,6 +60,7 @@ Sint32 vdi_stream_client__usage(char *program_name) {
 	printf("      --no-upnp            disable upnp nat traversal\n");
 	printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
 	printf("      --no-grab            disable exclusive mouse grab\n");
+	printf("      --no-decoration      disable client window decorations\n");
 	printf("      --no-screensaver     disable screen saver and lockers\n");
 	printf("      --no-clipboard       disable clipboard sharing\n");
 	printf("      --no-audio           disable audio streaming\n");
@@ -134,6 +135,7 @@ int main(int argc, char **argv) {
 		OPTION_NO_HEVC = 17,
 		OPTION_REDIRECT = 18,
 		OPTION_STATS = 19,
+		OPTION_NO_DECORATION = 20,
 	};
 
 	struct option long_options[] = {
@@ -161,6 +163,7 @@ int main(int argc, char **argv) {
 		{"no-upnp", no_argument, NULL, OPTION_NO_UPNP},
 		{"no-reconnect", no_argument, NULL, OPTION_NO_RECONNECT},
 		{"no-grab", no_argument, NULL, OPTION_NO_GRAB},
+		{"no-decoration", no_argument, NULL, OPTION_NO_DECORATION},
 		{"no-screensaver", no_argument, NULL, OPTION_NO_SCREENSAVER},
 		{"no-clipboard", no_argument, NULL, OPTION_NO_CLIPBOARD},
 		{"no-audio", no_argument, NULL, OPTION_NO_AUDIO},
@@ -198,6 +201,7 @@ int main(int argc, char **argv) {
 	vdi_config->upnp = 1;
 	vdi_config->reconnect = 1;
 	vdi_config->grab = 1;
+	vdi_config->decoration = 1;
 	vdi_config->screensaver = 1;
 	vdi_config->clipboard = 1;
 	vdi_config->audio = 1;
@@ -303,6 +307,9 @@ int main(int argc, char **argv) {
 				continue;
 			case OPTION_NO_GRAB:
 				vdi_config->grab = 0;
+				continue;
+			case OPTION_NO_DECORATION:
+				vdi_config->decoration = 0;
 				continue;
 			case OPTION_NO_SCREENSAVER:
 				vdi_config->screensaver = 0;

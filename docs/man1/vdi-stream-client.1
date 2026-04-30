@@ -12,7 +12,7 @@
 .\"
 .\" You should have received a copy of the GNU General Public License
 .\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
-.TH VDI-STREAM-CLIENT 1 2026-04-29 "VDI Stream Client" "multimedia"
+.TH VDI-STREAM-CLIENT 1 2026-04-30 "VDI Stream Client" "multimedia"
 .SH NAME
 vdi-stream-client \- a low latency desktop streaming client
 .SH SYNOPSIS
@@ -118,6 +118,18 @@ mostly the case for DirectX applications and during login of the Windows
 user. Without relative grabbing most games would behave unpredictable.
 A relative grabe can be released with "Ctrl+Alt". A relative grab can be
 noticed in the Window title and with an invisible the mouse cursor.
+.TP 8
+.B  \-\-no\-decoration
+Disable window manager decorations by creating the SDL window with the
+.B SDL_WINDOW_BORDERLESS
+flag. When this option is used, the client window is shown without
+a title bar or window borders. This can be useful for kiosk-style setups,
+launchers that manage the window themselves, or compositor and
+window-manager rules that place the client as an appliance-like remote
+desktop. This option does not enable fullscreen mode and does not change
+keyboard or mouse grabbing; combine it with compositor configuration or
+the grab options when those behaviors are required. Decorations are enabled
+by default.
 .TP 8
 .B  \-\-no\-screensaver
 Disable screen saver and screen locker support on client machine. If

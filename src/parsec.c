@@ -191,6 +191,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	Uint32 count;
 	SDL_Thread *audio_thread = NULL;
 	SDL_Thread *network_thread[USB_MAX] = {0};
+	SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
 	/* default values. */
 	parsec_context.timeout = 100;
@@ -289,6 +290,12 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		vdi_stream_client__log_info("Disable exclusive mouse grab\n");
 	}
 
+	/* check if window decorations should be disabled. */
+	if (vdi_config->decoration == 0) {
+		vdi_stream_client__log_info("Disable window decorations\n");
+		window_flags |= SDL_WINDOW_BORDERLESS;
+	}
+
 	/* configure screen saver. */
 	if (vdi_config->screensaver == 1) {
 		SDL_EnableScreenSaver();
@@ -369,7 +376,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
 					parsec_context.window_height,
-					SDL_WINDOW_HIGH_PIXEL_DENSITY
+					window_flags
 				);
 	if (parsec_context.window == NULL) {
 		vdi_stream_client__log_error("Window creation failed: %s\n", SDL_GetError());
