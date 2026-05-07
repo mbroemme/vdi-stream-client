@@ -32,9 +32,111 @@
 
 /* system includes. */
 #include <limits.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/mman.h>
 #include <unistd.h>
+
+
+/* check whether a named Parsec decoder is visible through the public SDK API. */
+static bool vdi_stream_client__parsec_decoder_visible(struct parsec_context_s *parsec_context, const char *name) {
+	ParsecDecoder decoders[8] = {0};
+	Uint32 decoder;
+	Uint32 count;
+
+#ifdef HAVE_LIBPARSEC
+	(void) parsec_context;
+	count = ParsecGetDecoders(decoders, sizeof(decoders) / sizeof(decoders[0]));
+#else
+	count = ParsecGetDecoders(parsec_context->parsec, decoders, sizeof(decoders) / sizeof(decoders[0]));
+#endif
+
+	for (decoder = 0; decoder < count; decoder++) {
+		if (strncmp(decoders[decoder].name, name, sizeof(decoders[decoder].name)) == 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/*
+ * Unhide the SDK-internal FFMPEG decoder.
+ *
+ * Parsec SDK 6.0 ships the Linux FFmpeg decoder in the decoder table, but marks
+ * it hidden. The public API has no switch for this. We locate the private table
+ * via the RIP-relative load in ParsecGetDecoders() and clear the FFMPEG hidden
+ * flag before connecting to the host. This enables the software H.265 decoder
+ * path while keeping the normal hardware decoder preference intact.
+ */
+static bool vdi_stream_client__parsec_unhide_ffmpeg_decoder(struct parsec_context_s *parsec_context) {
+#if defined(__linux__) && defined(__x86_64__)
+	const Uint8 pattern[] = {0x48, 0x8d, 0x2d};
+	const Uint32 decoder_entry_size = 0x28;
+	const Uint32 decoder_hidden_offset = 0x20;
+	const Uint32 ffmpeg_decoder_index = 2;
+	const Uint32 scan_len = 128;
+	const Uint8 *func;
+	Uint8 *hidden;
+	long page_size;
+	uintptr_t page;
+	Uint32 offset;
+	int32_t displacement;
+
+	if (vdi_stream_client__parsec_decoder_visible(parsec_context, "FFMPEG")) {
+		return true;
+	}
+
+#ifdef HAVE_LIBPARSEC
+	(void) parsec_context;
+	func = (const Uint8 *) (const void *) ParsecGetDecoders;
+#else
+	if (parsec_context->parsec == NULL || parsec_context->parsec->api.ParsecGetDecoders == NULL) {
+		return false;
+	}
+	func = (const Uint8 *) (const void *) parsec_context->parsec->api.ParsecGetDecoders;
+#endif
+
+	for (offset = 0; offset + sizeof(pattern) + sizeof(displacement) < scan_len; offset++) {
+		if (memcmp(func + offset, pattern, sizeof(pattern)) != 0) {
+			continue;
+		}
+
+		memcpy(&displacement, func + offset + sizeof(pattern), sizeof(displacement));
+		hidden = (Uint8 *) (func + offset + sizeof(pattern) + sizeof(displacement) + displacement +
+			(ffmpeg_decoder_index * decoder_entry_size) + decoder_hidden_offset);
+
+		if (*hidden == 0) {
+			return true;
+		}
+		if (*hidden != 1) {
+			continue;
+		}
+
+		page_size = sysconf(_SC_PAGESIZE);
+		if (page_size <= 0) {
+			return false;
+		}
+
+		page = (uintptr_t) hidden & ~((uintptr_t) page_size - 1);
+		if (mprotect((void *) page, (size_t) page_size, PROT_READ | PROT_WRITE) != 0) {
+			return false;
+		}
+
+		*hidden = 0;
+		(void) mprotect((void *) page, (size_t) page_size, PROT_READ);
+
+		return vdi_stream_client__parsec_decoder_visible(parsec_context, "FFMPEG");
+	}
+#else
+	(void) parsec_context;
+#endif
+
+	return false;
+}
 
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
@@ -247,6 +349,11 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	/* configure host video codec. */
 	if (vdi_config->hevc == 1) {
 		cfg.video[DEFAULT_STREAM].decoderH265 = 1;
+		if (vdi_stream_client__parsec_unhide_ffmpeg_decoder(&parsec_context)) {
+			vdi_stream_client__log_info("Enable FFmpeg Video Decoder for H.265 (HEVC) fallback\n");
+		} else {
+			vdi_stream_client__log_info("WARNING: Unable to enable FFmpeg Video Decoder, H.265 (HEVC) may be unavailable\n");
+		}
 	}
 	if (vdi_config->hevc == 0) {
 		vdi_stream_client__log_info("Disable H.265 (HEVC) Video Codec\n");
