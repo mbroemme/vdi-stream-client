@@ -41,8 +41,8 @@
 #include <unistd.h>
 
 
-/* check whether a named Parsec decoder is visible through the public SDK API. */
-static bool vdi_stream_client__parsec_decoder_visible(struct parsec_context_s *parsec_context, const char *name) {
+/* find a visible Parsec decoder through the public SDK API. */
+static bool vdi_stream_client__parsec_find_decoder(struct parsec_context_s *parsec_context, const char *name, bool h265, Uint32 *index) {
 	ParsecDecoder decoders[8] = {0};
 	Uint32 decoder;
 	Uint32 count;
@@ -55,9 +55,19 @@ static bool vdi_stream_client__parsec_decoder_visible(struct parsec_context_s *p
 #endif
 
 	for (decoder = 0; decoder < count; decoder++) {
-		if (strncmp(decoders[decoder].name, name, sizeof(decoders[decoder].name)) == 0) {
-			return true;
+		if (name != NULL && strncmp(decoders[decoder].name, name, sizeof(decoders[decoder].name)) != 0) {
+			continue;
 		}
+
+		if (h265 && !decoders[decoder].h265) {
+			continue;
+		}
+
+		if (index != NULL) {
+			*index = decoders[decoder].index;
+		}
+
+		return true;
 	}
 
 	return false;
@@ -86,7 +96,7 @@ static bool vdi_stream_client__parsec_unhide_ffmpeg_decoder(struct parsec_contex
 	Uint32 offset;
 	int32_t displacement;
 
-	if (vdi_stream_client__parsec_decoder_visible(parsec_context, "FFMPEG")) {
+	if (vdi_stream_client__parsec_find_decoder(parsec_context, "FFMPEG", false, NULL)) {
 		return true;
 	}
 
@@ -129,7 +139,7 @@ static bool vdi_stream_client__parsec_unhide_ffmpeg_decoder(struct parsec_contex
 		*hidden = 0;
 		(void) mprotect((void *) page, (size_t) page_size, PROT_READ);
 
-		return vdi_stream_client__parsec_decoder_visible(parsec_context, "FFMPEG");
+		return vdi_stream_client__parsec_find_decoder(parsec_context, "FFMPEG", false, NULL);
 	}
 #else
 	(void) parsec_context;
@@ -380,6 +390,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	if (vdi_config->acceleration == 0) {
 		vdi_stream_client__log_info("Disable Hardware Accelerated Video Decoding\n");
 		cfg.video[DEFAULT_STREAM].decoderIndex = 0;
+	}
+
+	/* H.265 must start with a decoder that advertises H.265 support. The SDK
+	 * otherwise keeps the selected H.264-capable decoder and negotiates H.264. */
+	if (vdi_config->hevc == 1) {
+		Uint32 h265_decoder_index = 0;
+
+		if (vdi_stream_client__parsec_find_decoder(&parsec_context, NULL, true, &h265_decoder_index)) {
+			if (cfg.video[DEFAULT_STREAM].decoderIndex != h265_decoder_index) {
+				vdi_stream_client__log_info("Use decoder index %u for H.265 (HEVC)\n", h265_decoder_index);
+			}
+			cfg.video[DEFAULT_STREAM].decoderIndex = h265_decoder_index;
+		} else {
+			vdi_stream_client__log_info("WARNING: No visible H.265 (HEVC) decoder found, host may fall back to H.264 (AVC)\n");
+		}
 	}
 
 	/* configure upnp. */
