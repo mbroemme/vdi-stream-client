@@ -231,11 +231,59 @@ With such a rule, labwc will stop handling its own key bindings for the
 vdi-stream-client window, allowing Alt+Tab and similar shortcuts to reach
 the remote session. Other Wayland compositors may require different options,
 or may not provide an equivalent mechanism.
+.SH PARSEC TIPS
+Parsec hosts expose all settings in the host's advanced configuration file
+(config.txt, or config.json since Parsec build 150-89). These are host-side
+options; they are not client side options and cannot be forced by
+vdi-stream-client through the Parsec client SDK.
+.TP 8
+.BR server_resolution_x=<value> ", " server_resolution_y=<value>
+In the Parsec UI, this host setting is shown as "Resolution".
+
+Parsec hosts expose host-side resolution options that control whether the host
+accepts client-driven resolution requests, and therefore how the
+.BR \-\-width
+and
+.BR \-\-height
+options behave.
+
+When both values are <0>, the host uses "Use Client Resolution", which is the
+default. At connect time the host switches its display to the resolution
+requested by the client, falling back to the closest matching mode if the exact
+value is not in the host display's mode list. This is the mode the
+.BR \-\-width
+and
+.BR \-\-height
+options are designed for: the host display is reconfigured, the encoder
+streams at the requested dimensions, and the SDL window is sized to match.
+Resolution changes requested this way are session-scoped and the host restores
+its original resolution once the last client disconnects.
+
+When both values are <65535>, the host uses "Keep Host Resolution". The host
+ignores client-driven resolution requests and continues streaming at its own
+current display resolution. With this setting the
+.BR \-\-width
+and
+.BR \-\-height
+options are ignored and the SDL window is sized to the streamed display
+resolution. To change the host resolution under this setting, change it
+directly on the host through the Windows Display Settings or the Parsec
+overlay.
+
+When other positive values are configured, the host forces that specific
+resolution. The
+.BR \-\-width
+and
+.BR \-\-height
+options are ignored and the SDL window is sized to the forced streamed
+dimensions.
 .SH PERFORMANCE TIPS
 Parsec hosts expose several performance-related options that affect
 host-side encoding CPU usage and client-side decoding workload.
 .TP 8
 .B  host_full_fps=<boolean>
+In the Parsec UI, this host setting is shown as "Constant FPS".
+
 When set to <false> allows the host to reduce idle frame delivery when the
 screen is not changing. It reduces unnecessary host encoding work, network
 traffic, client decoding work and render wakeups. The option is configured
@@ -253,6 +301,8 @@ for small continuous changes such as a blinking text caret, animated cursor,
 clock widget, wallpaper animation, notifications or other compositor activity.
 .TP 8
 .B  encoder_fps=<fps>
+In the Parsec UI, this host setting is shown as "FPS".
+
 For desktop-focused VDI workloads, consider setting the Parsec host option
 to <30>. This limits the host encoder to 30 frames per second. This is
 usually sufficient for login screens, office applications, terminals,
