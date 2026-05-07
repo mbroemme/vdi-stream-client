@@ -1,4 +1,4 @@
-.\" Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
+.\" Copyright (c) 2021-2026 Maik Broemme <mbroemme@libmpq.org>
 .\"
 .\" This program is free software: you can redistribute it and/or modify
 .\" it under the terms of the GNU General Public License as published by
@@ -12,7 +12,10 @@
 .\"
 .\" You should have received a copy of the GNU General Public License
 .\" along with this program.  If not, see <http://www.gnu.org/licenses/>.
-.TH VDI-STREAM-CLIENT 1 2021-01-26 "VDI Stream Client" "multimedia"
+.\"
+.\" Additional permission under GNU GPL version 3 section 7 is described in
+.\" COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
+.TH VDI-STREAM-CLIENT 1 2026-04-30 "VDI Stream Client" "multimedia"
 .SH NAME
 vdi-stream-client \- a low latency desktop streaming client
 .SH SYNOPSIS
@@ -27,50 +30,51 @@ content to a local Linux system which process keyboard and mouse input.
 The remote server can be a virtual machine running on-top of on-premise
 deployments of Virtuozzo Hybrid Server, KVM or Xen. It can also connect
 to public clouds like Amazon (EC2 G3 Accelerated) or Microsoft Azure
-(NV6). It uses Simple DirectMedia Layer (SDL2) for low-level access to
+(NV6). It uses Simple DirectMedia Layer (SDL3) for low-level access to
 audio, video, keyboard, mouse and clipboard.
 .SH OPTIONS
 Help options:
 .TP 8
 .B  \-h|\-\-help
-.ti 15
 Print the usage message on the standard output.
 .TP 8
 .B  \-v|\-\-version
-.ti 15
 Print the currently installed version on the standard output.
+.PP
+Debug options:
+.TP 8
+.B  \-\-stats <\fIseconds\fP>
+Show render statistics every \fIseconds\fP seconds. It is disabled by
+default. See
+.BR "PERFORMANCE TIPS"
+for guidance on interpreting idle frame delivery and Parsec host-side
+FPS settings.
 .PP
 Parsec options:
 .TP 8
 .B  \-\-session <\fIid\fP>
-.ti 15
 The session ID to connect to Parsec service. This option is mandatory.
 .TP 8
 .B  \-\-peer <\fIid\fP>
-.ti 15
 The peer ID of the remote Parsec host. This option is mandatory.
 .TP 8
 .B  \-\-timeout <\fIseconds\fP>
-.ti 15
 The connection timeout when first connection to host is established.
 There will be no reconnect in this case. The default timeout is 5
 seconds.
 .TP 8
 .B  \-\-speed <\fIspeed\fP>
-.ti 15
-The mouse wheel snesitivity to use, supported range is between 0
+The mouse wheel sensitivity to use, supported range is between 0
 (disable mouse wheel completely) up to 500. The value is in pixel. The
 default value is 100.
 .TP 8
 .B  \-\-width <\fIwidth\fP>
-.ti 15
 The host screen and window width to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host width. The value is in pixel.
 .TP 8
 .B  \-\-height <\fIheight\fP>
-.ti 15
 The host screen and window height to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
@@ -79,33 +83,28 @@ configured host height. The value is in pixel.
 Parsec Warp options:
 .TP 8
 .B  \-\-no\-subsampling
-.ti 15
-Disable compression and chroma subsampling. If disabled, host will
-compress video stream and apply chroma subsampling with mode 4:2:0 to
-reduce data transfers. If enabled, no chroma subsampling is applied and
-client will receive sharp and crisp stream with mode 4:4:4. Disabling is
-only available under commercial subscription Parsec Warp. It is enabled
-by default.
+Request 4:4:4 color mode without chroma subsampling. By default, the host
+compresses the video stream and applies chroma subsampling with mode 4:2:0
+to reduce data transfers. With this option, no chroma subsampling is
+applied and the client receives a sharp and crisp stream with mode 4:4:4.
+This option is only available under the commercial Parsec Warp subscription.
 .PP
 Client options:
 .TP 8
 .B  \-\-no\-acceleration
-.ti 15
 Disable hardware accelerated client decoding. If disabled, client will
 decode frames in software on CPU. If enabled, client will decode frames
-acclerated with the help of GPU. In both cases frames are rendered with
-OpenGL. With software implementation it is almost impossible to reach
+acclerated with the help of GPU. Frames are rendered with the SDL
+renderer. With software implementation it is almost impossible to reach
 smooth client rendering. It is enabled by default.
 .TP 8
 .B  \-\-no\-upnp
-.ti 15
 Disable UPnP NAT traversal support. If disabled, client may not be
 able to connect to host. If enabled, client will use UPnP to assist
 NAT traversal. It is not recommended to turn it off due to UDP
 client listening. It is enabled by default.
 .TP 8
 .B  \-\-no\-reconnect
-.ti 15
 Disable automatic reconnect in case of network or service failures. If
 disabled, client will immediately terminate on failures. If enabled a
 black window with text "Reconnecting..." is shown in case of failures.
@@ -113,7 +112,6 @@ It is recommended to leave it enabled if you are on roaming or an
 unstable and slow network link. It is enabled by default.
 .TP 8
 .B  \-\-no\-grab
-.ti 15
 Disable exclusive mouse grab. If disabled, the mouse is passive grabbed
 and can enter and leave the window when mouse is moved. If enabled, the
 first press of any mouse button will lock the mouse into the window. To
@@ -124,16 +122,25 @@ user. Without relative grabbing most games would behave unpredictable.
 A relative grabe can be released with "Ctrl+Alt". A relative grab can be
 noticed in the Window title and with an invisible the mouse cursor.
 .TP 8
+.B  \-\-no\-decoration
+Disable window manager decorations by creating the SDL window with the
+.B SDL_WINDOW_BORDERLESS
+flag. When this option is used, the client window is shown without
+a title bar or window borders. This can be useful for kiosk-style setups,
+launchers that manage the window themselves, or compositor and
+window-manager rules that place the client as an appliance-like remote
+desktop. This option does not enable fullscreen mode and does not change
+keyboard or mouse grabbing; combine it with compositor configuration or
+the grab options when those behaviors are required. Decorations are enabled
+by default.
+.TP 8
 .B  \-\-no\-screensaver
-.ti 15
-Disable screen saver and screen locker support on client machine (Linux
-X11). If disabled, configured X11 screen saver and lockers are ignored
-and X11 will never start them. This applies only to screen savers and
-lockers using the X11 API. If enabled, X11 screen saver and lockers will
-work as usual. It is enabled by default.
+Disable screen saver and screen locker support on client machine. If
+disabled, configured screen saver and lockers are ignored and will never
+be started. If enabled, screen saver and lockers will work as usual. It
+is enabled by default.
 .TP 8
 .B  \-\-no\-clipboard
-.ti 15
 Disable clipboard sharing between client and host. If disabled, the
 clipboards of client and host are independent and never synchronized. It
 helps to avoid occasional leaks of sensitive information made by copy
@@ -141,14 +148,12 @@ and paste mistakes. If enabled, both clipboards are always synchronized
 in bi-directional mode. It is enabled by default.
 .TP 8
 .B  \-\-no\-audio
-.ti 15
 Disable audio streaming support. If disabled, no audio from host is
 streamed and played on client machine. If enabled, audio is streamed
 and played with default audio device used by SDL. It is enabled by
 default.
 .TP 8
 .B  \-\-no\-hevc
-.ti 15
 Disable H.265 (HEVC) video codec. If disabled, client will use H.264
 (AVC) video codec. If enabled, client will use H.265 (HEVC) video codec.
 There is a trade-off between CPU performance and network latency and
@@ -161,7 +166,6 @@ by default.
 USB options:
 .TP 8
 .B  \-\-redirect <\fIvendorID\fP>:<\fIproductID\fP>@<\fIip\fP>#<\fIport\fP>,[...]
-.ti 15
 The USB devices to redirect to the host. The client will monitor the
 specified USB device with <\fIvendorID\fP> and <\fIproductID\fP> for
 hotplug events (attach and detach). To get a list of available USB devices
@@ -179,14 +183,12 @@ During connection to the host, you can use certain key combinations to
 release keyboard grab or to switch into force grab mode.
 .TP 8
 .B  Ctrl+Alt
-.ti 15
 Toggle mouse and keyboard grab if exclusive mouse grab is enabled. If any
 mouse button is pressed, the cursor will be locked into the window and all
 keys are passed. The Ctrl+Alt key combination will release the grab.
 See \-\-no\-grab option for more details.
 .TP 8
 .B  Shift+F12
-.ti 15
 Toggle mouse and keyboard grab regardless if exclusive grab is enabled
 or disabled. If enabling forced grab, it will lock the cursor to the window
 and pass all keys, except Shift+F12 to the window. The client configured
@@ -195,6 +197,121 @@ The Ctrl+Alt key combination will not release a forced grab. If disabling
 forced grab, it will release the mouse from the window, don't pass window
 manager key combinations anymore and re-enable screen saver and screen
 locker if necessary.
+.SH WAYLAND TIPS
+Wayland compositors normally keep ownership of global shortcuts such as
+Alt+Tab, Alt+F4 or Super based key bindings. For VDI, virtual machine,
+remote desktop and game streaming clients this means that some key
+combinations may be handled by the local compositor instead of being
+forwarded to the streamed Windows desktop.
+.PP
+The Wayland protocol
+.BR keyboard-shortcuts-inhibit-unstable-v1
+allows a client to request that compositor shortcuts are inhibited for its
+surface while it has keyboard focus. If the compositor supports and honors
+this protocol, SDL can use it for keyboard grab requests so that shortcuts
+such as Alt+Tab can be delivered to vdi-stream-client and forwarded to the
+host. If the compositor does not support shortcut inhibition, these
+combinations remain under compositor control even when keyboard grab is
+requested by the client.
+.PP
+Some compositors provide compositor-specific configuration as an alternative
+or supplement. For example, labwc can disable its own key bindings for a
+matching window with a window rule. Add a rule like the following to the
+labwc configuration:
+.PP
+.RS
+.nf
+<!-- vdi stream client specific settings. -->
+<windowRule identifier="vdi-stream-client">
+
+  <!-- allow A-Tab and similar keybinds to be delivered. -->
+  <action name="ToggleKeybinds" />
+</windowRule>
+.fi
+.RE
+.PP
+With such a rule, labwc will stop handling its own key bindings for the
+vdi-stream-client window, allowing Alt+Tab and similar shortcuts to reach
+the remote session. Other Wayland compositors may require different options,
+or may not provide an equivalent mechanism.
+.SH PARSEC TIPS
+Parsec hosts expose all settings in the host's advanced configuration file
+(config.txt, or config.json since Parsec build 150-89). These are host-side
+options; they are not client side options and cannot be forced by
+vdi-stream-client through the Parsec client SDK.
+.TP 8
+.BR server_resolution_x=<value> ", " server_resolution_y=<value>
+In the Parsec UI, this host setting is shown as "Resolution".
+
+Parsec hosts expose host-side resolution options that control whether the host
+accepts client-driven resolution requests, and therefore how the
+.BR \-\-width
+and
+.BR \-\-height
+options behave.
+
+When both values are <0>, the host uses "Use Client Resolution", which is the
+default. At connect time the host switches its display to the resolution
+requested by the client, falling back to the closest matching mode if the exact
+value is not in the host display's mode list. This is the mode the
+.BR \-\-width
+and
+.BR \-\-height
+options are designed for: the host display is reconfigured, the encoder
+streams at the requested dimensions, and the SDL window is sized to match.
+Resolution changes requested this way are session-scoped and the host restores
+its original resolution once the last client disconnects.
+
+When both values are <65535>, the host uses "Keep Host Resolution". The host
+ignores client-driven resolution requests and continues streaming at its own
+current display resolution. With this setting the
+.BR \-\-width
+and
+.BR \-\-height
+options are ignored and the SDL window is sized to the streamed display
+resolution. To change the host resolution under this setting, change it
+directly on the host through the Windows Display Settings or the Parsec
+overlay.
+
+When other positive values are configured, the host forces that specific
+resolution. The
+.BR \-\-width
+and
+.BR \-\-height
+options are ignored and the SDL window is sized to the forced streamed
+dimensions.
+.SH PERFORMANCE TIPS
+Parsec hosts expose several performance-related options that affect
+host-side encoding CPU usage and client-side decoding workload.
+.TP 8
+.B  host_full_fps=<boolean>
+In the Parsec UI, this host setting is shown as "Constant FPS".
+
+When set to <false> allows the host to reduce idle frame delivery when the
+screen is not changing. It reduces unnecessary host encoding work, network
+traffic, client decoding work and render wakeups. The option is configured
+on the Parsec host side; it is not a client side option and cannot be forced
+by vdi-stream-client through the Parsec client SDK.
+
+When set to <true>, the host attempts to keep streaming at the full stream
+frame rate even after the desktop becomes static. On VDI style workloads
+this can look like the client is still receiving and rendering 60 frames per
+second on an idle Windows login screen or empty desktop. For desktop and VDI
+usage, keep this host option disabled.
+
+If idle frame delivery is still high with <false>, check the host desktop
+for small continuous changes such as a blinking text caret, animated cursor,
+clock widget, wallpaper animation, notifications or other compositor activity.
+.TP 8
+.B  encoder_fps=<fps>
+In the Parsec UI, this host setting is shown as "FPS".
+
+For desktop-focused VDI workloads, consider setting the Parsec host option
+to <30>. This limits the host encoder to 30 frames per second. This is
+usually sufficient for login screens, office applications, terminals,
+browsers, and other mostly static workflows, while still feeling responsive
+for mouse and keyboard input. For animation-heavy, video, or gaming use
+cases, <60> may be preferable.
 .SH AUTHOR
 Written by Maik Broemme <mbroemme@libmpq.org>
 .SH REPORTING BUGS
@@ -204,12 +321,15 @@ VDI Stream Client is a very tiny and low latency desktop streaming
 client for remote Windows guests with GPU passthrough which supports
 Nvidia NVENC, AMD VCE, VCN and Intel Quick Sync Video.
 
-Copyright (C) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+Copyright (C) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
+
+Additional permission under GNU GPL version 3 section 7 is described in
+COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of

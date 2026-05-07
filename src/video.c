@@ -1,7 +1,7 @@
 /*
  *  video.c -- video rendering thread via sdl
  *
- *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,6 +15,9 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 /* internal includes. */
@@ -27,184 +30,199 @@
 #include <stdio.h>
 #include <unistd.h>
 
-/* quick utility function for texture creation. */
-static Sint32 vdi_stream_client__power_of_two(Sint32 input) {
-	Sint32 value = 1;
-	while (value < input) {
-		value <<= 1;
+static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel_format) {
+	switch (format) {
+		case FORMAT_NV12:
+			*pixel_format = SDL_PIXELFORMAT_NV12;
+			return true;
+		case FORMAT_I420:
+			*pixel_format = SDL_PIXELFORMAT_IYUV;
+			return true;
+		case FORMAT_BGRA:
+			*pixel_format = SDL_PIXELFORMAT_BGRA32;
+			return true;
+		case FORMAT_RGBA:
+			*pixel_format = SDL_PIXELFORMAT_RGBA32;
+			return true;
+		default:
+			return false;
 	}
-	return value;
 }
 
-/* convert text into opengl texture. */
-GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord) {
-	GLuint texture;
-	Sint32 w, h;
-	SDL_Surface *image;
-	SDL_Rect area;
-	Uint8 saved_alpha;
-	SDL_BlendMode saved_mode;
+static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame) {
+	SDL_PixelFormat pixel_format;
 
-	/* use the surface width and height expanded to powers of 2. */
-	w = vdi_stream_client__power_of_two(surface->w);
-	h = vdi_stream_client__power_of_two(surface->h);
-	texture_coord[0] = 0.0f; /* min x */
-	texture_coord[1] = 0.0f; /* min y */
-	texture_coord[2] = (GLfloat)surface->w / w; /* max x */
-	texture_coord[3] = (GLfloat)surface->h / h; /* max y */
-
-	image = SDL_CreateRGBSurface(
-		SDL_SWSURFACE,
-		w, h,
-		32,
-#if SDL_BYTEORDER == SDL_LIL_ENDIAN /* opengl rgba masks. */
-		0x000000FF,
-		0x0000FF00,
-		0x00FF0000,
-		0xFF000000
-#else
-		0xFF000000,
-		0x00FF0000,
-		0x0000FF00,
-		0x000000FF
-#endif
-	);
-	if (image == NULL) {
-		return VDI_STREAM_CLIENT_SUCCESS;
+	if (!vdi_stream_client__video_format(frame->format, &pixel_format)) {
+		vdi_stream_client__log_error("Unsupported video format: %d\n", frame->format);
+		return false;
 	}
 
-	/* save the alpha blending attributes. */
-	SDL_GetSurfaceAlphaMod(surface, &saved_alpha);
-	SDL_SetSurfaceAlphaMod(surface, 0xFF);
-	SDL_GetSurfaceBlendMode(surface, &saved_mode);
-	SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_NONE);
+	if (parsec_context->texture_video != NULL &&
+	    parsec_context->texture_width == (Sint32) frame->fullWidth &&
+	    parsec_context->texture_height == (Sint32) frame->fullHeight &&
+	    parsec_context->format_video == frame->format) {
+		return true;
+	}
 
-	/* copy the surface into the gl texture image. */
-	area.x = 0;
-	area.y = 0;
-	area.w = surface->w;
-	area.h = surface->h;
-	SDL_BlitSurface(surface, &area, image, &area);
+	SDL_DestroyTexture(parsec_context->texture_video);
+	parsec_context->texture_video = SDL_CreateTexture(parsec_context->renderer,
+		pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth, frame->fullHeight);
+	if (parsec_context->texture_video == NULL) {
+		vdi_stream_client__log_error("Video texture creation failed: %s\n", SDL_GetError());
+		return false;
+	}
 
-	/* restore the alpha blending attributes. */
-	SDL_SetSurfaceAlphaMod(surface, saved_alpha);
-	SDL_SetSurfaceBlendMode(surface, saved_mode);
-
-	/* create an opengl texture for the image. */
-	glGenTextures(1, &texture);
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, image->pixels);
-
-	/* no longer needed. */
-	SDL_FreeSurface(image);
-
-	return texture;
+	parsec_context->texture_width = frame->fullWidth;
+	parsec_context->texture_height = frame->fullHeight;
+	parsec_context->format_video = frame->format;
+	return true;
 }
 
-/* opengl frame text event. */
+static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque) {
+	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+	const Uint8 *pixels = (const Uint8 *) image;
+
+	if (!vdi_stream_client__video_texture(parsec_context, frame)) {
+		return;
+	}
+
+	switch (frame->format) {
+		case FORMAT_NV12:
+			if (!SDL_UpdateNVTexture(parsec_context->texture_video, NULL,
+			    pixels, frame->fullWidth,
+			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
+			break;
+		case FORMAT_I420:
+			if (!SDL_UpdateYUVTexture(parsec_context->texture_video, NULL,
+			    pixels, frame->fullWidth,
+			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
+			    pixels + frame->fullWidth * frame->fullHeight + (frame->fullWidth / 2) * (frame->fullHeight / 2), frame->fullWidth / 2)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
+			break;
+		case FORMAT_BGRA:
+		case FORMAT_RGBA:
+			if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
+				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
+			break;
+		default:
+			return;
+	}
+
+	if (parsec_context->stats_enabled) {
+		parsec_context->stats_frames++;
+		parsec_context->stats_last_frame_tick = SDL_GetTicks();
+	}
+	parsec_context->frame_video_updated = true;
+}
+
+/* sdl frame text event. */
 static void vdi_stream_client__frame_text(void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	Sint32 x, y, w, h;
+	SDL_FRect dst;
 
-	/* calculate position and size to center of window. */
-	x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2;
-	y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2;
-	w = parsec_context->surface_ttf->w;
-	h = parsec_context->surface_ttf->h;
-
-	/* reset drawable area. */
-	glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	/* attributes. */
-	glPushAttrib(GL_ENABLE_BIT);
-	glDisable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	glEnable(GL_TEXTURE_2D);
-
-	/* this allows alpha blending of 2d textures with the scene. */
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glOrtho(0.0, parsec_context->window_width, parsec_context->window_height, 0.0, 0.0, 1.0);
-
-	glMatrixMode(GL_MODELVIEW);
-	glPushMatrix();
-	glLoadIdentity();
-
-	glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-
-	/* show the text in center of window. */
-	glBindTexture(GL_TEXTURE_2D, parsec_context->texture_ttf);
-	glBegin(GL_TRIANGLE_STRIP);
-	glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_min_y); glVertex2i(x,     y    );
-	glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_min_y); glVertex2i(x + w, y    );
-	glTexCoord2f(parsec_context->texture_min_x, parsec_context->texture_max_y); glVertex2i(x,     y + h);
-	glTexCoord2f(parsec_context->texture_max_x, parsec_context->texture_max_y); glVertex2i(x + w, y + h);
-	glEnd();
-
-	/* stop text rendering. */
-	glMatrixMode(GL_MODELVIEW);
-	glPopMatrix();
-
-	glMatrixMode(GL_PROJECTION);
-	glPopMatrix();
-
-	/* remove attributes. */
-	glPopAttrib();
-
-	/* static text and no need to render it frequently. */
-	SDL_Delay(parsec_context->timeout);
-}
-
-/* opengl frame video event. */
-static void vdi_stream_client__frame_video(void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-
-	/* reset drawable area. */
-	glViewport(0, 0, parsec_context->window_width, parsec_context->window_height);
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-
-	ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
-	ParsecClientGLRenderFrame(parsec_context->parsec, DEFAULT_STREAM, NULL, NULL, parsec_context->timeout);
-}
-
-/* sdl video thread. */
-Sint32 vdi_stream_client__video_thread(void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-
-	SDL_GL_MakeCurrent(parsec_context->window, parsec_context->gl);
-	SDL_GL_SetSwapInterval(1);
-
-	while (parsec_context->done == SDL_FALSE) {
-
-		/* show parsec frame. */
-		if (parsec_context->connection == SDL_TRUE) {
-			vdi_stream_client__frame_video(parsec_context);
-		}
-
-		/* show reconnecting text. */
-		if (parsec_context->connection == SDL_FALSE) {
-			vdi_stream_client__frame_text(parsec_context);
-		}
-
-		SDL_GL_SwapWindow(parsec_context->window);
+	if (parsec_context->texture_ttf == NULL || parsec_context->surface_ttf == NULL) {
+		return;
 	}
 
-	/* show closing text. */
-	vdi_stream_client__frame_text(parsec_context);
-	SDL_GL_SwapWindow(parsec_context->window);
+	/* calculate position and size to center of window. */
+	dst.x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2.0f;
+	dst.y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2.0f;
+	dst.w = parsec_context->surface_ttf->w;
+	dst.h = parsec_context->surface_ttf->h;
 
-	ParsecClientGLDestroy(parsec_context->parsec, DEFAULT_STREAM);
-	SDL_GL_DeleteContext(parsec_context->gl);
+	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
+	SDL_RenderClear(parsec_context->renderer);
+	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_ttf, NULL, &dst);
+}
 
-	return VDI_STREAM_CLIENT_SUCCESS;
+/* sdl frame video event. */
+static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
+	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+	SDL_FRect src;
+
+	if (parsec_context->requested_width != parsec_context->window_width ||
+	    parsec_context->requested_height != parsec_context->window_height) {
+		ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
+		parsec_context->requested_width = parsec_context->window_width;
+		parsec_context->requested_height = parsec_context->window_height;
+	}
+
+	parsec_context->frame_video_updated = false;
+	ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, parsec_context->render_timeout, parsec_context);
+
+	if (!force_redraw && !parsec_context->frame_video_updated) {
+		return false;
+	}
+
+	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
+	SDL_RenderClear(parsec_context->renderer);
+
+	if (parsec_context->texture_video == NULL) {
+		return force_redraw;
+	}
+
+	src.x = 0.0f;
+	src.y = 0.0f;
+	src.w = parsec_context->window_width;
+	src.h = parsec_context->window_height;
+	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_video, &src, NULL);
+	return true;
+}
+
+/* initialize video rendering on the main thread. */
+void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
+	if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
+		vdi_stream_client__log_error("SDL_SetRenderVSync failed: %s\n", SDL_GetError());
+	}
+}
+
+/* render a single frame on the main thread. */
+bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw) {
+
+	/* show parsec frame. */
+	if (parsec_context->connection) {
+		if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
+			return false;
+		}
+		if (!SDL_RenderPresent(parsec_context->renderer)) {
+			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
+		} else if (parsec_context->stats_enabled) {
+			parsec_context->stats_presents++;
+		}
+		return true;
+	}
+
+	/* show reconnecting/shutdown text if available. */
+	if (parsec_context->surface_ttf != NULL &&
+	    (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
+		vdi_stream_client__frame_text(parsec_context);
+		if (!SDL_RenderPresent(parsec_context->renderer)) {
+			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
+		} else if (parsec_context->stats_enabled) {
+			parsec_context->stats_presents++;
+		}
+		parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
+		return true;
+	}
+
+	return false;
+}
+
+/* release video resources on the main thread. */
+void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context) {
+	SDL_DestroyTexture(parsec_context->texture_ttf);
+	parsec_context->texture_ttf = NULL;
+
+	SDL_DestroyTexture(parsec_context->texture_video);
+	parsec_context->texture_video = NULL;
+
+	SDL_DestroyRenderer(parsec_context->renderer);
+	parsec_context->renderer = NULL;
 }

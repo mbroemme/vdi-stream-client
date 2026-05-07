@@ -1,7 +1,7 @@
 /*
  *  video.h -- video rendering thread via sdl
  *
- *  Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2021-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,20 +15,22 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 #ifndef _VIDEO_H
 #define _VIDEO_H
 
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
-/* opengl includes. */
-#include <GL/gl.h>
+struct parsec_context_s;
 
-/* video thread. */
-GLuint vdi_stream_client__gl_load_texture(SDL_Surface *surface, GLfloat *texture_coord);
-Sint32 vdi_stream_client__video_thread(void *opaque);
+/* video rendering. */
+void vdi_stream_client__video_init(struct parsec_context_s *parsec_context);
+bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
+void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
 
 #endif /* _VIDEO_H */

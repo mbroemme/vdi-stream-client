@@ -1,7 +1,7 @@
 /*
  *  redirect.c -- usb redirection via libusb
  *
- *  Copyright (c) 2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2021-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,6 +15,9 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 /* internal includes. */
@@ -118,7 +121,6 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 	/* initial values. */
 	Uint32 retry = 0;
 	Uint32 delay = 1000;
-	Sint32 option = 1;
 	Sint32 error = 0;
 
 	/* user output. */
@@ -148,7 +150,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		goto error;
 	}
 
-	while (redirect_context->parsec_context->done == SDL_FALSE) {
+	while (!redirect_context->parsec_context->done) {
 		memset(&timeout, 0, sizeof(timeout));
 		timeout.tv_sec = 1;
 		timeout.tv_usec = 0;
@@ -157,7 +159,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (server_fd == -1) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -207,7 +209,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (host == NULL) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -275,7 +277,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 		while (server_fd != -1) {
 
 			/* check if main thread is still running. */
-			if (redirect_context->parsec_context->done == SDL_TRUE) {
+			if (redirect_context->parsec_context->done) {
 				break;
 			}
 
@@ -395,7 +397,7 @@ Sint32 vdi_stream_client__network_thread(void *opaque) {
 error:
 
 	/* stop main thread. */
-	redirect_context->parsec_context->done = SDL_TRUE;
+	redirect_context->parsec_context->done = true;
 
 	/* close client socket. */
 	if (server_fd != -1) {

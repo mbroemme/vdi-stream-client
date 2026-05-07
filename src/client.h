@@ -1,7 +1,7 @@
 /*
  *  client.h -- default types and defines
  *
- *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,14 +15,16 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 #ifndef _CLIENT_H
 #define _CLIENT_H
 
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 
 /* network includes. */
 #include <arpa/inet.h>
@@ -57,10 +59,13 @@ typedef struct {
 	Uint16		upnp;			/* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
 	Uint16		reconnect;		/* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable reconnect). */
 	Uint16		grab;			/* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and mouse) */
+	Uint16		decoration;		/* window manager decoration support. (0 = borderless window, 1 = decorated window) */
 	Uint16		screensaver;		/* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
 	Uint16		clipboard;		/* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
 	Uint16		audio;			/* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
 	Uint16		hevc;			/* streaming codec to use. (0 = h264, 1 = h265) */
+	Uint16		stats;			/* render stats logging. (0 = disable, 1 = enable) */
+	Uint64		stats_period;		/* render stats logging interval in seconds. */
 
 	/* usb options. */
 	union {

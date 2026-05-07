@@ -1,7 +1,7 @@
 /*
  *  parsec.h -- parsec default types and defines
  *
- *  Copyright (c) 2020-2021 Maik Broemme <mbroemme@libmpq.org>
+ *  Copyright (c) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
  *
  *  This program is free software: you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
@@ -15,6 +15,9 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 #ifndef _PARSEC_H
@@ -33,12 +36,8 @@
 #endif
 
 /* sdl includes. */
-#define SDL_MAIN_HANDLED
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_ttf.h>
-
-/* opengl includes. */
-#include <GL/gl.h>
+#include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 /* network includes. */
 #include <arpa/inet.h>
@@ -55,12 +54,12 @@
 struct parsec_context_s {
 
 	/* parsec. */
-	SDL_bool done;
-	SDL_bool connection;
-	SDL_bool decoder;
-	SDL_bool focus;
-	SDL_bool relative;
-	SDL_bool pressed;
+	bool done;
+	bool connection;
+	bool decoder;
+	bool focus;
+	bool relative;
+	bool pressed;
 #ifdef HAVE_LIBPARSEC
 	Parsec *parsec;
 #else
@@ -70,28 +69,46 @@ struct parsec_context_s {
 
 	/* video. */
 	SDL_Window *window;
-	SDL_GLContext *gl;
+	SDL_Renderer *renderer;
 	SDL_Cursor *cursor;
 	Sint32 window_width;
 	Sint32 window_height;
+	Sint32 requested_width;
+	Sint32 requested_height;
 
-	/* opengl texture for ttf rendering. */
+	/* sdl textures for rendering. */
 	SDL_Surface *surface_ttf;
-	GLuint texture_ttf;
-	GLfloat texture_min_x;
-	GLfloat texture_min_y;
-	GLfloat texture_max_x;
-	GLfloat texture_max_y;
+	SDL_Texture *texture_ttf;
+	SDL_Texture *texture_video;
+	bool frame_video_updated;
+	ParsecColorFormat format_video;
+	Sint32 texture_width;
+	Sint32 texture_height;
 	TTF_Font *font;
 
 	/* audio. */
-	SDL_AudioDeviceID audio;
-	Sint32 playing;
+	SDL_AudioStream *audio;
+	bool playing;
 	Uint32 min_buffer;
 	Uint32 max_buffer;
 
 	/* timeouts. */
 	Uint32 timeout;
+	Uint32 render_timeout;
+	Uint64 next_overlay_tick;
+
+	/* render stats. */
+	Uint16 stats_enabled;
+	Uint64 stats_period_ms;
+	Uint64 stats_next_tick;
+	Uint64 stats_last_frame_tick;
+	Uint64 stats_loops;
+	Uint64 stats_sdl_events;
+	Uint64 stats_parsec_events;
+	Uint64 stats_frames;
+	Uint64 stats_presents;
+	Uint64 stats_idle_waits;
+	Uint64 stats_idle_wait_ms;
 };
 
 /* usb redirect. */

@@ -1,0 +1,111 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # configure.ac requires the ParsecCursor.hidden SDK field. Pin this to a
+  # Parsec SDK tag or commit SHA if reproducible builds are required.
+  PARSEC_SDK_REF: master
+
+jobs:
+  build:
+    name: Build (${{ matrix.linkage }} linking)
+    runs-on: ubuntu-latest
+    container:
+      image: debian:trixie-slim
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        linkage:
+          - shared
+          - dso
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          set -euxo pipefail
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            build-essential \
+            ca-certificates \
+            git \
+            libsdl3-dev \
+            libsdl3-ttf-dev \
+            libusb-1.0-0-dev \
+            libusbredirhost-dev \
+            libusbredirparser-dev \
+            libx11-dev \
+            pkg-config \
+            tar \
+            wget
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Generate build system
+        run: |
+          set -euxo pipefail
+          sh autogen.sh
+
+      - name: Download Parsec SDK
+        run: |
+          set -euxo pipefail
+          wget -O parsec-sdk.tar.gz "https://github.com/mbroemme/parsec-sdk/archive/${PARSEC_SDK_REF}.tar.gz"
+          mkdir parsec-sdk-src
+          tar xzf parsec-sdk.tar.gz -C parsec-sdk-src --strip-components=1
+
+      - name: Install Parsec SDK for shared linking
+        if: matrix.linkage == 'shared'
+        run: |
+          set -euxo pipefail
+          install -D -m 0755 parsec-sdk-src/sdk/linux/libparsec.so /usr/lib/parsec/sdk/linux/libparsec.so
+          install -D -m 0644 parsec-sdk-src/sdk/parsec.h /usr/include/parsec/sdk/parsec.h
+          ln -sf parsec/sdk/linux/libparsec.so /usr/lib/libparsec.so
+          ln -sf sdk/parsec.h /usr/include/parsec/parsec.h
+          ldconfig
+
+      - name: Prepare Parsec SDK for DSO linking
+        if: matrix.linkage == 'dso'
+        run: |
+          set -euxo pipefail
+          mv parsec-sdk-src parsec-sdk
+
+      - name: Configure
+        run: |
+          set -euxo pipefail
+          ./configure --prefix=/usr
+
+      - name: Build
+        run: |
+          set -euxo pipefail
+          make -j"$(nproc)" V=1

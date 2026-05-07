@@ -1,6 +1,6 @@
 # VDI Stream Client
 
-[![Build Status](https://travis-ci.com/mbroemme/vdi-stream-client.svg?branch=main)](https://travis-ci.com/mbroemme/vdi-stream-client)
+[![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
 [![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
 [![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/network/members)
@@ -24,7 +24,7 @@ Server](https://www.virtuozzo.com/support/all-products/virtuozzo-hybrid-server.h
 [KVM](https://www.linux-kvm.org/page/Main_Page) or [Xen](https://xenproject.org/).
 It can also connect to public clouds like [Amazon (EC2 G3 Accelerated)](https://aws.amazon.com/ec2/instance-types/g3/)
 or [Microsoft Azure (NV6)](https://azure.microsoft.com/en-us/pricing/details/virtual-machines/windows/).
-It uses [Simple DirectMedia Layer (SDL2)](https://libsdl.org/) for low-level
+It uses [Simple DirectMedia Layer (SDL3)](https://libsdl.org/) for low-level
 access to audio, video, keyboard, mouse and clipboard.
 
 # Motivation
@@ -84,11 +84,11 @@ Gamepad Input           | No                | Yes
 Clipboard Sharing       | Text only         | Text only
 Remote                  | Yes               | Yes
 DirectX                 | Yes               | Yes
-OpenGL                  | Yes               | Yes
+SDL Renderer            | Yes               | No
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
 Minimal GUI             | Yes               | No
-System SDL2             | Yes               | No
+System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
@@ -96,15 +96,15 @@ USB Redirection         | Yes               | No
 
 # Requirements
 
-Any recent GPU with [OpenGL](https://en.wikipedia.org/wiki/OpenGL) and [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
-support will work. When it comes to 4:4:4 color mode, part of the decoding work
-is made with [FFmpeg](https://ffmpeg.org/) (see notes below regarding 4:4:4
-status). Nothing exist without drawbacks and that one for Parsec is that it is
-mandatory to have an [account](https://parsec.app/signup) which is
-completely free. However communication between client and host is always made
-directly. Also the SDK is only available as pre-compiled library, so for those
-who fully rely on an open-source system, stop reading here. Some features are
-only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
+Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
+support will work. Frames are rendered through the SDL renderer. When it comes
+to 4:4:4 color mode, part of the decoding work is made with [FFmpeg](https://ffmpeg.org/)
+(see notes below regarding 4:4:4 status). Nothing exist without drawbacks and
+that one for Parsec is that it is mandatory to have an [account](https://parsec.app/signup)
+which is completely free. However communication between client and host is
+always made directly. Also the SDK is only available as pre-compiled library,
+so for those who fully rely on an open-source system, stop reading here. Some
+features are only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
 It applies to 4:4:4 color mode which is required to encode images and streams
 without chroma subsampling for sharp and crystal clear text.
 
@@ -138,6 +138,8 @@ without chroma subsampling for sharp and crystal clear text.
   currently only supported if using KVM, Xen or Virtuozzo Hybrid Server with
   QEMU. Other virtualization solutions may use standard Linux USB/IP server and
   native [Windows client driver](https://github.com/cezanne/usbip-win).
+* Show render statistics with `--stats <seconds>` to identify bottlenecks in
+  SDL, Parsec or event loop.
 
 # Parsec Warp
 
@@ -156,16 +158,34 @@ without chroma subsampling for sharp and crystal clear text.
 * No macOS and Windows support yet. However porting should be fairly easy but I
   haven't tested it and pull requests are welcome.
 
+# Licensing
+
+VDI Stream Client is licensed under the GNU General Public License version 3 or
+later. Because this project is intended to be used with the proprietary Parsec
+SDK, it also includes an additional permission under GPLv3 section 7. The
+permission is in [COPYING.EXCEPTION](COPYING.EXCEPTION) and allows this program
+to link with, dynamically load, or otherwise combine with `libparsec.so` and
+other Parsec SDK files.
+
+`libparsec.so`, Parsec SDK headers, and other Parsec SDK files are not part of
+VDI Stream Client and are not licensed under the GPL by this project. They remain
+subject to the Parsec SDK license. You may distribute those files only if the
+applicable Parsec SDK terms allow you to do so.
+
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl2`, `sdl2_ttf`, `libglvnd`, `libusb`, `usbredir`
+application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`
 and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
-system will search the SDK first in build directory and use DSO linking, the
-resulting binary will be redistributable but you need to ship Parsec library
-somehow. If not found, it will search in system-wide include and library
-directories and link accordingly, binary may not be redistributable. For build
-and install use the commands below and if `--prefix=/usr` is used, the
+system will search the SDK first in the build directory and use DSO loading for
+`libparsec.so`. If not found, it will search in system-wide include and library
+directories and link against the system `libparsec.so`.
+
+The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
+both build modes from the VDI Stream Client side. It does not grant permission
+to redistribute `libparsec.so`; check and follow the Parsec SDK license before
+shipping the Parsec SDK library or headers with source or binary packages. For
+build and install use the commands below and if `--prefix=/usr` is used, the
 `make install` command must be run as root user.
 
 ```
