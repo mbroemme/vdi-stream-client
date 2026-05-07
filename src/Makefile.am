@@ -6,7 +6,7 @@ vdi_stream_client_SOURCES	= client.c parsec.c redirect.c audio.c video.c
 vdi_stream_client_CFLAGS	= $(USB_CFLAGS) $(USBREDIRHOST_CFLAGS) $(USBREDIRPARSER_CFLAGS) $(SDL3_CFLAGS) $(SDL3_TTF_CFLAGS)
 vdi_stream_client_LDADD		= $(USB_LIBS) $(USBREDIRHOST_LIBS) $(USBREDIRPARSER_LIBS) $(SDL3_LIBS) $(SDL3_TTF_LIBS)
 
-# install libparsec for dso loading.
+# install libparsec for dso loading. Redistribution requires Parsec SDK license permission.
 if INTERNAL_PARSEC_SDK
 vdi_stream_client_LDFLAGS	= -Wl,-rpath,$(libdir)/vdi-stream-client/plugins
 libparsecdir			= $(libdir)/vdi-stream-client/plugins

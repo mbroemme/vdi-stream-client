@@ -16,6 +16,9 @@
 #
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Additional permission under GNU GPL version 3 section 7 is described in
+# COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
 
 # default config section. (this can be modified)
 export PARSEC_HOST="https://kessel-api.parsecgaming.com"
@@ -53,6 +56,7 @@ function parsec_login__usage() {
 # show version.
 function parsec_login__version() {
 	printf "${PARSEC_PROCESS} version ${PARSEC_VERSION} Copyright (c) 2021-2026 The VDI Stream developers\n"
+	printf "License GPLv3+: GNU GPL version 3 or later with Parsec SDK linking exception\n"
 	printf "Written by ${PARSEC_AUTHOR} <${PARSEC_EMAIL}>\n"
 	printf "\n"
 	printf "This is free software; see the source for copying conditions.  There is NO\n"

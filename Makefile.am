@@ -5,5 +5,7 @@ SUBDIRS				= src docs/man1
 DIST_SUBDIRS			= $(SUBDIRS)
 
 # extra stuff.
+EXTRA_DIST			= \
+	COPYING.EXCEPTION	\
 	LICENSE			\
 	README.md

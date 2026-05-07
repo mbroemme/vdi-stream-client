@@ -15,6 +15,9 @@
  *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
 /* sdl main include. */
@@ -82,6 +85,7 @@ Sint32 vdi_stream_client__version(char *program_name) {
 
 	/* show the version. */
 	printf("%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n", program_name, VERSION);
+	printf("License GPLv3+: GNU GPL version 3 or later with Parsec SDK linking exception\n");
 	printf("Written by %s\n", AUTHOR);
 	printf("\n");
 	printf("This is free software; see the source for copying conditions.  There is NO\n");

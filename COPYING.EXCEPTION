@@ -1,0 +1,29 @@
+VDI Stream Client Parsec SDK Linking Exception
+
+Additional permission under GNU GPL version 3 section 7
+
+Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+
+VDI Stream Client is otherwise licensed under the GNU General Public License,
+version 3 or later.
+
+As a special exception, the copyright holder of VDI Stream Client gives you
+permission to link or combine VDI Stream Client with libparsec.so and other
+files from the Parsec SDK, including by dynamic linking, runtime loading, or use
+of Parsec SDK header files, and to convey the resulting combined work under
+terms of your choice, provided that you also meet the license terms of VDI
+Stream Client for the VDI Stream Client code and of the Parsec SDK for the
+Parsec SDK files.
+
+Corresponding Source for a non-source form of such a combination must include
+the source code for VDI Stream Client, but need not include source code for
+libparsec.so or other Parsec SDK files solely because of this exception.
+
+This exception does not grant any rights in libparsec.so or any other Parsec SDK
+component beyond the rights granted by the applicable Parsec SDK license. You may
+distribute libparsec.so or other Parsec SDK files only if the applicable Parsec
+SDK license permits you to do so.
+
+If you modify VDI Stream Client, you may extend this exception to your version
+of the program, but you are not obligated to do so. If you do not wish to do so,
+delete this exception statement from your version.

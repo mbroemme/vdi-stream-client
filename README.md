@@ -158,16 +158,34 @@ without chroma subsampling for sharp and crystal clear text.
 * No macOS and Windows support yet. However porting should be fairly easy but I
   haven't tested it and pull requests are welcome.
 
+# Licensing
+
+VDI Stream Client is licensed under the GNU General Public License version 3 or
+later. Because this project is intended to be used with the proprietary Parsec
+SDK, it also includes an additional permission under GPLv3 section 7. The
+permission is in [COPYING.EXCEPTION](COPYING.EXCEPTION) and allows this program
+to link with, dynamically load, or otherwise combine with `libparsec.so` and
+other Parsec SDK files.
+
+`libparsec.so`, Parsec SDK headers, and other Parsec SDK files are not part of
+VDI Stream Client and are not licensed under the GPL by this project. They remain
+subject to the Parsec SDK license. You may distribute those files only if the
+applicable Parsec SDK terms allow you to do so.
+
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`
 and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
-system will search the SDK first in build directory and use DSO linking, the
-resulting binary will be redistributable but you need to ship Parsec library
-somehow. If not found, it will search in system-wide include and library
-directories and link accordingly, binary may not be redistributable. For build
-and install use the commands below and if `--prefix=/usr` is used, the
+system will search the SDK first in the build directory and use DSO loading for
+`libparsec.so`. If not found, it will search in system-wide include and library
+directories and link against the system `libparsec.so`.
+
+The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
+both build modes from the VDI Stream Client side. It does not grant permission
+to redistribute `libparsec.so`; check and follow the Parsec SDK license before
+shipping the Parsec SDK library or headers with source or binary packages. For
+build and install use the commands below and if `--prefix=/usr` is used, the
 `make install` command must be run as root user.
 
 ```
