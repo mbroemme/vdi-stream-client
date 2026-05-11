@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 
@@ -224,8 +225,14 @@ static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
 
 /* initialize video rendering on the main thread. */
 void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
-	if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
+	const char *no_vsync = getenv("VDI_STREAM_CLIENT_NO_VSYNC");
+	int vsync = (no_vsync != NULL && no_vsync[0] != '\0' && strcmp(no_vsync, "0") != 0) ? 0 : 1;
+
+	if (!SDL_SetRenderVSync(parsec_context->renderer, vsync)) {
 		vdi_stream_client__log_error("SDL_SetRenderVSync failed: %s\n", SDL_GetError());
+	}
+	if (!vsync) {
+		vdi_stream_client__log_info("Disable SDL renderer vsync because VDI_STREAM_CLIENT_NO_VSYNC is set\n");
 	}
 }
 

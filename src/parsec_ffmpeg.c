@@ -153,6 +153,39 @@ static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *b
 	return buffer;
 }
 
+static bool vdi_stream_client__parsec_ffmpeg_env_enabled(const char *name, bool default_value) {
+	const char *value = getenv(name);
+
+	if (value == NULL || value[0] == '\0') {
+		return default_value;
+	}
+	if (strcmp(value, "0") == 0 || strcmp(value, "false") == 0 || strcmp(value, "FALSE") == 0 || strcmp(value, "no") == 0 || strcmp(value, "NO") == 0) {
+		return false;
+	}
+	return true;
+}
+
+static int vdi_stream_client__parsec_ffmpeg_env_int(const char *name, int default_value, int min_value, int max_value) {
+	const char *value = getenv(name);
+	char *endptr = NULL;
+	long parsed;
+
+	if (value == NULL || value[0] == '\0') {
+		return default_value;
+	}
+	parsed = strtol(value, &endptr, 10);
+	if (endptr == value || *endptr != '\0') {
+		return default_value;
+	}
+	if (parsed < min_value) {
+		return min_value;
+	}
+	if (parsed > max_value) {
+		return max_value;
+	}
+	return (int) parsed;
+}
+
 static void vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
 	if (ffmpeg == NULL) {
 		return;
@@ -202,8 +235,27 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		return DECODE_ERR_BUFFER;
 	}
 
-	ffmpeg->codec->thread_count = 0;
-	ffmpeg->codec->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+	/*
+	 * Do not enable FF_THREAD_FRAME by default. Frame threading increases
+	 * throughput, but it also buffers several decoded pictures internally. For
+	 * interactive streaming that looks exactly like delayed keyboard/mouse input
+	 * because the host already reacted, but the displayed frame arrives late.
+	 *
+	 * Keep slice threading enabled by default because it does not add the same
+	 * frame queue. Users can still opt back into frame threading when they prefer
+	 * FPS over latency:
+	 *
+	 *   VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS=1
+	 *   VDI_STREAM_CLIENT_FFMPEG_THREADS=0     # auto, or a positive number
+	 */
+	ffmpeg->codec->thread_count = vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_THREADS", 0, 0, 64);
+	ffmpeg->codec->thread_type = FF_THREAD_SLICE;
+	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS", false)) {
+		ffmpeg->codec->thread_type |= FF_THREAD_FRAME;
+	}
+	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_LOW_DELAY", true)) {
+		ffmpeg->codec->flags |= AV_CODEC_FLAG_LOW_DELAY;
+	}
 	ffmpeg->codec->flags2 |= AV_CODEC_FLAG2_FAST;
 
 	err = avcodec_open2(ffmpeg->codec, codec, NULL);
@@ -223,6 +275,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 	}
 
 	vdi_stream_client__log_info("Use vdi-stream-client FFmpeg software decoder for %s\n", ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
+	vdi_stream_client__log_info("Use FFmpeg low-latency settings: threads=%d, frame_threads=%s, low_delay=%s\n",
+		ffmpeg->codec->thread_count,
+		(ffmpeg->codec->thread_type & FF_THREAD_FRAME) != 0 ? "yes" : "no",
+		(ffmpeg->codec->flags & AV_CODEC_FLAG_LOW_DELAY) != 0 ? "yes" : "no"
+	);
 	return PARSEC_OK;
 }
 
