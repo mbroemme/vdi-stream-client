@@ -75,8 +75,6 @@ struct parsec_context_s {
 	Sint32 window_height;
 	Sint32 requested_width;
 	Sint32 requested_height;
-	Sint32 frame_width;
-	Sint32 frame_height;
 
 	/* sdl textures for rendering. */
 	SDL_Surface *surface_ttf;
