@@ -49,6 +49,27 @@ static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelF
 	}
 }
 
+static const char *vdi_stream_client__video_format_name(ParsecColorFormat format) {
+	switch (format) {
+		case FORMAT_NV12:
+			return "NV12";
+		case FORMAT_I420:
+			return "I420";
+		case FORMAT_NV16:
+			return "NV16";
+		case FORMAT_I422:
+			return "I422";
+		case FORMAT_BGRA:
+			return "BGRA";
+		case FORMAT_RGBA:
+			return "RGBA";
+		case FORMAT_I444:
+			return "I444";
+		default:
+			return "unknown";
+	}
+}
+
 static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame) {
 	SDL_PixelFormat pixel_format;
 
@@ -75,6 +96,13 @@ static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_con
 	parsec_context->texture_width = frame->fullWidth;
 	parsec_context->texture_height = frame->fullHeight;
 	parsec_context->format_video = frame->format;
+	vdi_stream_client__log_info("Use %s video frame format (%ux%u, full %ux%u)\n",
+		vdi_stream_client__video_format_name(frame->format),
+		frame->width,
+		frame->height,
+		frame->fullWidth,
+		frame->fullHeight
+	);
 	return true;
 }
 
@@ -85,6 +113,9 @@ static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, cons
 	if (!vdi_stream_client__video_texture(parsec_context, frame)) {
 		return;
 	}
+
+	parsec_context->frame_width = frame->width > 0 ? frame->width : frame->fullWidth;
+	parsec_context->frame_height = frame->height > 0 ? frame->height : frame->fullHeight;
 
 	switch (frame->format) {
 		case FORMAT_NV12:
@@ -170,8 +201,8 @@ static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
 
 	src.x = 0.0f;
 	src.y = 0.0f;
-	src.w = parsec_context->window_width;
-	src.h = parsec_context->window_height;
+	src.w = parsec_context->frame_width > 0 ? parsec_context->frame_width : parsec_context->window_width;
+	src.h = parsec_context->frame_height > 0 ? parsec_context->frame_height : parsec_context->window_height;
 	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_video, &src, NULL);
 	return true;
 }

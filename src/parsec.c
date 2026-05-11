@@ -515,6 +515,21 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
+	/* The SDK's hidden FFmpeg decoder can connect and deliver audio before
+	 * ParsecClientGetStatus() reports decoder dimensions. Do not create a 0x0
+	 * SDL window in that case. Start with a provisional visible size and resize
+	 * to the first decoded frame below. */
+	if (parsec_context.window_width <= 0 || parsec_context.window_height <= 0) {
+		parsec_context.window_width = vdi_config->width > 0 ? vdi_config->width : 1280;
+		parsec_context.window_height = vdi_config->height > 0 ? vdi_config->height : 720;
+		parsec_context.requested_width = parsec_context.window_width;
+		parsec_context.requested_height = parsec_context.window_height;
+		vdi_stream_client__log_info("WARNING: Decoder dimensions unavailable, start with provisional resolution %dx%d\n",
+			parsec_context.window_width,
+			parsec_context.window_height
+		);
+	}
+
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
 					parsec_context.window_height,
@@ -805,6 +820,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* check parsec connection status. */
 		e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
+		if (!parsec_context.decoder &&
+		    parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
+		    parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
+			vdi_stream_client__log_info("Use %s decoder\n", parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0' ? parsec_context.client_status.decoder[DEFAULT_STREAM].name : "unknown");
+			vdi_stream_client__log_info("Use %s codec\n", parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)" : "H.264 (AVC)");
+			vdi_stream_client__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder[DEFAULT_STREAM].width, parsec_context.client_status.decoder[DEFAULT_STREAM].height);
+			parsec_context.decoder = true;
+		}
 		if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
 
 			/* render shutdown text. */
@@ -876,20 +899,26 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		}
 		rendered = vdi_stream_client__video_render(&parsec_context, force_redraw);
 
-		/* check if we need to resize window due to client resolution change. */
-		if ((parsec_context.window_width != parsec_context.client_status.decoder[DEFAULT_STREAM].width || parsec_context.window_height != parsec_context.client_status.decoder[DEFAULT_STREAM].height) &&
-		    parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
-		    parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
+		/* check if we need to resize window due to client resolution change. Prefer
+		 * official decoder status when available, otherwise use the first decoded
+		 * frame. The FFmpeg path may provide frame data before decoder dimensions
+		 * appear in ParsecClientGetStatus(). */
+		Sint32 resize_width = parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 ?
+			parsec_context.client_status.decoder[DEFAULT_STREAM].width : parsec_context.frame_width;
+		Sint32 resize_height = parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0 ?
+			parsec_context.client_status.decoder[DEFAULT_STREAM].height : parsec_context.frame_height;
+		if ((parsec_context.window_width != resize_width || parsec_context.window_height != resize_height) &&
+		    resize_width > 0 && resize_height > 0) {
 			vdi_stream_client__log_info("Change resolution from %dx%d to %dx%d\n",
 				parsec_context.window_width,
 				parsec_context.window_height,
-				parsec_context.client_status.decoder[DEFAULT_STREAM].width,
-				parsec_context.client_status.decoder[DEFAULT_STREAM].height
+				resize_width,
+				resize_height
 			);
-			SDL_SetWindowSize(parsec_context.window, parsec_context.client_status.decoder[DEFAULT_STREAM].width, parsec_context.client_status.decoder[DEFAULT_STREAM].height);
+			SDL_SetWindowSize(parsec_context.window, resize_width, resize_height);
 			SDL_SyncWindow(parsec_context.window);
-			parsec_context.window_width = parsec_context.client_status.decoder[DEFAULT_STREAM].width;
-			parsec_context.window_height = parsec_context.client_status.decoder[DEFAULT_STREAM].height;
+			parsec_context.window_width = resize_width;
+			parsec_context.window_height = resize_height;
 		}
 
 		/* Do not add a blanket SDL_Delay(1) to the streaming hot path. When
