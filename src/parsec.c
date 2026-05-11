@@ -268,13 +268,42 @@ static bool vdi_stream_client__parsec_make_writable(void *address, size_t len, i
 	return mprotect((void *) start, (size_t) (end - start), prot) == 0;
 }
 
+typedef int (*vdi_stream_client__parsec_decoder_init_fn)(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags);
+
+static vdi_stream_client__parsec_decoder_init_fn vdi_stream_client__parsec_ffmpeg_init_original = NULL;
+static bool vdi_stream_client__parsec_ffmpeg_init_logged = false;
+
+/*
+ * The public SDK's hidden FFmpeg init callback chooses the FFmpeg codec from
+ * byte 0 of the fourth argument: 1 = H.264, 2 = H.265/HEVC.  The surrounding
+ * SDK negotiation can still pass 1 even after decoder index 2 was selected,
+ * which makes FFmpeg open H.264 and then fall through to OpenH264 against an
+ * HEVC stream.  Force only the hidden FFmpeg entry to open HEVC; the normal
+ * retry path below still reconnects with decoderH265=false for H.264 fallback.
+ */
+static int vdi_stream_client__parsec_ffmpeg_init_h265(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags) {
+	if (codec_selector != NULL) {
+		Uint8 old_selector = ((Uint8 *) codec_selector)[0];
+		((Uint8 *) codec_selector)[0] = 2;
+		if (!vdi_stream_client__parsec_ffmpeg_init_logged) {
+			vdi_stream_client__log_info("Force public SDK FFmpeg codec selector from %u to 2 (H.265/HEVC)\n", old_selector);
+			vdi_stream_client__parsec_ffmpeg_init_logged = true;
+		}
+	}
+
+	if (vdi_stream_client__parsec_ffmpeg_init_original == NULL) {
+		return DECODE_ERR_INIT;
+	}
+
+	return vdi_stream_client__parsec_ffmpeg_init_original(decoder, stream, stream_id, codec_selector, flags);
+}
+
 /*
  * Query shim for the hidden public-SDK FFmpeg decoder.
  *
  * The shipped hidden FFmpeg query reports the second capability byte as 1.
- * During decoder initialization the same byte is later interpreted as a codec
- * selector: 1 means H.264 and 2 means H.265/HEVC. That mismatch is why forcing
- * decoder index 2 previously fell through to OpenH264 and DECODE_ERR_DECODE.
+ * Keep H.264 advertised on the first capability record and report H.265/HEVC
+ * with selector 2 on the second record.
  */
 static void vdi_stream_client__parsec_ffmpeg_query_h265(void *h264, void *h265) {
 	if (h264 != NULL) {
@@ -297,6 +326,7 @@ static void vdi_stream_client__parsec_ffmpeg_query_h265(void *h264, void *h265) 
 static bool vdi_stream_client__parsec_enable_ffmpeg_h265_decoder(struct parsec_context_s *parsec_context, Uint32 *decoder_index) {
 #if defined(__linux__) && defined(__x86_64__)
 	const Uint32 decoder_entry_size = 0x28;
+	const Uint32 decoder_init_offset = 0x00;
 	const Uint32 decoder_query_offset = 0x18;
 	const Uint32 decoder_hidden_offset = 0x20;
 	const Uint32 ffmpeg_decoder_index = 2;
@@ -324,6 +354,11 @@ static bool vdi_stream_client__parsec_enable_ffmpeg_h265_decoder(struct parsec_c
 
 	if (!vdi_stream_client__parsec_make_writable(entry, decoder_entry_size, PROT_READ | PROT_WRITE)) {
 		return false;
+	}
+
+	if (((uintptr_t *) (void *) (entry + decoder_init_offset))[0] != (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_init_h265) {
+		vdi_stream_client__parsec_ffmpeg_init_original = (vdi_stream_client__parsec_decoder_init_fn) (void *) ((uintptr_t *) (void *) (entry + decoder_init_offset))[0];
+		((uintptr_t *) (void *) (entry + decoder_init_offset))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_init_h265;
 	}
 	((uintptr_t *) (void *) (entry + decoder_query_offset))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_query_h265;
 	(void) vdi_stream_client__parsec_make_writable(entry, decoder_entry_size, PROT_READ);
