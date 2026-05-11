@@ -31,6 +31,7 @@
 #include "../include/font.h"
 
 /* system includes. */
+#include <dlfcn.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -40,6 +41,124 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+
+
+/* stringify status codes that matter while diagnosing decoder negotiation. */
+static const char *vdi_stream_client__parsec_status_name(ParsecStatus status) {
+	switch (status) {
+		case PARSEC_OK:
+			return "PARSEC_OK";
+		case PARSEC_CONNECTING:
+			return "PARSEC_CONNECTING";
+		case PARSEC_NOT_RUNNING:
+			return "PARSEC_NOT_RUNNING";
+		case PARSEC_ALREADY_RUNNING:
+			return "PARSEC_ALREADY_RUNNING";
+		case DECODE_ERR_INIT:
+			return "DECODE_ERR_INIT";
+		case DECODE_ERR_LOAD:
+			return "DECODE_ERR_LOAD";
+		case DECODE_ERR_MAP:
+			return "DECODE_ERR_MAP";
+		case DECODE_ERR_DECODE:
+			return "DECODE_ERR_DECODE";
+		case DECODE_ERR_CLEANUP:
+			return "DECODE_ERR_CLEANUP";
+		case DECODE_ERR_PARSE:
+			return "DECODE_ERR_PARSE";
+		case DECODE_ERR_NO_SUPPORT:
+			return "DECODE_ERR_NO_SUPPORT";
+		case DECODE_ERR_PIXEL_FORMAT:
+			return "DECODE_ERR_PIXEL_FORMAT";
+		case DECODE_ERR_BUFFER:
+			return "DECODE_ERR_BUFFER";
+		case DECODE_ERR_RESOLUTION:
+			return "DECODE_ERR_RESOLUTION";
+		case DECODE_ERR_OUT_OF_RANGE:
+			return "DECODE_ERR_OUT_OF_RANGE";
+		case DECODE_ERR_DEPENDENCY:
+			return "DECODE_ERR_DEPENDENCY";
+		case DECODE_ERR_SYMBOL:
+			return "DECODE_ERR_SYMBOL";
+		default:
+			return "unknown";
+	}
+}
+
+static bool vdi_stream_client__parsec_dlsym_available(void *handle, const char *symbol, char *missing, size_t missing_len) {
+	dlerror();
+	if (dlsym(handle, symbol) != NULL) {
+		return true;
+	}
+
+	if (missing != NULL && missing_len > 0) {
+		snprintf(missing, missing_len, "%s", symbol);
+	}
+	return false;
+}
+
+/*
+ * The hidden Linux FFmpeg decoder in this Parsec SDK is built for FFmpeg 4.x
+ * library SONAMEs. It is visible after clearing the hidden bit, but decoder
+ * initialization fails later with DECODE_ERR_LOAD / DECODE_ERR_SYMBOL if these
+ * compatibility libraries are not present. Guard the forced H.265 selection so
+ * the client falls back to the normal H.264 path instead of entering a reconnect
+ * loop.
+ */
+static bool vdi_stream_client__parsec_ffmpeg_dependencies_available(char *missing, size_t missing_len) {
+	const char *codec_symbols[] = {
+		"avcodec_open2",
+		"avcodec_close",
+		"avcodec_find_decoder",
+		"avcodec_receive_frame",
+		"avcodec_alloc_context3",
+		"avcodec_free_context",
+		"avcodec_send_packet",
+	};
+	const char *util_symbols[] = {
+		"av_frame_alloc",
+		"av_frame_free",
+	};
+	void *avcodec;
+	void *avutil;
+	size_t i;
+
+	avutil = dlopen("libavutil.so.56", RTLD_LAZY | RTLD_LOCAL);
+	if (avutil == NULL) {
+		if (missing != NULL && missing_len > 0) {
+			snprintf(missing, missing_len, "libavutil.so.56");
+		}
+		return false;
+	}
+
+	for (i = 0; i < sizeof(util_symbols) / sizeof(util_symbols[0]); i++) {
+		if (!vdi_stream_client__parsec_dlsym_available(avutil, util_symbols[i], missing, missing_len)) {
+			dlclose(avutil);
+			return false;
+		}
+	}
+
+	avcodec = dlopen("libavcodec.so.58", RTLD_LAZY | RTLD_LOCAL);
+	if (avcodec == NULL) {
+		if (missing != NULL && missing_len > 0) {
+			snprintf(missing, missing_len, "libavcodec.so.58");
+		}
+		dlclose(avutil);
+		return false;
+	}
+
+	for (i = 0; i < sizeof(codec_symbols) / sizeof(codec_symbols[0]); i++) {
+		if (!vdi_stream_client__parsec_dlsym_available(avcodec, codec_symbols[i], missing, missing_len)) {
+			dlclose(avcodec);
+			dlclose(avutil);
+			return false;
+		}
+	}
+
+	dlclose(avcodec);
+	dlclose(avutil);
+	return true;
+}
 
 /* find a visible Parsec decoder through the public SDK API. */
 static bool vdi_stream_client__parsec_find_decoder(struct parsec_context_s *parsec_context, const char *name, bool h265, Uint32 *index) {
@@ -393,11 +512,18 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 
 	/* H.265 must start with a decoder that advertises H.265 support. The SDK
-	 * otherwise keeps the selected H.264-capable decoder and negotiates H.264. */
+	 * otherwise keeps the selected H.264-capable decoder and negotiates H.264.
+	 * Only force the hidden FFmpeg decoder when the FFmpeg 4.x runtime libraries
+	 * it was built for are actually available; otherwise decoder initialization
+	 * fails and the client reconnects forever. */
 	if (vdi_config->hevc == 1) {
 		Uint32 h265_decoder_index = 0;
+		char missing[64] = {0};
 
-		if (vdi_stream_client__parsec_find_decoder(&parsec_context, NULL, true, &h265_decoder_index)) {
+		if (!vdi_stream_client__parsec_ffmpeg_dependencies_available(missing, sizeof(missing))) {
+			vdi_stream_client__log_info("WARNING: FFmpeg H.265 decoder dependencies unavailable (%s)\n", missing[0] != '\0' ? missing : "unknown dependency");
+			vdi_stream_client__log_info("WARNING: Keep configured decoder index %u; host may fall back to H.264 (AVC)\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+		} else if (vdi_stream_client__parsec_find_decoder(&parsec_context, NULL, true, &h265_decoder_index)) {
 			if (cfg.video[DEFAULT_STREAM].decoderIndex != h265_decoder_index) {
 				vdi_stream_client__log_info("Use decoder index %u for H.265 (HEVC)\n", h265_decoder_index);
 			}
@@ -491,6 +617,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 
 		/* unknown error. */
 		if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+			vdi_stream_client__log_error("Connection failed while waiting for decoder with status: %d (%s)\n", e, vdi_stream_client__parsec_status_name(e));
 			break;
 		}
 
@@ -840,6 +967,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
 
 			/* render reconnect text. */
+			vdi_stream_client__log_error("Parsec disconnected with status: %d (%s), reconnecting\n", e, vdi_stream_client__parsec_status_name(e));
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
 			force_redraw = true;
 			ParsecClientDisconnect(parsec_context.parsec);
@@ -861,6 +989,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		    SDL_GetTicks() > last_time + vdi_config->timeout) {
 
 			/* render reconnect text. */
+			vdi_stream_client__log_error("Parsec network failure, reconnecting\n");
 			vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
 			force_redraw = true;
 			ParsecClientDisconnect(parsec_context.parsec);
