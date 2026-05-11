@@ -323,6 +323,159 @@ static bool vdi_stream_client__parsec_unhide_ffmpeg_decoder(struct parsec_contex
 #endif
 }
 
+
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_WX_MAIN_OFFSET       ((uintptr_t) 0x0007d1c0)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_MAGIC_OFFSET         ((uintptr_t) 0x002204ff)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FORMAT_OFFSET        ((uintptr_t) 0x002203fe)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_INIT_SW       ((uintptr_t) 0x0001d3b0)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_QUERY_SW      ((uintptr_t) 0x0001d3f0)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_INIT_HW       ((uintptr_t) 0x0001d3c0)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_QUERY_HW      ((uintptr_t) 0x0001d450)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_DECODE        ((uintptr_t) 0x00018e90)
+#define VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_DESTROY       ((uintptr_t) 0x00018e40)
+
+struct vdi_stream_client__official_ffmpeg_decoder_s {
+	const char *name;
+	uintptr_t init_offset;
+	uintptr_t query_offset;
+};
+
+static bool vdi_stream_client__parsec_official_query_available(uintptr_t base, uintptr_t query_offset) {
+	typedef void (*query_fn_t)(void *, void *);
+	Uint8 h265[12] = {0};
+	Uint8 color444[12] = {0};
+	query_fn_t query_fn;
+
+	query_fn = (query_fn_t) (void *) (base + query_offset);
+	query_fn(h265, color444);
+	return h265[0] != 0;
+}
+
+/*
+ * The public Linux SDK contains a hidden FFmpeg entry, but it is not the same
+ * implementation as the official Linux client. The official client ships a
+ * parsecd-150-103a.so module with a newer FFmpeg 3/4/5/6/7/8 loader and the
+ * FFmpeg hardware path used by the normal Parsec UI. When the user explicitly
+ * provides that module, replace only the SDK's hidden FFMPEG decoder vtable with
+ * the official decoder functions. No Parsec client library code is redistributed
+ * by this project; the official module must be supplied at runtime.
+ */
+static bool vdi_stream_client__parsec_use_official_ffmpeg_decoder(struct parsec_context_s *parsec_context, bool prefer_hardware, Uint32 *decoder_index) {
+#if defined(__linux__) && defined(__x86_64__)
+	static void *official_handle = NULL;
+	static char official_mode[16] = {0};
+	const struct vdi_stream_client__official_ffmpeg_decoder_s decoders[] = {
+		{ "Hardware", VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_INIT_HW, VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_QUERY_HW },
+		{ "Software", VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_INIT_SW, VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_QUERY_SW },
+	};
+	const char *module_path;
+	const char *mode;
+	const char *order[2];
+	void *wx_main;
+	uintptr_t base;
+	Uint8 *table;
+	Uint8 *entry;
+	Uint32 selected = UINT32_MAX;
+	Uint32 candidate;
+	Uint32 pass;
+
+	module_path = getenv("VDI_STREAM_CLIENT_PARSEC_FFMPEG_SO");
+	if (module_path == NULL || module_path[0] == '\0') {
+		module_path = getenv("PARSEC_FFMPEG_SO");
+	}
+	if (module_path == NULL || module_path[0] == '\0') {
+		return false;
+	}
+
+	if (official_handle == NULL) {
+		official_handle = dlopen(module_path, RTLD_LAZY | RTLD_LOCAL);
+		if (official_handle == NULL) {
+			vdi_stream_client__log_info("WARNING: Unable to load official Parsec FFmpeg module %s: %s\n", module_path, dlerror());
+			return false;
+		}
+	}
+
+	dlerror();
+	wx_main = dlsym(official_handle, "wx_main");
+	if (wx_main == NULL) {
+		vdi_stream_client__log_info("WARNING: Official Parsec FFmpeg module %s does not export wx_main\n", module_path);
+		return false;
+	}
+	base = (uintptr_t) wx_main - VDI_STREAM_CLIENT_PARSECD_150_103A_WX_MAIN_OFFSET;
+
+	if (strcmp((const char *) (base + VDI_STREAM_CLIENT_PARSECD_150_103A_MAGIC_OFFSET), "4.2.3") != 0 ||
+	    strcmp((const char *) (base + VDI_STREAM_CLIENT_PARSECD_150_103A_FORMAT_OFFSET), "FFMPEG %d %s") != 0) {
+		vdi_stream_client__log_info("WARNING: Official Parsec FFmpeg module %s does not match expected 150-103a layout\n", module_path);
+		return false;
+	}
+
+	mode = getenv("VDI_STREAM_CLIENT_FFMPEG_MODE");
+	if (mode != NULL && strcmp(mode, "software") == 0) {
+		order[0] = "Software";
+		order[1] = NULL;
+	} else if (mode != NULL && strcmp(mode, "hardware") == 0) {
+		order[0] = "Hardware";
+		order[1] = "Software";
+	} else if (prefer_hardware) {
+		order[0] = "Hardware";
+		order[1] = "Software";
+	} else {
+		order[0] = "Software";
+		order[1] = "Hardware";
+	}
+
+	for (pass = 0; pass < 2 && order[pass] != NULL; pass++) {
+		for (candidate = 0; candidate < sizeof(decoders) / sizeof(decoders[0]); candidate++) {
+			if (strcmp(order[pass], decoders[candidate].name) != 0) {
+				continue;
+			}
+			if (vdi_stream_client__parsec_official_query_available(base, decoders[candidate].query_offset)) {
+				selected = candidate;
+				break;
+			}
+			vdi_stream_client__log_info("WARNING: Official Parsec FFmpeg %s decoder did not report H.265 support on this system\n", decoders[candidate].name);
+		}
+		if (selected != UINT32_MAX) {
+			break;
+		}
+	}
+
+	if (selected == UINT32_MAX) {
+		return false;
+	}
+
+	table = vdi_stream_client__parsec_decoder_table(parsec_context);
+	if (table == NULL) {
+		return false;
+	}
+
+	entry = table + 2 * 0x28;
+	if (!vdi_stream_client__parsec_make_writable(entry, 0x28, PROT_READ | PROT_WRITE)) {
+		return false;
+	}
+
+	((uintptr_t *) entry)[0] = base + decoders[selected].init_offset;
+	((uintptr_t *) entry)[1] = base + VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_DECODE;
+	((uintptr_t *) entry)[2] = base + VDI_STREAM_CLIENT_PARSECD_150_103A_FFMPEG_DESTROY;
+	((uintptr_t *) entry)[3] = base + decoders[selected].query_offset;
+	entry[0x20] = 0;
+	(void) vdi_stream_client__parsec_make_writable(entry, 0x28, PROT_READ);
+
+	if (!vdi_stream_client__parsec_find_decoder(parsec_context, "FFMPEG", true, decoder_index)) {
+		return false;
+	}
+
+	snprintf(official_mode, sizeof(official_mode), "%s", decoders[selected].name);
+	vdi_stream_client__log_info("Use official Parsec FFmpeg %s decoder from %s\n", official_mode, module_path);
+	return true;
+#else
+	(void) parsec_context;
+	(void) prefer_hardware;
+	(void) decoder_index;
+	return false;
+#endif
+}
+
 /* parsec clipboard event. */
 static void vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key) {
 	char *msg = ParsecGetBuffer(parsec_context->parsec, buffer_key);
@@ -576,12 +729,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	}
 	normal_decoder_index = cfg.video[DEFAULT_STREAM].decoderIndex;
 
-	/* The SDK advertises H.265 based on the selected decoder index. Do not mutate
-	 * another decoder entry to borrow FFmpeg's H.265 probe: that makes the host
-	 * send a codec the selected decoder cannot actually decode and falls back into
-	 * OpenH264 with DECODE_ERR_DECODE. Only enable HEVC automatically when the
-	 * selected decoder itself reports H.265 support. The hidden FFmpeg decoder can
-	 * still be forced for experiments via VDI_STREAM_CLIENT_FORCE_FFMPEG_HEVC=1. */
+	/* Prefer the official Linux client's FFmpeg decoder implementation when the
+	 * user supplies parsecd-150-103a.so. The public SDK's hidden FFMPEG entry is
+	 * visible after unhide, but its implementation is not the one used by the
+	 * official client and can fall back into OpenH264 with DECODE_ERR_DECODE. */
 	if (vdi_config->hevc == 1) {
 		ParsecDecoder decoders[8] = {0};
 		bool selected_h265 = false;
@@ -591,45 +742,52 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		Uint32 count;
 		const char *force_ffmpeg = getenv("VDI_STREAM_CLIENT_FORCE_FFMPEG_HEVC");
 
-		vdi_stream_client__parsec_log_decoders(&parsec_context);
+		if (vdi_stream_client__parsec_use_official_ffmpeg_decoder(&parsec_context, vdi_config->acceleration == 1, &ffmpeg_decoder_index)) {
+			cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
+			cfg.video[DEFAULT_STREAM].decoderH265 = 1;
+			hevc_negotiation_enabled = true;
+			vdi_stream_client__log_info("Use decoder index %u for official FFmpeg H.265 (HEVC)\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+			vdi_stream_client__parsec_log_decoders(&parsec_context);
+		} else {
+			vdi_stream_client__parsec_log_decoders(&parsec_context);
 
 #ifdef HAVE_LIBPARSEC
-		count = ParsecGetDecoders(decoders, sizeof(decoders) / sizeof(decoders[0]));
+			count = ParsecGetDecoders(decoders, sizeof(decoders) / sizeof(decoders[0]));
 #else
-		count = ParsecGetDecoders(parsec_context.parsec, decoders, sizeof(decoders) / sizeof(decoders[0]));
+			count = ParsecGetDecoders(parsec_context.parsec, decoders, sizeof(decoders) / sizeof(decoders[0]));
 #endif
-		for (decoder = 0; decoder < count; decoder++) {
-			if (decoders[decoder].index == cfg.video[DEFAULT_STREAM].decoderIndex && decoders[decoder].h265) {
-				selected_h265 = true;
+			for (decoder = 0; decoder < count; decoder++) {
+				if (decoders[decoder].index == cfg.video[DEFAULT_STREAM].decoderIndex && decoders[decoder].h265) {
+					selected_h265 = true;
+				}
+				if (strncmp(decoders[decoder].name, "FFMPEG", sizeof(decoders[decoder].name)) == 0 && decoders[decoder].h265) {
+					ffmpeg_decoder_index = decoders[decoder].index;
+				}
 			}
-			if (strncmp(decoders[decoder].name, "FFMPEG", sizeof(decoders[decoder].name)) == 0 && decoders[decoder].h265) {
-				ffmpeg_decoder_index = decoders[decoder].index;
-			}
-		}
 
-		if (selected_h265) {
-			vdi_stream_client__log_info("Use decoder index %u with native H.265 (HEVC) capability\n", cfg.video[DEFAULT_STREAM].decoderIndex);
-			hevc_negotiation_enabled = true;
-		} else if (force_ffmpeg != NULL && force_ffmpeg[0] != '\0' && strcmp(force_ffmpeg, "0") != 0 && ffmpeg_decoder_index != UINT32_MAX) {
-			if (!vdi_stream_client__parsec_ffmpeg_dependencies_available(missing, sizeof(missing))) {
-				vdi_stream_client__log_info("WARNING: FFmpeg H.265 decoder dependencies unavailable (%s)\n", missing[0] != '\0' ? missing : "unknown dependency");
-				vdi_stream_client__log_info("WARNING: Keep configured decoder index %u and disable H.265 to avoid OpenH264 decode loop\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+			if (selected_h265) {
+				vdi_stream_client__log_info("Use decoder index %u with native H.265 (HEVC) capability\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+				hevc_negotiation_enabled = true;
+			} else if (force_ffmpeg != NULL && force_ffmpeg[0] != '\0' && strcmp(force_ffmpeg, "0") != 0 && ffmpeg_decoder_index != UINT32_MAX) {
+				if (!vdi_stream_client__parsec_ffmpeg_dependencies_available(missing, sizeof(missing))) {
+					vdi_stream_client__log_info("WARNING: FFmpeg H.265 decoder dependencies unavailable (%s)\n", missing[0] != '\0' ? missing : "unknown dependency");
+					vdi_stream_client__log_info("WARNING: Keep configured decoder index %u and disable H.265 to avoid OpenH264 decode loop\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+					cfg.video[DEFAULT_STREAM].decoderH265 = 0;
+				} else {
+					cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
+					hevc_negotiation_enabled = true;
+					vdi_stream_client__log_info("Force public SDK hidden FFmpeg decoder index %u for H.265 (HEVC) because VDI_STREAM_CLIENT_FORCE_FFMPEG_HEVC is set\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+				}
+			} else if (ffmpeg_decoder_index != UINT32_MAX) {
+				vdi_stream_client__log_info("WARNING: Hidden public-SDK FFmpeg H.265 decoder is visible at index %u, but it is not the official client decoder implementation\n",
+					ffmpeg_decoder_index
+				);
+				vdi_stream_client__log_info("WARNING: Disable H.265 for this connection; set VDI_STREAM_CLIENT_PARSEC_FFMPEG_SO=/path/to/parsecd-150-103a.so to use the official FFmpeg decoder\n");
 				cfg.video[DEFAULT_STREAM].decoderH265 = 0;
 			} else {
-				cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
-				hevc_negotiation_enabled = true;
-				vdi_stream_client__log_info("Force hidden FFmpeg decoder index %u for H.265 (HEVC) because VDI_STREAM_CLIENT_FORCE_FFMPEG_HEVC is set\n", cfg.video[DEFAULT_STREAM].decoderIndex);
+				vdi_stream_client__log_info("WARNING: No visible H.265 (HEVC) decoder found; disable H.265 for this connection\n");
+				cfg.video[DEFAULT_STREAM].decoderH265 = 0;
 			}
-		} else if (ffmpeg_decoder_index != UINT32_MAX) {
-			vdi_stream_client__log_info("WARNING: Hidden FFmpeg H.265 decoder is visible at index %u, but the selected decoder index %u does not support H.265\n",
-				ffmpeg_decoder_index,
-				cfg.video[DEFAULT_STREAM].decoderIndex
-			);
-			vdi_stream_client__log_info("WARNING: Disable H.265 for this connection to avoid SDK OpenH264 decode loop; set VDI_STREAM_CLIENT_FORCE_FFMPEG_HEVC=1 to test FFmpeg explicitly\n");
-			cfg.video[DEFAULT_STREAM].decoderH265 = 0;
-		} else {
-			vdi_stream_client__log_info("WARNING: No visible H.265 (HEVC) decoder found; disable H.265 for this connection\n");
-			cfg.video[DEFAULT_STREAM].decoderH265 = 0;
 		}
 	}
 
