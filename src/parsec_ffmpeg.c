@@ -27,6 +27,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavutil/avutil.h>
 #include <libavutil/frame.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/pixfmt.h>
 #endif
 
@@ -49,8 +50,12 @@ typedef void (*vdi_stream_client__parsec_decoder_query_fn)(void *h264, void *h26
 struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	AVCodecContext *codec;
 	AVFrame *frame;
+	AVFrame *sw_frame;
 	AVPacket *packet;
+	AVBufferRef *hw_device_ctx;
 	enum AVCodecID codec_id;
+	enum AVPixelFormat hw_pix_fmt;
+	bool hwaccel;
 	bool logged;
 };
 #endif
@@ -186,13 +191,141 @@ static int vdi_stream_client__parsec_ffmpeg_env_int(const char *name, int defaul
 	return (int) parsed;
 }
 
+
+static bool vdi_stream_client__parsec_ffmpeg_env_is(const char *name, const char *expected) {
+	const char *value = getenv(name);
+
+	if (value == NULL || expected == NULL) {
+		return false;
+	}
+	return strcmp(value, expected) == 0;
+}
+
+static const char *vdi_stream_client__parsec_ffmpeg_hwaccel_mode(void) {
+	const char *mode = getenv("VDI_STREAM_CLIENT_FFMPEG_HWACCEL");
+
+	if (mode == NULL || mode[0] == '\0') {
+		return "vaapi";
+	}
+	return mode;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_hwaccel_requested(void) {
+	const char *mode = vdi_stream_client__parsec_ffmpeg_hwaccel_mode();
+
+	return strcmp(mode, "0") != 0 && strcmp(mode, "false") != 0 && strcmp(mode, "FALSE") != 0 &&
+	       strcmp(mode, "no") != 0 && strcmp(mode, "NO") != 0 && strcmp(mode, "none") != 0 &&
+	       strcmp(mode, "software") != 0;
+}
+
+static enum AVPixelFormat vdi_stream_client__parsec_ffmpeg_get_hw_format(AVCodecContext *codec, const enum AVPixelFormat *formats) {
+	struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg = codec != NULL ? codec->opaque : NULL;
+	const enum AVPixelFormat *format;
+
+	if (ffmpeg != NULL) {
+		for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
+			if (*format == ffmpeg->hw_pix_fmt) {
+				return *format;
+			}
+		}
+		vdi_stream_client__log_info("WARNING: FFmpeg VAAPI pixel format was not offered by decoder; falling back to software frames\n");
+	}
+
+	return formats != NULL ? formats[0] : AV_PIX_FMT_NONE;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_setup_vaapi(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVCodec *codec) {
+	const AVCodecHWConfig *config;
+	const char *device;
+	Sint32 err;
+	int i;
+	char errbuf[AV_ERROR_MAX_STRING_SIZE];
+
+	if (ffmpeg == NULL || codec == NULL || !vdi_stream_client__parsec_ffmpeg_hwaccel_requested()) {
+		return false;
+	}
+
+	if (!vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_HWACCEL", "vaapi") &&
+	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_HWACCEL", "VAAPI") &&
+	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_HWACCEL", "auto") &&
+	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_HWACCEL", "AUTO") &&
+	    getenv("VDI_STREAM_CLIENT_FFMPEG_HWACCEL") != NULL && getenv("VDI_STREAM_CLIENT_FFMPEG_HWACCEL")[0] != '\0') {
+		vdi_stream_client__log_info("WARNING: Unsupported FFmpeg hardware decoder '%s'; use 'vaapi' or 'none'\n", getenv("VDI_STREAM_CLIENT_FFMPEG_HWACCEL"));
+		return false;
+	}
+
+	ffmpeg->hw_pix_fmt = AV_PIX_FMT_NONE;
+	for (i = 0;; i++) {
+		config = avcodec_get_hw_config(codec, i);
+		if (config == NULL) {
+			break;
+		}
+		if ((config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX) != 0 &&
+		    config->device_type == AV_HWDEVICE_TYPE_VAAPI) {
+			ffmpeg->hw_pix_fmt = config->pix_fmt;
+			break;
+		}
+	}
+
+	if (ffmpeg->hw_pix_fmt == AV_PIX_FMT_NONE) {
+		vdi_stream_client__log_info("WARNING: FFmpeg %s decoder does not advertise VAAPI support; use software decoder\n",
+			ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
+		return false;
+	}
+
+	device = getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE");
+	if (device != NULL && device[0] == '\0') {
+		device = NULL;
+	}
+
+	/* Passing NULL lets FFmpeg/libva choose the default render node/display. */
+	err = av_hwdevice_ctx_create(&ffmpeg->hw_device_ctx, AV_HWDEVICE_TYPE_VAAPI, device, NULL, 0);
+	if (err < 0) {
+		vdi_stream_client__log_info("WARNING: FFmpeg VAAPI device creation failed%s%s: %s; use software decoder\n",
+			device != NULL ? " for " : "",
+			device != NULL ? device : "",
+			vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf)));
+		return false;
+	}
+
+	ffmpeg->codec->hw_device_ctx = av_buffer_ref(ffmpeg->hw_device_ctx);
+	if (ffmpeg->codec->hw_device_ctx == NULL) {
+		vdi_stream_client__log_info("WARNING: FFmpeg VAAPI device reference failed; use software decoder\n");
+		av_buffer_unref(&ffmpeg->hw_device_ctx);
+		return false;
+	}
+	ffmpeg->codec->opaque = ffmpeg;
+	ffmpeg->codec->get_format = vdi_stream_client__parsec_ffmpeg_get_hw_format;
+	ffmpeg->hwaccel = true;
+	return true;
+}
+
+
+static void vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *codec) {
+	if (codec == NULL) {
+		return;
+	}
+
+	codec->thread_count = vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_THREADS", 0, 0, 64);
+	codec->thread_type = FF_THREAD_SLICE;
+	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS", false)) {
+		codec->thread_type |= FF_THREAD_FRAME;
+	}
+	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_LOW_DELAY", true)) {
+		codec->flags |= AV_CODEC_FLAG_LOW_DELAY;
+	}
+	codec->flags2 |= AV_CODEC_FLAG2_FAST;
+}
+
 static void vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
 	if (ffmpeg == NULL) {
 		return;
 	}
 	av_packet_free(&ffmpeg->packet);
+	av_frame_free(&ffmpeg->sw_frame);
 	av_frame_free(&ffmpeg->frame);
 	avcodec_free_context(&ffmpeg->codec);
+	av_buffer_unref(&ffmpeg->hw_device_ctx);
 	free(ffmpeg);
 }
 
@@ -248,17 +381,26 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 	 *   VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS=1
 	 *   VDI_STREAM_CLIENT_FFMPEG_THREADS=0     # auto, or a positive number
 	 */
-	ffmpeg->codec->thread_count = vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_THREADS", 0, 0, 64);
-	ffmpeg->codec->thread_type = FF_THREAD_SLICE;
-	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS", false)) {
-		ffmpeg->codec->thread_type |= FF_THREAD_FRAME;
-	}
-	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_LOW_DELAY", true)) {
-		ffmpeg->codec->flags |= AV_CODEC_FLAG_LOW_DELAY;
-	}
-	ffmpeg->codec->flags2 |= AV_CODEC_FLAG2_FAST;
+	vdi_stream_client__parsec_ffmpeg_configure_context(ffmpeg->codec);
+	(void) vdi_stream_client__parsec_ffmpeg_setup_vaapi(ffmpeg, codec);
 
 	err = avcodec_open2(ffmpeg->codec, codec, NULL);
+	if (err < 0 && ffmpeg->hwaccel) {
+		vdi_stream_client__log_info("WARNING: FFmpeg VAAPI avcodec_open2 failed: %s; retry software decoder\n", vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf)));
+		avcodec_free_context(&ffmpeg->codec);
+		av_buffer_unref(&ffmpeg->hw_device_ctx);
+		ffmpeg->hwaccel = false;
+		ffmpeg->hw_pix_fmt = AV_PIX_FMT_NONE;
+
+		ffmpeg->codec = avcodec_alloc_context3(codec);
+		if (ffmpeg->codec == NULL) {
+			vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
+			*((void **) decoder) = NULL;
+			return DECODE_ERR_BUFFER;
+		}
+		vdi_stream_client__parsec_ffmpeg_configure_context(ffmpeg->codec);
+		err = avcodec_open2(ffmpeg->codec, codec, NULL);
+	}
 	if (err < 0) {
 		vdi_stream_client__log_info("WARNING: FFmpeg avcodec_open2 failed: %s\n", vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf)));
 		vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
@@ -267,14 +409,22 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 	}
 
 	ffmpeg->frame = av_frame_alloc();
+	ffmpeg->sw_frame = av_frame_alloc();
 	ffmpeg->packet = av_packet_alloc();
-	if (ffmpeg->frame == NULL || ffmpeg->packet == NULL) {
+	if (ffmpeg->frame == NULL || ffmpeg->sw_frame == NULL || ffmpeg->packet == NULL) {
 		vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
 		*((void **) decoder) = NULL;
 		return DECODE_ERR_BUFFER;
 	}
 
-	vdi_stream_client__log_info("Use vdi-stream-client FFmpeg software decoder for %s\n", ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
+	vdi_stream_client__log_info("Use vdi-stream-client FFmpeg %s decoder for %s\n",
+		ffmpeg->hwaccel ? "VAAPI hardware" : "software",
+		ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
+	if (ffmpeg->hwaccel) {
+		vdi_stream_client__log_info("Use FFmpeg VAAPI device%s%s; output is transferred to system-memory NV12 for SDL\n",
+			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? " " : "",
+			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") : "default");
+	}
 	vdi_stream_client__log_info("Use FFmpeg low-latency settings: threads=%d, frame_threads=%s, low_delay=%s\n",
 		ffmpeg->codec->thread_count,
 		(ffmpeg->codec->thread_type & FF_THREAD_FRAME) != 0 ? "yes" : "no",
@@ -312,9 +462,9 @@ static bool vdi_stream_client__parsec_ffmpeg_copy_plane(Uint8 *dst, const Uint8 
 	return true;
 }
 
-static Sint32 vdi_stream_client__parsec_ffmpeg_write_i420(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, ParsecFrame *frame, Uint32 *frame_size) {
-	Uint32 width = (Uint32) ffmpeg->frame->width;
-	Uint32 height = (Uint32) ffmpeg->frame->height;
+static Sint32 vdi_stream_client__parsec_ffmpeg_write_i420(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	Uint32 width = (Uint32) source->width;
+	Uint32 height = (Uint32) source->height;
 	Uint32 chroma_width = width / 2;
 	Uint32 chroma_height = height / 2;
 	Uint32 y_size = width * height;
@@ -343,24 +493,24 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_i420(struct vdi_stream_clie
 		*frame_size = required;
 	}
 
-	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, ffmpeg->frame->data[0], (Sint32) width, ffmpeg->frame->linesize[0], (Sint32) width, (Sint32) height)) {
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[0], (Sint32) width, source->linesize[0], (Sint32) width, (Sint32) height)) {
 		return DECODE_ERR_BUFFER;
 	}
 	dst += y_size;
-	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, ffmpeg->frame->data[1], (Sint32) chroma_width, ffmpeg->frame->linesize[1], (Sint32) chroma_width, (Sint32) chroma_height)) {
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[1], (Sint32) chroma_width, source->linesize[1], (Sint32) chroma_width, (Sint32) chroma_height)) {
 		return DECODE_ERR_BUFFER;
 	}
 	dst += u_size;
-	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, ffmpeg->frame->data[2], (Sint32) chroma_width, ffmpeg->frame->linesize[2], (Sint32) chroma_width, (Sint32) chroma_height)) {
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[2], (Sint32) chroma_width, source->linesize[2], (Sint32) chroma_width, (Sint32) chroma_height)) {
 		return DECODE_ERR_BUFFER;
 	}
 
 	return PARSEC_OK;
 }
 
-static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, ParsecFrame *frame, Uint32 *frame_size) {
-	Uint32 width = (Uint32) ffmpeg->frame->width;
-	Uint32 height = (Uint32) ffmpeg->frame->height;
+static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	Uint32 width = (Uint32) source->width;
+	Uint32 height = (Uint32) source->height;
 	Uint32 y_size = width * height;
 	Uint32 uv_size = width * (height / 2);
 	Uint32 required = (Uint32) sizeof(*frame) + y_size + uv_size;
@@ -387,11 +537,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(struct vdi_stream_clie
 		*frame_size = required;
 	}
 
-	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, ffmpeg->frame->data[0], (Sint32) width, ffmpeg->frame->linesize[0], (Sint32) width, (Sint32) height)) {
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[0], (Sint32) width, source->linesize[0], (Sint32) width, (Sint32) height)) {
 		return DECODE_ERR_BUFFER;
 	}
 	dst += y_size;
-	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, ffmpeg->frame->data[1], (Sint32) width, ffmpeg->frame->linesize[1], (Sint32) width, (Sint32) (height / 2))) {
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[1], (Sint32) width, source->linesize[1], (Sint32) width, (Sint32) (height / 2))) {
 		return DECODE_ERR_BUFFER;
 	}
 
@@ -399,25 +549,49 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(struct vdi_stream_clie
 }
 
 static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, void *frame_data, Uint32 *frame_size) {
-	if (ffmpeg == NULL || ffmpeg->frame == NULL || frame_data == NULL) {
+	AVFrame *source;
+	Sint32 err;
+	char errbuf[AV_ERROR_MAX_STRING_SIZE];
+
+	if (ffmpeg == NULL || ffmpeg->frame == NULL || ffmpeg->sw_frame == NULL || frame_data == NULL) {
 		return DECODE_ERR_BUFFER;
 	}
 
+	source = ffmpeg->frame;
+	if (ffmpeg->frame->format == ffmpeg->hw_pix_fmt && ffmpeg->hwaccel) {
+		av_frame_unref(ffmpeg->sw_frame);
+		ffmpeg->sw_frame->format = AV_PIX_FMT_NV12;
+		err = av_hwframe_transfer_data(ffmpeg->sw_frame, ffmpeg->frame, 0);
+		if (err < 0) {
+			av_frame_unref(ffmpeg->sw_frame);
+			err = av_hwframe_transfer_data(ffmpeg->sw_frame, ffmpeg->frame, 0);
+		}
+		if (err < 0) {
+			vdi_stream_client__log_info("WARNING: FFmpeg VAAPI frame transfer failed: %s\n", vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf)));
+			return DECODE_ERR_DECODE;
+		}
+		source = ffmpeg->sw_frame;
+	}
+
 	if (!ffmpeg->logged) {
-		vdi_stream_client__log_info("FFmpeg decoded pixel format %d\n", ffmpeg->frame->format);
+		if (source != ffmpeg->frame) {
+			vdi_stream_client__log_info("FFmpeg decoded pixel format %d via VAAPI hardware format %d\n", source->format, ffmpeg->frame->format);
+		} else {
+			vdi_stream_client__log_info("FFmpeg decoded pixel format %d\n", source->format);
+		}
 		ffmpeg->logged = true;
 	}
 
-	switch (ffmpeg->frame->format) {
+	switch (source->format) {
 		case AV_PIX_FMT_YUV420P:
 #if LIBAVUTIL_VERSION_MAJOR < 59
 		case AV_PIX_FMT_YUVJ420P:
 #endif
-			return vdi_stream_client__parsec_ffmpeg_write_i420(ffmpeg, (ParsecFrame *) frame_data, frame_size);
+			return vdi_stream_client__parsec_ffmpeg_write_i420(source, (ParsecFrame *) frame_data, frame_size);
 		case AV_PIX_FMT_NV12:
-			return vdi_stream_client__parsec_ffmpeg_write_nv12(ffmpeg, (ParsecFrame *) frame_data, frame_size);
+			return vdi_stream_client__parsec_ffmpeg_write_nv12(source, (ParsecFrame *) frame_data, frame_size);
 		default:
-			vdi_stream_client__log_info("WARNING: Unsupported FFmpeg pixel format %d\n", ffmpeg->frame->format);
+			vdi_stream_client__log_info("WARNING: Unsupported FFmpeg pixel format %d\n", source->format);
 			return DECODE_ERR_PIXEL_FORMAT;
 	}
 }
