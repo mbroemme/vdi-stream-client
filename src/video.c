@@ -30,6 +30,28 @@
 #include <stdio.h>
 #include <unistd.h>
 
+
+static const char *vdi_stream_client__video_format_name(ParsecColorFormat format) {
+	switch (format) {
+		case FORMAT_NV12:
+			return "NV12";
+		case FORMAT_I420:
+			return "I420";
+		case FORMAT_NV16:
+			return "NV16";
+		case FORMAT_I422:
+			return "I422";
+		case FORMAT_BGRA:
+			return "BGRA";
+		case FORMAT_RGBA:
+			return "RGBA";
+		case FORMAT_I444:
+			return "I444";
+		default:
+			return "UNKNOWN";
+	}
+}
+
 static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel_format) {
 	switch (format) {
 		case FORMAT_NV12:
@@ -64,6 +86,14 @@ static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_con
 		return true;
 	}
 
+	vdi_stream_client__log_info("Use %s video frame format (%ux%u, full %ux%u)\n",
+		vdi_stream_client__video_format_name(frame->format),
+		frame->width,
+		frame->height,
+		frame->fullWidth,
+		frame->fullHeight
+	);
+
 	SDL_DestroyTexture(parsec_context->texture_video);
 	parsec_context->texture_video = SDL_CreateTexture(parsec_context->renderer,
 		pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth, frame->fullHeight);
@@ -81,6 +111,22 @@ static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_con
 static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque) {
 	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
 	const Uint8 *pixels = (const Uint8 *) image;
+
+	if (parsec_context->texture_video == NULL &&
+	    frame->width > 0 && frame->height > 0 &&
+	    (parsec_context->window_width != (Sint32) frame->width ||
+	     parsec_context->window_height != (Sint32) frame->height)) {
+		vdi_stream_client__log_info("Change resolution from %dx%d to %ux%u\n",
+			parsec_context->window_width,
+			parsec_context->window_height,
+			frame->width,
+			frame->height
+		);
+		SDL_SetWindowSize(parsec_context->window, frame->width, frame->height);
+		SDL_SyncWindow(parsec_context->window);
+		parsec_context->window_width = frame->width;
+		parsec_context->window_height = frame->height;
+	}
 
 	if (!vdi_stream_client__video_texture(parsec_context, frame)) {
 		return;

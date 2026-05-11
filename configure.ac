@@ -34,6 +34,26 @@ PKG_CHECK_MODULES([USB], [libusb-1.0 >= 1.0.9])
 PKG_CHECK_MODULES([USBREDIRHOST], [libusbredirhost >= 0.7.1])
 PKG_CHECK_MODULES([USBREDIRPARSER], [libusbredirparser-0.5 >= 0.7.1])
 
+# checking for optional FFmpeg decoder support.
+AC_ARG_ENABLE([ffmpeg-decoder],
+	AS_HELP_STRING([--enable-ffmpeg-decoder], [enable injected FFmpeg decoder for Parsec H.265/HEVC]),
+	[enable_ffmpeg_decoder="$enableval"],
+	[enable_ffmpeg_decoder=auto])
+
+AS_IF([test "x$enable_ffmpeg_decoder" != "xno"], [
+	PKG_CHECK_MODULES([FFMPEG], [libavcodec >= 58 libavutil >= 56], [
+		AC_DEFINE([HAVE_FFMPEG_DECODER], [1], [Define if FFmpeg decoder support is available.])
+		enable_ffmpeg_decoder=yes
+	], [
+		AS_IF([test "x$enable_ffmpeg_decoder" = "xyes"], [
+			AC_MSG_ERROR([*** libavcodec >= 58 and libavutil >= 56 are required for --enable-ffmpeg-decoder])
+		], [
+			enable_ffmpeg_decoder=no
+		])
+	])
+])
+AM_CONDITIONAL([FFMPEG_DECODER], [test "x$enable_ffmpeg_decoder" = "xyes"])
+
 # checking for internal parsec sdk.
 AC_CHECK_FILE([parsec-sdk/sdk/parsec.h], [AC_CHECK_FILE([parsec-sdk/sdk/linux/libparsec.so], [enable_internal_parsec_sdk="yes"])])
 
