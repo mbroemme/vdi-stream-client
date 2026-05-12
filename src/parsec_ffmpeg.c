@@ -28,7 +28,9 @@
 #include <libavutil/avutil.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
+#include <libswscale/swscale.h>
 #endif
 
 #define VDI_STREAM_CLIENT_PARSEC_DECODER_COUNT              3u
@@ -51,10 +53,16 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	AVCodecContext *codec;
 	AVFrame *frame;
 	AVFrame *sw_frame;
+	AVFrame *convert_frame;
 	AVPacket *packet;
 	AVBufferRef *hw_device_ctx;
+	struct SwsContext *sws;
 	enum AVCodecID codec_id;
 	enum AVPixelFormat hw_pix_fmt;
+	enum AVPixelFormat sws_src_fmt;
+	enum AVPixelFormat sws_dst_fmt;
+	Sint32 sws_width;
+	Sint32 sws_height;
 	bool hwaccel;
 	bool logged;
 };
@@ -417,8 +425,10 @@ static void vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__pars
 		return;
 	}
 	av_packet_free(&ffmpeg->packet);
+	av_frame_free(&ffmpeg->convert_frame);
 	av_frame_free(&ffmpeg->sw_frame);
 	av_frame_free(&ffmpeg->frame);
+	sws_freeContext(ffmpeg->sws);
 	avcodec_free_context(&ffmpeg->codec);
 	av_buffer_unref(&ffmpeg->hw_device_ctx);
 	free(ffmpeg);
@@ -505,8 +515,9 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 
 	ffmpeg->frame = av_frame_alloc();
 	ffmpeg->sw_frame = av_frame_alloc();
+	ffmpeg->convert_frame = av_frame_alloc();
 	ffmpeg->packet = av_packet_alloc();
-	if (ffmpeg->frame == NULL || ffmpeg->sw_frame == NULL || ffmpeg->packet == NULL) {
+	if (ffmpeg->frame == NULL || ffmpeg->sw_frame == NULL || ffmpeg->convert_frame == NULL || ffmpeg->packet == NULL) {
 		vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
 		*((void **) decoder) = NULL;
 		return DECODE_ERR_BUFFER;
@@ -695,6 +706,98 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(const AVFrame *source,
 	return PARSEC_OK;
 }
 
+
+static const char *vdi_stream_client__parsec_ffmpeg_pix_fmt_name(enum AVPixelFormat format) {
+	const char *name = av_get_pix_fmt_name(format);
+
+	return name != NULL ? name : "unknown";
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_pixel_format_is_444(enum AVPixelFormat format) {
+	const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(format);
+
+	return desc != NULL && desc->nb_components >= 3 && desc->log2_chroma_w == 0 && desc->log2_chroma_h == 0;
+}
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_convert_frame(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVFrame *source, enum AVPixelFormat target_format, AVFrame **converted) {
+	Sint32 err;
+	int scaled;
+	char errbuf[AV_ERROR_MAX_STRING_SIZE];
+
+	if (ffmpeg == NULL || source == NULL || ffmpeg->convert_frame == NULL || converted == NULL || source->width <= 0 || source->height <= 0) {
+		return DECODE_ERR_BUFFER;
+	}
+
+	ffmpeg->sws = sws_getCachedContext(ffmpeg->sws,
+		source->width, source->height, (enum AVPixelFormat) source->format,
+		source->width, source->height, target_format,
+		SWS_POINT, NULL, NULL, NULL);
+	if (ffmpeg->sws == NULL) {
+		vdi_stream_client__log_info("WARNING: FFmpeg swscale cannot convert pixel format %d (%s) to %d (%s)\n",
+			source->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) source->format),
+			target_format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name(target_format));
+		return DECODE_ERR_PIXEL_FORMAT;
+	}
+
+	av_frame_unref(ffmpeg->convert_frame);
+	ffmpeg->convert_frame->format = target_format;
+	ffmpeg->convert_frame->width = source->width;
+	ffmpeg->convert_frame->height = source->height;
+	err = av_frame_get_buffer(ffmpeg->convert_frame, 32);
+	if (err < 0) {
+		vdi_stream_client__log_info("WARNING: FFmpeg conversion frame allocation failed: %s\n", vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf)));
+		return DECODE_ERR_BUFFER;
+	}
+
+	scaled = sws_scale(ffmpeg->sws, (const uint8_t * const *) source->data, source->linesize, 0, source->height, ffmpeg->convert_frame->data, ffmpeg->convert_frame->linesize);
+	if (scaled != source->height) {
+		vdi_stream_client__log_info("WARNING: FFmpeg swscale converted only %d of %d rows from pixel format %d (%s)\n",
+			scaled, source->height, source->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) source->format));
+		return DECODE_ERR_PIXEL_FORMAT;
+	}
+
+	if (ffmpeg->sws_src_fmt != (enum AVPixelFormat) source->format || ffmpeg->sws_dst_fmt != target_format ||
+	    ffmpeg->sws_width != source->width || ffmpeg->sws_height != source->height) {
+		vdi_stream_client__log_info("Convert FFmpeg pixel format %d (%s) to %d (%s) for Parsec frame output\n",
+			source->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) source->format),
+			target_format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name(target_format));
+		ffmpeg->sws_src_fmt = (enum AVPixelFormat) source->format;
+		ffmpeg->sws_dst_fmt = target_format;
+		ffmpeg->sws_width = source->width;
+		ffmpeg->sws_height = source->height;
+	}
+
+	*converted = ffmpeg->convert_frame;
+	return PARSEC_OK;
+}
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	AVFrame *converted = NULL;
+	Sint32 status;
+	enum AVPixelFormat target_format;
+
+	if (source == NULL) {
+		return DECODE_ERR_BUFFER;
+	}
+
+	/*
+	 * VAAPI can transfer HEVC 4:4:4 surfaces as high-bit-depth or driver-native
+	 * software pixel formats. Preserve 4:4:4 by converting those formats to the
+	 * 8-bit I444 frame layout the rest of vdi-stream-client already renders.
+	 * For non-4:4:4 formats, fall back to I420 rather than failing the stream.
+	 */
+	target_format = vdi_stream_client__parsec_ffmpeg_pixel_format_is_444((enum AVPixelFormat) source->format) ? AV_PIX_FMT_YUV444P : AV_PIX_FMT_YUV420P;
+	status = vdi_stream_client__parsec_ffmpeg_convert_frame(ffmpeg, source, target_format, &converted);
+	if (status != PARSEC_OK) {
+		return status;
+	}
+
+	if (target_format == AV_PIX_FMT_YUV444P) {
+		return vdi_stream_client__parsec_ffmpeg_write_i444(converted, frame, frame_size);
+	}
+	return vdi_stream_client__parsec_ffmpeg_write_i420(converted, frame, frame_size);
+}
+
 static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, void *frame_data, Uint32 *frame_size) {
 	AVFrame *source;
 	Sint32 err;
@@ -721,9 +824,12 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 
 	if (!ffmpeg->logged) {
 		if (source != ffmpeg->frame) {
-			vdi_stream_client__log_info("FFmpeg decoded pixel format %d via VAAPI hardware format %d\n", source->format, ffmpeg->frame->format);
+			vdi_stream_client__log_info("FFmpeg decoded pixel format %d (%s) via VAAPI hardware format %d (%s)\n",
+				source->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) source->format),
+				ffmpeg->frame->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) ffmpeg->frame->format));
 		} else {
-			vdi_stream_client__log_info("FFmpeg decoded pixel format %d\n", source->format);
+			vdi_stream_client__log_info("FFmpeg decoded pixel format %d (%s)\n",
+				source->format, vdi_stream_client__parsec_ffmpeg_pix_fmt_name((enum AVPixelFormat) source->format));
 		}
 		ffmpeg->logged = true;
 	}
@@ -742,8 +848,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 #endif
 			return vdi_stream_client__parsec_ffmpeg_write_i444(source, (ParsecFrame *) frame_data, frame_size);
 		default:
-			vdi_stream_client__log_info("WARNING: Unsupported FFmpeg pixel format %d\n", source->format);
-			return DECODE_ERR_PIXEL_FORMAT;
+			return vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(ffmpeg, source, (ParsecFrame *) frame_data, frame_size);
 	}
 }
 

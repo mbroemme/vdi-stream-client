@@ -41,12 +41,12 @@ AC_ARG_ENABLE([ffmpeg-decoder],
 	[enable_ffmpeg_decoder=auto])
 
 AS_IF([test "x$enable_ffmpeg_decoder" != "xno"], [
-	PKG_CHECK_MODULES([FFMPEG], [libavcodec >= 58 libavutil >= 56], [
+	PKG_CHECK_MODULES([FFMPEG], [libavcodec >= 58 libavutil >= 56 libswscale >= 5], [
 		AC_DEFINE([HAVE_FFMPEG_DECODER], [1], [Define if FFmpeg decoder support is available.])
 		enable_ffmpeg_decoder=yes
 	], [
 		AS_IF([test "x$enable_ffmpeg_decoder" = "xyes"], [
-			AC_MSG_ERROR([*** libavcodec >= 58 and libavutil >= 56 are required for --enable-ffmpeg-decoder])
+			AC_MSG_ERROR([*** libavcodec >= 58, libavutil >= 56 and libswscale >= 5 are required for --enable-ffmpeg-decoder])
 		], [
 			enable_ffmpeg_decoder=no
 		])
