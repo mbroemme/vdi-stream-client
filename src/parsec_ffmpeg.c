@@ -55,6 +55,12 @@ struct vdi_stream_client__parsec_ffmpeg_packet_s {
 	struct vdi_stream_client__parsec_ffmpeg_packet_s *next;
 };
 
+enum vdi_stream_client__parsec_ffmpeg_444_output_e {
+	VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_NATIVE = 0,
+	VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_I444,
+	VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA,
+};
+
 struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	AVCodecContext *codec;
 	AVFrame *frame;
@@ -70,7 +76,7 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	Sint32 sws_width;
 	Sint32 sws_height;
 	bool hwaccel;
-	bool output_444_rgba;
+	enum vdi_stream_client__parsec_ffmpeg_444_output_e output_444;
 	bool logged;
 	bool async;
 	bool async_stop;
@@ -328,6 +334,44 @@ static bool vdi_stream_client__parsec_ffmpeg_env_is(const char *name, const char
 		return false;
 	}
 	return strcmp(value, expected) == 0;
+}
+
+static enum vdi_stream_client__parsec_ffmpeg_444_output_e vdi_stream_client__parsec_ffmpeg_444_output_mode(void) {
+	const char *mode = getenv("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT");
+	const char *renderer = getenv("VDI_STREAM_CLIENT_VIDEO_RENDERER");
+
+	if (mode == NULL || mode[0] == '\0') {
+		/* OpenGL can render native 4:4:4 YUV/VUYX directly in the shader.  That
+		 * avoids CPU-side swscale conversion and keeps the copied frame size small.
+		 * When the user explicitly selects the SDL renderer, keep the previous RGBA
+		 * default because SDL has no native I444/VUYX streaming texture. */
+		if (renderer != NULL && (strcmp(renderer, "sdl") == 0 || strcmp(renderer, "SDL") == 0)) {
+			return VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA;
+		}
+		return VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_NATIVE;
+	}
+	if (strcmp(mode, "rgba") == 0 || strcmp(mode, "RGBA") == 0) {
+		return VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA;
+	}
+	if (strcmp(mode, "i444") == 0 || strcmp(mode, "I444") == 0) {
+		return VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_I444;
+	}
+	if (strcmp(mode, "native") != 0 && strcmp(mode, "NATIVE") != 0) {
+		vdi_stream_client__log_info("WARNING: Unsupported VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT=%s; use native, i444, or rgba\n", mode);
+	}
+	return VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_NATIVE;
+}
+
+static const char *vdi_stream_client__parsec_ffmpeg_444_output_name(enum vdi_stream_client__parsec_ffmpeg_444_output_e mode) {
+	switch (mode) {
+		case VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA:
+			return "RGBA";
+		case VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_I444:
+			return "I444";
+		case VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_NATIVE:
+		default:
+			return "native";
+	}
 }
 
 static const char *vdi_stream_client__parsec_ffmpeg_hwaccel_mode(void) {
@@ -611,8 +655,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 
 	selector = codec_selector != NULL ? ((const Uint8 *) codec_selector)[0] : 2;
 	ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
-	ffmpeg->output_444_rgba = !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "i444") &&
-	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "I444");
+	ffmpeg->output_444 = vdi_stream_client__parsec_ffmpeg_444_output_mode();
 	ffmpeg->async = vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_ASYNC", vdi_stream_client__parsec_ffmpeg_request_color444);
 	ffmpeg->async_max_packets = (Uint32) vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_PACKETS", 512, 0, 65535);
 	ffmpeg->async_max_bytes = (Uint32) vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_BYTES", 64 * 1024 * 1024, 0, 512 * 1024 * 1024);
@@ -686,7 +729,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		ffmpeg->hwaccel ? "VAAPI hardware" : "software",
 		ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
 	if (ffmpeg->hwaccel) {
-		vdi_stream_client__log_info("Use FFmpeg VAAPI device%s%s; output is transferred to system memory for SDL\n",
+		vdi_stream_client__log_info("Use FFmpeg VAAPI device%s%s; output is transferred to system memory for renderer upload\n",
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? " " : "",
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") : "default");
 	}
@@ -696,7 +739,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		(ffmpeg->codec->flags & AV_CODEC_FLAG_LOW_DELAY) != 0 ? "yes" : "no",
 		ffmpeg->codec->skip_frame == AVDISCARD_NONREF ? "yes" : "no"
 	);
-	vdi_stream_client__log_info("Use FFmpeg 4:4:4 output path: %s\n", ffmpeg->output_444_rgba ? "RGBA" : "I444");
+	vdi_stream_client__log_info("Use FFmpeg 4:4:4 output path: %s\n", vdi_stream_client__parsec_ffmpeg_444_output_name(ffmpeg->output_444));
 	if (!vdi_stream_client__parsec_ffmpeg_async_start(ffmpeg)) {
 		vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
 		*((void **) decoder) = NULL;
@@ -877,6 +920,51 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_rgba(const AVFrame *source,
 	return PARSEC_OK;
 }
 
+static Sint32 vdi_stream_client__parsec_ffmpeg_write_vuyx(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	Uint32 width = (Uint32) source->width;
+	Uint32 height = (Uint32) source->height;
+	Uint32 row_size;
+	Uint32 image_size;
+	Uint32 required;
+	Uint8 *dst = (Uint8 *) frame + sizeof(*frame);
+
+	if (width == 0 || height == 0) {
+		return DECODE_ERR_RESOLUTION;
+	}
+	if (width > UINT32_MAX / 4u || width * 4u > UINT32_MAX / height) {
+		return DECODE_ERR_BUFFER;
+	}
+	row_size = width * 4u;
+	image_size = row_size * height;
+	if (image_size > UINT32_MAX - (Uint32) sizeof(*frame)) {
+		return DECODE_ERR_BUFFER;
+	}
+	required = (Uint32) sizeof(*frame) + image_size;
+	if (required > VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER) {
+		if (frame_size != NULL) {
+			*frame_size = required;
+		}
+		return DECODE_ERR_BUFFER;
+	}
+
+	frame->format = VDI_STREAM_CLIENT_FORMAT_VUYX;
+	frame->rotation = ROTATION_NONE;
+	frame->size = required - (Uint32) sizeof(*frame);
+	frame->width = width;
+	frame->height = height;
+	frame->fullWidth = width;
+	frame->fullHeight = height;
+	if (frame_size != NULL) {
+		*frame_size = required;
+	}
+
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[0], (Sint32) row_size, source->linesize[0], (Sint32) row_size, (Sint32) height)) {
+		return DECODE_ERR_BUFFER;
+	}
+
+	return PARSEC_OK;
+}
+
 static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
 	Uint32 width = (Uint32) source->width;
 	Uint32 height = (Uint32) source->height;
@@ -928,6 +1016,12 @@ static bool vdi_stream_client__parsec_ffmpeg_pixel_format_is_444(enum AVPixelFor
 	const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(format);
 
 	return desc != NULL && desc->nb_components >= 3 && desc->log2_chroma_w == 0 && desc->log2_chroma_h == 0;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_pixel_format_is_vuyx(enum AVPixelFormat format) {
+	enum AVPixelFormat vuyx = av_get_pix_fmt("vuyx");
+
+	return vuyx != AV_PIX_FMT_NONE && format == vuyx;
 }
 
 static bool vdi_stream_client__parsec_ffmpeg_rgba_fits(Sint32 width, Sint32 height) {
@@ -1007,14 +1101,18 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(struct vd
 	}
 
 	/*
-	 * VAAPI can transfer HEVC 4:4:4 surfaces as high-bit-depth or driver-native
-	 * software pixel formats. Preserve 4:4:4 by converting those formats to the
-	 * 8-bit I444 frame layout the rest of vdi-stream-client already renders.
-	 * For non-4:4:4 formats, fall back to I420 rather than failing the stream.
+	 * Prefer native 4:4:4 output when the renderer can handle it.  This keeps
+	 * software YUV444P as I444 and VAAPI-transferred VUYX as packed VUYX, avoiding
+	 * the expensive swscale-to-RGBA path.  Use swscale only for formats that the
+	 * renderer cannot consume directly, or when the user explicitly asks for RGBA.
 	 */
 	if (vdi_stream_client__parsec_ffmpeg_pixel_format_is_444((enum AVPixelFormat) source->format)) {
-		target_format = ffmpeg != NULL && ffmpeg->output_444_rgba &&
-		    vdi_stream_client__parsec_ffmpeg_rgba_fits(source->width, source->height) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_YUV444P;
+		if (ffmpeg != NULL && ffmpeg->output_444 == VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA &&
+		    vdi_stream_client__parsec_ffmpeg_rgba_fits(source->width, source->height)) {
+			target_format = AV_PIX_FMT_RGBA;
+		} else {
+			target_format = AV_PIX_FMT_YUV444P;
+		}
 	} else {
 		target_format = AV_PIX_FMT_YUV420P;
 	}
@@ -1068,6 +1166,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 		ffmpeg->logged = true;
 	}
 
+	if (ffmpeg->output_444 == VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_NATIVE &&
+	    vdi_stream_client__parsec_ffmpeg_pixel_format_is_vuyx((enum AVPixelFormat) source->format)) {
+		return vdi_stream_client__parsec_ffmpeg_write_vuyx(source, (ParsecFrame *) frame_data, frame_size);
+	}
+
 	switch (source->format) {
 		case AV_PIX_FMT_YUV420P:
 #if LIBAVUTIL_VERSION_MAJOR < 59
@@ -1080,7 +1183,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 #if LIBAVUTIL_VERSION_MAJOR < 59
 		case AV_PIX_FMT_YUVJ444P:
 #endif
-			if (ffmpeg->output_444_rgba) {
+			if (ffmpeg->output_444 == VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT_RGBA) {
 				return vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(ffmpeg, source, (ParsecFrame *) frame_data, frame_size);
 			}
 			return vdi_stream_client__parsec_ffmpeg_write_i444(source, (ParsecFrame *) frame_data, frame_size);

@@ -70,6 +70,8 @@ static const char *vdi_stream_client__video_format_name(ParsecColorFormat format
 			return "RGBA";
 		case FORMAT_I444:
 			return "I444";
+		case VDI_STREAM_CLIENT_FORMAT_VUYX:
+			return "VUYX";
 		default:
 			return "UNKNOWN";
 	}
@@ -88,6 +90,7 @@ static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelF
 			return true;
 		case FORMAT_RGBA:
 		case FORMAT_I444:
+		case VDI_STREAM_CLIENT_FORMAT_VUYX:
 			/* SDL does not provide a streaming planar I444 texture format, so I444 is
 			 * converted to RGBA immediately before SDL_UpdateTexture(). */
 			*pixel_format = SDL_PIXELFORMAT_RGBA32;
@@ -212,7 +215,12 @@ static bool vdi_stream_client__video_gl_create_programs(struct parsec_context_s 
 		"\tfloat y = texture2D(tex_y, tc).r;\n"
 		"\tfloat u;\n"
 		"\tfloat v;\n"
-		"\tif (yuv_mode == 1) {\n"
+		"\tif (yuv_mode == 2) {\n"
+		"\t\tvec4 vuyx = texture2D(tex_y, tc);\n"
+		"\t\ty = vuyx.b;\n"
+		"\t\tu = vuyx.g - 0.5;\n"
+		"\t\tv = vuyx.r - 0.5;\n"
+		"\t} else if (yuv_mode == 1) {\n"
 		"\t\tvec4 uv = texture2D(tex_u, tc);\n"
 		"\t\tu = uv.r - 0.5;\n"
 		"\t\tv = uv.a - 0.5;\n"
@@ -296,6 +304,9 @@ static bool vdi_stream_client__video_gl_texture(struct parsec_context_s *parsec_
 			rgba_format = frame->format == FORMAT_BGRA ? GL_BGRA : GL_RGBA;
 			return vdi_stream_client__video_gl_upload_texture(parsec_context->gl_textures[0], recreate,
 			    (GLsizei) frame->fullWidth, (GLsizei) frame->fullHeight, GL_RGBA, rgba_format, pixels);
+		case VDI_STREAM_CLIENT_FORMAT_VUYX:
+			return vdi_stream_client__video_gl_upload_texture(parsec_context->gl_textures[0], recreate,
+			    (GLsizei) frame->fullWidth, (GLsizei) frame->fullHeight, GL_RGBA, GL_RGBA, pixels);
 		case FORMAT_NV12:
 			if ((frame->fullWidth & 1u) != 0 || (frame->fullHeight & 1u) != 0) {
 				return false;
@@ -352,6 +363,8 @@ static void vdi_stream_client__video_gl_draw(struct parsec_context_s *parsec_con
 		program = parsec_context->gl_program_yuv;
 		if (parsec_context->format_video == FORMAT_NV12) {
 			yuv_mode = 1;
+		} else if (parsec_context->format_video == VDI_STREAM_CLIENT_FORMAT_VUYX) {
+			yuv_mode = 2;
 		}
 		glUseProgram(program);
 		if (parsec_context->gl_uniform_yuv_mode >= 0) {
@@ -359,11 +372,13 @@ static void vdi_stream_client__video_gl_draw(struct parsec_context_s *parsec_con
 		}
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, parsec_context->gl_textures[0]);
-		glActiveTexture(GL_TEXTURE1);
-		glBindTexture(GL_TEXTURE_2D, parsec_context->gl_textures[1]);
-		if (parsec_context->format_video != FORMAT_NV12) {
-			glActiveTexture(GL_TEXTURE2);
-			glBindTexture(GL_TEXTURE_2D, parsec_context->gl_textures[2]);
+		if (parsec_context->format_video != VDI_STREAM_CLIENT_FORMAT_VUYX) {
+			glActiveTexture(GL_TEXTURE1);
+			glBindTexture(GL_TEXTURE_2D, parsec_context->gl_textures[1]);
+			if (parsec_context->format_video != FORMAT_NV12) {
+				glActiveTexture(GL_TEXTURE2);
+				glBindTexture(GL_TEXTURE_2D, parsec_context->gl_textures[2]);
+			}
 		}
 	}
 
@@ -497,6 +512,56 @@ static bool vdi_stream_client__video_update_i444_texture(struct parsec_context_s
 	return true;
 }
 
+static bool vdi_stream_client__video_update_vuyx_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame, const Uint8 *pixels) {
+	const Uint32 width = frame->fullWidth;
+	const Uint32 height = frame->fullHeight;
+	Uint8 *rgba;
+	Uint32 required;
+	Uint32 row;
+	Uint32 col;
+
+	if (width == 0 || height == 0 || pixels == NULL) {
+		return false;
+	}
+	if (width > UINT32_MAX / height || width * height > UINT32_MAX / 4u) {
+		vdi_stream_client__log_error("VUYX frame is too large for RGBA conversion (%ux%u)\n", width, height);
+		return false;
+	}
+	required = width * height * 4u;
+	if (parsec_context->texture_i444_rgba_size < required) {
+		Uint8 *tmp = SDL_realloc(parsec_context->texture_i444_rgba, required);
+		if (tmp == NULL) {
+			vdi_stream_client__log_error("VUYX RGBA conversion buffer allocation failed\n");
+			return false;
+		}
+		parsec_context->texture_i444_rgba = tmp;
+		parsec_context->texture_i444_rgba_size = required;
+	}
+
+	rgba = parsec_context->texture_i444_rgba;
+	for (row = 0; row < height; row++) {
+		for (col = 0; col < width; col++) {
+			const Uint32 i = row * width + col;
+			const Uint8 *src = pixels + i * 4u;
+			const Sint32 c = (Sint32) src[2] - 16;
+			const Sint32 d = (Sint32) src[1] - 128;
+			const Sint32 e = (Sint32) src[0] - 128;
+			Uint8 *dst = rgba + i * 4u;
+
+			dst[0] = vdi_stream_client__video_clip_u8((298 * c + 459 * e + 128) >> 8);
+			dst[1] = vdi_stream_client__video_clip_u8((298 * c - 55 * d - 136 * e + 128) >> 8);
+			dst[2] = vdi_stream_client__video_clip_u8((298 * c + 541 * d + 128) >> 8);
+			dst[3] = 255;
+		}
+	}
+
+	if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, rgba, width * 4u)) {
+		vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+		return false;
+	}
+	return true;
+}
+
 static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame) {
 	SDL_PixelFormat pixel_format;
 
@@ -599,6 +664,11 @@ static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, cons
 			break;
 		case FORMAT_I444:
 			if (!vdi_stream_client__video_update_i444_texture(parsec_context, frame, pixels)) {
+				return;
+			}
+			break;
+		case VDI_STREAM_CLIENT_FORMAT_VUYX:
+			if (!vdi_stream_client__video_update_vuyx_texture(parsec_context, frame, pixels)) {
 				return;
 			}
 			break;
