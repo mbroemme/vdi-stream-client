@@ -64,6 +64,8 @@ jobs:
             libusb-1.0-0-dev \
             libusbredirhost-dev \
             libusbredirparser-dev \
+            libavcodec-dev \
+            libavutil-dev \
             libx11-dev \
             pkg-config \
             tar \
