@@ -34,6 +34,9 @@ PKG_CHECK_MODULES([USB], [libusb-1.0 >= 1.0.9])
 PKG_CHECK_MODULES([USBREDIRHOST], [libusbredirhost >= 0.7.1])
 PKG_CHECK_MODULES([USBREDIRPARSER], [libusbredirparser-0.5 >= 0.7.1])
 
+# checking for FFmpeg decoder support.
+PKG_CHECK_MODULES([FFMPEG], [libavcodec >= 58 libavutil >= 56], [], [AC_MSG_ERROR([*** libavcodec >= 58 and libavutil >= 56 are required])])
+
 # checking for internal parsec sdk.
 AC_CHECK_FILE([parsec-sdk/sdk/parsec.h], [AC_CHECK_FILE([parsec-sdk/sdk/linux/libparsec.so], [enable_internal_parsec_sdk="yes"])])
 
