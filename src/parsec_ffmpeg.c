@@ -64,6 +64,7 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	Sint32 sws_width;
 	Sint32 sws_height;
 	bool hwaccel;
+	bool output_444_rgba;
 	bool logged;
 };
 #endif
@@ -417,6 +418,9 @@ static void vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *c
 	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_LOW_DELAY", true)) {
 		codec->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	}
+	if (vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_DROP_NONREF", false)) {
+		codec->skip_frame = AVDISCARD_NONREF;
+	}
 	codec->flags2 |= AV_CODEC_FLAG2_FAST;
 }
 
@@ -457,6 +461,8 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 
 	selector = codec_selector != NULL ? ((const Uint8 *) codec_selector)[0] : 2;
 	ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+	ffmpeg->output_444_rgba = !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "i444") &&
+	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "I444");
 
 	codec = avcodec_find_decoder(ffmpeg->codec_id);
 	if (codec == NULL) {
@@ -531,11 +537,13 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? " " : "",
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") : "default");
 	}
-	vdi_stream_client__log_info("Use FFmpeg low-latency settings: threads=%d, frame_threads=%s, low_delay=%s\n",
+	vdi_stream_client__log_info("Use FFmpeg low-latency settings: threads=%d, frame_threads=%s, low_delay=%s, drop_nonref=%s\n",
 		ffmpeg->codec->thread_count,
 		(ffmpeg->codec->thread_type & FF_THREAD_FRAME) != 0 ? "yes" : "no",
-		(ffmpeg->codec->flags & AV_CODEC_FLAG_LOW_DELAY) != 0 ? "yes" : "no"
+		(ffmpeg->codec->flags & AV_CODEC_FLAG_LOW_DELAY) != 0 ? "yes" : "no",
+		ffmpeg->codec->skip_frame == AVDISCARD_NONREF ? "yes" : "no"
 	);
+	vdi_stream_client__log_info("Use FFmpeg 4:4:4 output path: %s\n", ffmpeg->output_444_rgba ? "RGBA" : "I444");
 	return PARSEC_OK;
 }
 
@@ -666,6 +674,51 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_i444(const AVFrame *source,
 	return PARSEC_OK;
 }
 
+static Sint32 vdi_stream_client__parsec_ffmpeg_write_rgba(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	Uint32 width = (Uint32) source->width;
+	Uint32 height = (Uint32) source->height;
+	Uint32 row_size;
+	Uint32 image_size;
+	Uint32 required;
+	Uint8 *dst = (Uint8 *) frame + sizeof(*frame);
+
+	if (width == 0 || height == 0) {
+		return DECODE_ERR_RESOLUTION;
+	}
+	if (width > UINT32_MAX / 4u || width * 4u > UINT32_MAX / height) {
+		return DECODE_ERR_BUFFER;
+	}
+	row_size = width * 4u;
+	image_size = row_size * height;
+	if (image_size > UINT32_MAX - (Uint32) sizeof(*frame)) {
+		return DECODE_ERR_BUFFER;
+	}
+	required = (Uint32) sizeof(*frame) + image_size;
+	if (required > VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER) {
+		if (frame_size != NULL) {
+			*frame_size = required;
+		}
+		return DECODE_ERR_BUFFER;
+	}
+
+	frame->format = FORMAT_RGBA;
+	frame->rotation = ROTATION_NONE;
+	frame->size = required - (Uint32) sizeof(*frame);
+	frame->width = width;
+	frame->height = height;
+	frame->fullWidth = width;
+	frame->fullHeight = height;
+	if (frame_size != NULL) {
+		*frame_size = required;
+	}
+
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[0], (Sint32) row_size, source->linesize[0], (Sint32) row_size, (Sint32) height)) {
+		return DECODE_ERR_BUFFER;
+	}
+
+	return PARSEC_OK;
+}
+
 static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
 	Uint32 width = (Uint32) source->width;
 	Uint32 height = (Uint32) source->height;
@@ -717,6 +770,21 @@ static bool vdi_stream_client__parsec_ffmpeg_pixel_format_is_444(enum AVPixelFor
 	const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(format);
 
 	return desc != NULL && desc->nb_components >= 3 && desc->log2_chroma_w == 0 && desc->log2_chroma_h == 0;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_rgba_fits(Sint32 width, Sint32 height) {
+	Uint32 row_size;
+	Uint32 image_size;
+
+	if (width <= 0 || height <= 0 || (Uint32) width > UINT32_MAX / 4u) {
+		return false;
+	}
+	row_size = (Uint32) width * 4u;
+	if (row_size > UINT32_MAX / (Uint32) height) {
+		return false;
+	}
+	image_size = row_size * (Uint32) height;
+	return image_size <= VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER - (Uint32) sizeof(ParsecFrame);
 }
 
 static Sint32 vdi_stream_client__parsec_ffmpeg_convert_frame(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVFrame *source, enum AVPixelFormat target_format, AVFrame **converted) {
@@ -786,12 +854,20 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(struct vd
 	 * 8-bit I444 frame layout the rest of vdi-stream-client already renders.
 	 * For non-4:4:4 formats, fall back to I420 rather than failing the stream.
 	 */
-	target_format = vdi_stream_client__parsec_ffmpeg_pixel_format_is_444((enum AVPixelFormat) source->format) ? AV_PIX_FMT_YUV444P : AV_PIX_FMT_YUV420P;
+	if (vdi_stream_client__parsec_ffmpeg_pixel_format_is_444((enum AVPixelFormat) source->format)) {
+		target_format = ffmpeg != NULL && ffmpeg->output_444_rgba &&
+		    vdi_stream_client__parsec_ffmpeg_rgba_fits(source->width, source->height) ? AV_PIX_FMT_RGBA : AV_PIX_FMT_YUV444P;
+	} else {
+		target_format = AV_PIX_FMT_YUV420P;
+	}
 	status = vdi_stream_client__parsec_ffmpeg_convert_frame(ffmpeg, source, target_format, &converted);
 	if (status != PARSEC_OK) {
 		return status;
 	}
 
+	if (target_format == AV_PIX_FMT_RGBA) {
+		return vdi_stream_client__parsec_ffmpeg_write_rgba(converted, frame, frame_size);
+	}
 	if (target_format == AV_PIX_FMT_YUV444P) {
 		return vdi_stream_client__parsec_ffmpeg_write_i444(converted, frame, frame_size);
 	}
@@ -846,6 +922,9 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 #if LIBAVUTIL_VERSION_MAJOR < 59
 		case AV_PIX_FMT_YUVJ444P:
 #endif
+			if (ffmpeg->output_444_rgba) {
+				return vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(ffmpeg, source, (ParsecFrame *) frame_data, frame_size);
+			}
 			return vdi_stream_client__parsec_ffmpeg_write_i444(source, (ParsecFrame *) frame_data, frame_size);
 		default:
 			return vdi_stream_client__parsec_ffmpeg_convert_and_write_frame(ffmpeg, source, (ParsecFrame *) frame_data, frame_size);

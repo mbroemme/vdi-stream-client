@@ -32,6 +32,28 @@
 #include <unistd.h>
 
 
+
+static int vdi_stream_client__video_env_int(const char *name, int default_value, int min_value, int max_value) {
+	const char *value = getenv(name);
+	char *endptr = NULL;
+	long parsed;
+
+	if (value == NULL || value[0] == '\0') {
+		return default_value;
+	}
+	parsed = strtol(value, &endptr, 10);
+	if (endptr == value || *endptr != '\0') {
+		return default_value;
+	}
+	if (parsed < min_value) {
+		return min_value;
+	}
+	if (parsed > max_value) {
+		return max_value;
+	}
+	return (int) parsed;
+}
+
 static const char *vdi_stream_client__video_format_name(ParsecColorFormat format) {
 	switch (format) {
 		case FORMAT_NV12:
@@ -284,11 +306,33 @@ static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
 		parsec_context->requested_height = parsec_context->window_height;
 	}
 
-	parsec_context->frame_video_updated = false;
-	ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, parsec_context->render_timeout, parsec_context);
+	{
+		int drain;
+		int i;
+		bool got_frame;
 
-	if (!force_redraw && !parsec_context->frame_video_updated) {
-		return false;
+		parsec_context->frame_video_updated = false;
+		ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, parsec_context->render_timeout, parsec_context);
+		got_frame = parsec_context->frame_video_updated;
+
+		/* When conversion/rendering is slightly slower than the incoming stream,
+		 * presenting every queued frame increases visual latency. Drain a small
+		 * number of already queued frames with timeout 0 and present only the newest
+		 * texture. This does not wait for future frames and can be disabled with
+		 * VDI_STREAM_CLIENT_FRAME_DRAIN=0. */
+		drain = vdi_stream_client__video_env_int("VDI_STREAM_CLIENT_FRAME_DRAIN", 1, 0, 8);
+		for (i = 0; got_frame && i < drain; i++) {
+			parsec_context->frame_video_updated = false;
+			ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, 0, parsec_context);
+			if (!parsec_context->frame_video_updated) {
+				break;
+			}
+		}
+		parsec_context->frame_video_updated = got_frame;
+
+		if (!force_redraw && !got_frame) {
+			return false;
+		}
 	}
 
 	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
@@ -316,6 +360,10 @@ void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
 	}
 	if (!vsync) {
 		vdi_stream_client__log_info("Disable SDL renderer vsync because VDI_STREAM_CLIENT_NO_VSYNC is set\n");
+	}
+	if (vdi_stream_client__video_env_int("VDI_STREAM_CLIENT_FRAME_DRAIN", 1, 0, 8) > 0) {
+		vdi_stream_client__log_info("Use video frame drain limit %d for lower visual latency\n",
+			vdi_stream_client__video_env_int("VDI_STREAM_CLIENT_FRAME_DRAIN", 1, 0, 8));
 	}
 }
 
