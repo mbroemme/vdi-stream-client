@@ -34,6 +34,26 @@ PKG_CHECK_MODULES([USB], [libusb-1.0 >= 1.0.9])
 PKG_CHECK_MODULES([USBREDIRHOST], [libusbredirhost >= 0.7.1])
 PKG_CHECK_MODULES([USBREDIRPARSER], [libusbredirparser-0.5 >= 0.7.1])
 
+# checking for optional OpenGL renderer support.
+AC_ARG_ENABLE([opengl-renderer],
+	AS_HELP_STRING([--enable-opengl-renderer], [enable direct OpenGL video renderer]),
+	[enable_opengl_renderer="$enableval"],
+	[enable_opengl_renderer=auto])
+
+AS_IF([test "x$enable_opengl_renderer" != "xno"], [
+	PKG_CHECK_MODULES([GL], [gl], [
+		AC_DEFINE([HAVE_OPENGL_RENDERER], [1], [Define if direct OpenGL renderer support is available.])
+		enable_opengl_renderer=yes
+	], [
+		AS_IF([test "x$enable_opengl_renderer" = "xyes"], [
+			AC_MSG_ERROR([*** OpenGL development files are required for --enable-opengl-renderer])
+		], [
+			enable_opengl_renderer=no
+		])
+	])
+])
+AM_CONDITIONAL([OPENGL_RENDERER], [test "x$enable_opengl_renderer" = "xyes"])
+
 # checking for optional FFmpeg decoder support.
 AC_ARG_ENABLE([ffmpeg-decoder],
 	AS_HELP_STRING([--enable-ffmpeg-decoder], [enable injected FFmpeg decoder for Parsec H.265/HEVC]),

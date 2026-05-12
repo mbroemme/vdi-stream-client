@@ -38,6 +38,10 @@
 /* sdl includes. */
 #include <SDL3/SDL.h>
 #include <SDL3_ttf/SDL_ttf.h>
+#ifdef HAVE_OPENGL_RENDERER
+#define GL_GLEXT_PROTOTYPES 1
+#include <SDL3/SDL_opengl.h>
+#endif
 
 /* network includes. */
 #include <arpa/inet.h>
@@ -76,7 +80,7 @@ struct parsec_context_s {
 	Sint32 requested_width;
 	Sint32 requested_height;
 
-	/* sdl textures for rendering. */
+	/* sdl/opengl textures for rendering. */
 	SDL_Surface *surface_ttf;
 	SDL_Texture *texture_ttf;
 	SDL_Texture *texture_video;
@@ -87,6 +91,17 @@ struct parsec_context_s {
 	Sint32 texture_width;
 	Sint32 texture_height;
 	TTF_Font *font;
+	bool video_opengl_requested;
+	bool video_opengl;
+#ifdef HAVE_OPENGL_RENDERER
+	SDL_GLContext gl_context;
+	GLuint gl_program_rgba;
+	GLuint gl_program_yuv;
+	GLuint gl_textures[3];
+	GLint gl_uniform_yuv_mode;
+	float gl_tex_s;
+	float gl_tex_t;
+#endif
 
 	/* audio. */
 	SDL_AudioStream *audio;

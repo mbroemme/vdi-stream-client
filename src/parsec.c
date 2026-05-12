@@ -234,6 +234,10 @@ Sint32 vdi_stream_client__render_text(void *opaque, char *text) {
 		parsec_context->surface_ttf = NULL;
 	}
 
+	if (parsec_context->renderer == NULL) {
+		return VDI_STREAM_CLIENT_SUCCESS;
+	}
+
 	/* create the text surface. */
 	parsec_context->surface_ttf = TTF_RenderText_Blended(parsec_context->font, text, 0, color);
 	if (parsec_context->surface_ttf == NULL) {
@@ -282,6 +286,10 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 	parsec_context.next_overlay_tick = 0;
 	parsec_context.stats_enabled = vdi_config->stats;
 	parsec_context.stats_period_ms = vdi_config->stats_period * 1000;
+	parsec_context.video_opengl_requested = vdi_stream_client__video_opengl_requested();
+	if (parsec_context.video_opengl_requested) {
+		window_flags |= SDL_WINDOW_OPENGL;
+	}
 
 	/* sdl init. */
 	vdi_stream_client__log_info("Initialize SDL\n");
@@ -545,6 +553,14 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		vdi_stream_client__log_info("WARNING: Decoder dimensions unavailable, start with provisional resolution %dx%d\n", parsec_context.window_width, parsec_context.window_height);
 	}
 
+#ifdef HAVE_OPENGL_RENDERER
+	if (parsec_context.video_opengl_requested) {
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	}
+#endif
+
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
 					parsec_context.window_height,
@@ -555,13 +571,9 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	parsec_context.renderer = SDL_CreateRenderer(parsec_context.window, NULL);
-	if (parsec_context.renderer == NULL) {
-		vdi_stream_client__log_error("Renderer creation failed: %s\n", SDL_GetError());
+	if (!vdi_stream_client__video_init(&parsec_context)) {
 		goto error;
 	}
-
-	vdi_stream_client__video_init(&parsec_context);
 
 	/* check if audio should be streamed. */
 	if (vdi_config->audio == 1) {
