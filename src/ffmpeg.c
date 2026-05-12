@@ -56,6 +56,7 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	bool hwaccel;
 };
 
+
 static bool vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot) {
 	long page_size;
 	uintptr_t start;
@@ -162,12 +163,12 @@ static enum AVPixelFormat vdi_stream_client__parsec_ffmpeg_get_hw_format(AVCodec
 	return formats != NULL ? formats[0] : AV_PIX_FMT_NONE;
 }
 
-static bool vdi_stream_client__parsec_ffmpeg_setup_vaapi(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVCodec *codec) {
+static bool vdi_stream_client__parsec_ffmpeg_setup_vaapi(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVCodec *codec, bool acceleration) {
 	const AVCodecHWConfig *config;
 	Sint32 err;
 	int i;
 
-	if (ffmpeg == NULL || codec == NULL) {
+	if (ffmpeg == NULL || codec == NULL || !acceleration) {
 		return false;
 	}
 
@@ -227,7 +228,7 @@ static void vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__pars
 	free(ffmpeg);
 }
 
-static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags) {
+static Sint32 vdi_stream_client__parsec_ffmpeg_init_common(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags, bool acceleration) {
 	struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg;
 	const AVCodec *codec;
 	Uint8 selector;
@@ -266,7 +267,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 	}
 
 	vdi_stream_client__parsec_ffmpeg_configure_context(ffmpeg->codec);
-	(void) vdi_stream_client__parsec_ffmpeg_setup_vaapi(ffmpeg, codec);
+	(void) vdi_stream_client__parsec_ffmpeg_setup_vaapi(ffmpeg, codec, acceleration);
 
 	err = avcodec_open2(ffmpeg->codec, codec, NULL);
 	if (err < 0 && ffmpeg->hwaccel) {
@@ -305,6 +306,14 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)"
 	);
 	return PARSEC_OK;
+}
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags) {
+	return vdi_stream_client__parsec_ffmpeg_init_common(decoder, stream, stream_id, codec_selector, flags, true);
+}
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_init_no_acceleration(void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags) {
+	return vdi_stream_client__parsec_ffmpeg_init_common(decoder, stream, stream_id, codec_selector, flags, false);
 }
 
 static void vdi_stream_client__parsec_ffmpeg_cleanup(void *decoder) {
@@ -503,10 +512,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_decode(void *decoder, const void 
 	return vdi_stream_client__parsec_ffmpeg_write_frame(ffmpeg, frame_data, frame_size);
 }
 
-bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index) {
+bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration) {
 	Uint8 *table;
 	Uint8 *entry;
 	Uint8 *hidden;
+
 
 	table = vdi_stream_client__parsec_decoder_table(parsec_context);
 	if (table == NULL) {
@@ -531,7 +541,9 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *pa
 		return false;
 	}
 
-	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_INIT_OFFSET))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_init;
+	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_INIT_OFFSET))[0] = acceleration ?
+		(uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_init :
+		(uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_init_no_acceleration;
 	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_DECODE_OFFSET))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_decode;
 	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_CLEANUP_OFFSET))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_cleanup;
 	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_QUERY_OFFSET))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_query;
