@@ -419,10 +419,6 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		goto error;
 	}
 
-	if (parsec_context.window_width <= 0 || parsec_context.window_height <= 0) {
-		parsec_context.window_width = 1280;
-		parsec_context.window_height = 720;
-	}
 
 	parsec_context.window = SDL_CreateWindow("VDI Stream Client",
 					parsec_context.window_width,
