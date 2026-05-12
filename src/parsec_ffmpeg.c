@@ -49,6 +49,12 @@ typedef void (*vdi_stream_client__parsec_decoder_cleanup_fn)(void *decoder);
 typedef void (*vdi_stream_client__parsec_decoder_query_fn)(void *h264, void *h265);
 
 #ifdef HAVE_FFMPEG_DECODER
+struct vdi_stream_client__parsec_ffmpeg_packet_s {
+	Uint8 *data;
+	Uint32 size;
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *next;
+};
+
 struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	AVCodecContext *codec;
 	AVFrame *frame;
@@ -66,7 +72,26 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s {
 	bool hwaccel;
 	bool output_444_rgba;
 	bool logged;
+	bool async;
+	bool async_stop;
+	bool async_output_ready;
+	bool async_log_queue_drop;
+	Sint32 async_status;
+	SDL_Thread *async_thread;
+	SDL_Mutex *async_mutex;
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *async_head;
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *async_tail;
+	Uint32 async_packets;
+	Uint32 async_bytes;
+	Uint32 async_max_packets;
+	Uint32 async_max_bytes;
+	Uint8 *async_output;
+	Uint32 async_output_size;
+	Uint8 *async_worker_output;
+	Uint32 async_worker_output_capacity;
 };
+
+static bool vdi_stream_client__parsec_ffmpeg_request_color444 = false;
 #endif
 
 static bool vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot) {
@@ -424,10 +449,135 @@ static void vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *c
 	codec->flags2 |= AV_CODEC_FLAG2_FAST;
 }
 
+
+static void vdi_stream_client__parsec_ffmpeg_packet_free(struct vdi_stream_client__parsec_ffmpeg_packet_s *packet) {
+	if (packet == NULL) {
+		return;
+	}
+	free(packet->data);
+	free(packet);
+}
+
+static void vdi_stream_client__parsec_ffmpeg_queue_clear_locked(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *packet;
+
+	if (ffmpeg == NULL) {
+		return;
+	}
+
+	packet = ffmpeg->async_head;
+	while (packet != NULL) {
+		struct vdi_stream_client__parsec_ffmpeg_packet_s *next = packet->next;
+		vdi_stream_client__parsec_ffmpeg_packet_free(packet);
+		packet = next;
+	}
+	ffmpeg->async_head = NULL;
+	ffmpeg->async_tail = NULL;
+	ffmpeg->async_packets = 0;
+	ffmpeg->async_bytes = 0;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_async_enqueue(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const void *packet_data, Uint32 packet_size) {
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *packet;
+
+	if (ffmpeg == NULL || ffmpeg->async_mutex == NULL || packet_data == NULL || packet_size == 0) {
+		return true;
+	}
+
+	packet = calloc(1, sizeof(*packet));
+	if (packet == NULL) {
+		return false;
+	}
+	packet->data = malloc(packet_size);
+	if (packet->data == NULL) {
+		free(packet);
+		return false;
+	}
+	memcpy(packet->data, packet_data, packet_size);
+	packet->size = packet_size;
+
+	SDL_LockMutex(ffmpeg->async_mutex);
+	if (!ffmpeg->async_stop &&
+	    ((ffmpeg->async_max_packets > 0 && ffmpeg->async_packets >= ffmpeg->async_max_packets) ||
+	     (ffmpeg->async_max_bytes > 0 && ffmpeg->async_bytes + packet_size > ffmpeg->async_max_bytes))) {
+		/* Do not let decode lag grow without bound. Dropping compressed packets can
+		 * cause short visual artifacts until the next clean reference point, but it is
+		 * better than showing seconds-old desktop frames under heavy 4:4:4 load. */
+		if (!ffmpeg->async_log_queue_drop) {
+			vdi_stream_client__log_info("WARNING: FFmpeg async decoder queue is full; drop compressed packets to avoid video latency buildup\n");
+			ffmpeg->async_log_queue_drop = true;
+		}
+		SDL_UnlockMutex(ffmpeg->async_mutex);
+		vdi_stream_client__parsec_ffmpeg_packet_free(packet);
+		return true;
+	}
+	if (ffmpeg->async_stop) {
+		SDL_UnlockMutex(ffmpeg->async_mutex);
+		vdi_stream_client__parsec_ffmpeg_packet_free(packet);
+		return true;
+	}
+	if (ffmpeg->async_tail != NULL) {
+		ffmpeg->async_tail->next = packet;
+	} else {
+		ffmpeg->async_head = packet;
+	}
+	ffmpeg->async_tail = packet;
+	ffmpeg->async_packets++;
+	ffmpeg->async_bytes += packet_size;
+	SDL_UnlockMutex(ffmpeg->async_mutex);
+	return true;
+}
+
+static struct vdi_stream_client__parsec_ffmpeg_packet_s *vdi_stream_client__parsec_ffmpeg_async_pop(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *packet;
+
+	if (ffmpeg == NULL || ffmpeg->async_mutex == NULL) {
+		return NULL;
+	}
+
+	SDL_LockMutex(ffmpeg->async_mutex);
+	packet = ffmpeg->async_head;
+	if (packet != NULL) {
+		ffmpeg->async_head = packet->next;
+		if (ffmpeg->async_head == NULL) {
+			ffmpeg->async_tail = NULL;
+		}
+		ffmpeg->async_packets--;
+		ffmpeg->async_bytes -= packet->size;
+		packet->next = NULL;
+	}
+	SDL_UnlockMutex(ffmpeg->async_mutex);
+	return packet;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_async_take_output(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, void *frame_data, Uint32 *frame_size) {
+	bool ready = false;
+
+	if (ffmpeg == NULL || ffmpeg->async_mutex == NULL || frame_data == NULL) {
+		return false;
+	}
+
+	SDL_LockMutex(ffmpeg->async_mutex);
+	if (ffmpeg->async_output_ready && ffmpeg->async_output != NULL && ffmpeg->async_output_size > 0) {
+		memcpy(frame_data, ffmpeg->async_output, ffmpeg->async_output_size);
+		if (frame_size != NULL) {
+			*frame_size = ffmpeg->async_output_size;
+		}
+		ffmpeg->async_output_ready = false;
+		ready = true;
+	}
+	SDL_UnlockMutex(ffmpeg->async_mutex);
+	return ready;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_async_start(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg);
+static void vdi_stream_client__parsec_ffmpeg_async_stop(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg);
+
 static void vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
 	if (ffmpeg == NULL) {
 		return;
 	}
+	vdi_stream_client__parsec_ffmpeg_async_stop(ffmpeg);
 	av_packet_free(&ffmpeg->packet);
 	av_frame_free(&ffmpeg->convert_frame);
 	av_frame_free(&ffmpeg->sw_frame);
@@ -463,6 +613,9 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 	ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
 	ffmpeg->output_444_rgba = !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "i444") &&
 	    !vdi_stream_client__parsec_ffmpeg_env_is("VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT", "I444");
+	ffmpeg->async = vdi_stream_client__parsec_ffmpeg_env_enabled("VDI_STREAM_CLIENT_FFMPEG_ASYNC", vdi_stream_client__parsec_ffmpeg_request_color444);
+	ffmpeg->async_max_packets = (Uint32) vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_PACKETS", 512, 0, 65535);
+	ffmpeg->async_max_bytes = (Uint32) vdi_stream_client__parsec_ffmpeg_env_int("VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_BYTES", 64 * 1024 * 1024, 0, 512 * 1024 * 1024);
 
 	codec = avcodec_find_decoder(ffmpeg->codec_id);
 	if (codec == NULL) {
@@ -544,6 +697,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		ffmpeg->codec->skip_frame == AVDISCARD_NONREF ? "yes" : "no"
 	);
 	vdi_stream_client__log_info("Use FFmpeg 4:4:4 output path: %s\n", ffmpeg->output_444_rgba ? "RGBA" : "I444");
+	if (!vdi_stream_client__parsec_ffmpeg_async_start(ffmpeg)) {
+		vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
+		*((void **) decoder) = NULL;
+		return DECODE_ERR_INIT;
+	}
 	return PARSEC_OK;
 }
 
@@ -931,8 +1089,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 	}
 }
 
-static Sint32 vdi_stream_client__parsec_ffmpeg_decode(void *decoder, const void *packet_data, Uint32 packet_size, void *frame_data, Uint32 *frame_size) {
-	struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg = decoder;
+static Sint32 vdi_stream_client__parsec_ffmpeg_decode_sync(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const void *packet_data, Uint32 packet_size, void *frame_data, Uint32 *frame_size) {
 	Sint32 err;
 	char errbuf[AV_ERROR_MAX_STRING_SIZE];
 
@@ -979,6 +1136,161 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_decode(void *decoder, const void 
 
 	return vdi_stream_client__parsec_ffmpeg_write_frame(ffmpeg, frame_data, frame_size);
 }
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_async_worker(void *opaque) {
+	struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg = (struct vdi_stream_client__parsec_ffmpeg_decoder_s *) opaque;
+	struct vdi_stream_client__parsec_ffmpeg_packet_s *packet;
+
+	while (ffmpeg != NULL) {
+		if (ffmpeg->async_mutex != NULL) {
+			SDL_LockMutex(ffmpeg->async_mutex);
+			if (ffmpeg->async_stop) {
+				SDL_UnlockMutex(ffmpeg->async_mutex);
+				break;
+			}
+			SDL_UnlockMutex(ffmpeg->async_mutex);
+		}
+
+		packet = vdi_stream_client__parsec_ffmpeg_async_pop(ffmpeg);
+		if (packet == NULL) {
+			SDL_Delay(1);
+			continue;
+		}
+
+		if (ffmpeg->async_worker_output != NULL) {
+			Uint32 output_size = ffmpeg->async_worker_output_capacity;
+			Sint32 status = vdi_stream_client__parsec_ffmpeg_decode_sync(ffmpeg, packet->data, packet->size, ffmpeg->async_worker_output, &output_size);
+			if (status == PARSEC_OK) {
+				SDL_LockMutex(ffmpeg->async_mutex);
+				if (!ffmpeg->async_stop) {
+					Uint8 *tmp = ffmpeg->async_output;
+					ffmpeg->async_output = ffmpeg->async_worker_output;
+					ffmpeg->async_output_size = output_size;
+					ffmpeg->async_output_ready = true;
+					ffmpeg->async_worker_output = tmp;
+					/* Keep only the newest completed frame. This intentionally drops older
+					 * decoded frames when the renderer falls behind. */
+				}
+				SDL_UnlockMutex(ffmpeg->async_mutex);
+			} else if (status < 0 && status != DECODE_ERR_DECODE) {
+				SDL_LockMutex(ffmpeg->async_mutex);
+				ffmpeg->async_status = status;
+				SDL_UnlockMutex(ffmpeg->async_mutex);
+			} else if (status == DECODE_ERR_DECODE) {
+				/* Packet drops or late joins can cause transient decode errors. Keep the
+				 * decoder alive and let FFmpeg resynchronize at the next reference point. */
+			}
+		}
+
+		vdi_stream_client__parsec_ffmpeg_packet_free(packet);
+	}
+
+	return VDI_STREAM_CLIENT_SUCCESS;
+}
+
+static bool vdi_stream_client__parsec_ffmpeg_async_start(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
+	if (ffmpeg == NULL || !ffmpeg->async) {
+		return true;
+	}
+
+	ffmpeg->async_mutex = SDL_CreateMutex();
+	ffmpeg->async_output = malloc(VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER);
+	ffmpeg->async_worker_output = malloc(VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER);
+	ffmpeg->async_worker_output_capacity = VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER;
+	ffmpeg->async_status = PARSEC_OK;
+	if (ffmpeg->async_mutex == NULL || ffmpeg->async_output == NULL || ffmpeg->async_worker_output == NULL) {
+		vdi_stream_client__log_info("WARNING: Unable to allocate FFmpeg async decoder resources; use synchronous decode path\n");
+		if (ffmpeg->async_mutex != NULL) {
+			SDL_DestroyMutex(ffmpeg->async_mutex);
+			ffmpeg->async_mutex = NULL;
+		}
+		free(ffmpeg->async_output);
+		free(ffmpeg->async_worker_output);
+		ffmpeg->async_output = NULL;
+		ffmpeg->async_worker_output = NULL;
+		ffmpeg->async = false;
+		return true;
+	}
+
+	ffmpeg->async_thread = SDL_CreateThread(vdi_stream_client__parsec_ffmpeg_async_worker, "vdi_stream_client__ffmpeg_decoder", ffmpeg);
+	if (ffmpeg->async_thread == NULL) {
+		vdi_stream_client__log_info("WARNING: Unable to start FFmpeg async decoder thread: %s; use synchronous decode path\n", SDL_GetError());
+		if (ffmpeg->async_mutex != NULL) {
+			SDL_DestroyMutex(ffmpeg->async_mutex);
+			ffmpeg->async_mutex = NULL;
+		}
+		free(ffmpeg->async_output);
+		free(ffmpeg->async_worker_output);
+		ffmpeg->async_output = NULL;
+		ffmpeg->async_worker_output = NULL;
+		ffmpeg->async = false;
+		return true;
+	}
+
+	vdi_stream_client__log_info("Use FFmpeg async decoder thread: queue_packets=%u, queue_bytes=%u\n",
+		ffmpeg->async_max_packets,
+		ffmpeg->async_max_bytes);
+	return true;
+}
+
+static void vdi_stream_client__parsec_ffmpeg_async_stop(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg) {
+	if (ffmpeg == NULL || !ffmpeg->async) {
+		return;
+	}
+
+	if (ffmpeg->async_mutex != NULL) {
+		SDL_LockMutex(ffmpeg->async_mutex);
+		ffmpeg->async_stop = true;
+		SDL_UnlockMutex(ffmpeg->async_mutex);
+	}
+	if (ffmpeg->async_thread != NULL) {
+		SDL_WaitThread(ffmpeg->async_thread, NULL);
+		ffmpeg->async_thread = NULL;
+	}
+	if (ffmpeg->async_mutex != NULL) {
+		SDL_LockMutex(ffmpeg->async_mutex);
+		vdi_stream_client__parsec_ffmpeg_queue_clear_locked(ffmpeg);
+		SDL_UnlockMutex(ffmpeg->async_mutex);
+		if (ffmpeg->async_mutex != NULL) {
+			SDL_DestroyMutex(ffmpeg->async_mutex);
+			ffmpeg->async_mutex = NULL;
+		}
+	}
+	free(ffmpeg->async_output);
+	ffmpeg->async_output = NULL;
+	free(ffmpeg->async_worker_output);
+	ffmpeg->async_worker_output = NULL;
+}
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_decode(void *decoder, const void *packet_data, Uint32 packet_size, void *frame_data, Uint32 *frame_size) {
+	struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg = decoder;
+	Sint32 async_status = PARSEC_OK;
+
+	if (ffmpeg == NULL) {
+		return DECODE_ERR_INIT;
+	}
+	if (!ffmpeg->async) {
+		return vdi_stream_client__parsec_ffmpeg_decode_sync(ffmpeg, packet_data, packet_size, frame_data, frame_size);
+	}
+
+	if (!vdi_stream_client__parsec_ffmpeg_async_enqueue(ffmpeg, packet_data, packet_size)) {
+		return DECODE_ERR_BUFFER;
+	}
+	if (vdi_stream_client__parsec_ffmpeg_async_take_output(ffmpeg, frame_data, frame_size)) {
+		return PARSEC_OK;
+	}
+
+	if (ffmpeg->async_mutex != NULL) {
+		SDL_LockMutex(ffmpeg->async_mutex);
+		async_status = ffmpeg->async_status;
+		SDL_UnlockMutex(ffmpeg->async_mutex);
+	}
+	if (async_status < 0) {
+		return async_status;
+	}
+	return DECODE_WRN_ACCEPTED;
+}
+
 #endif
 
 bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool request_color444) {
@@ -993,6 +1305,8 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *pa
 	Uint8 *table;
 	Uint8 *entry;
 	Uint8 *hidden;
+
+	vdi_stream_client__parsec_ffmpeg_request_color444 = request_color444;
 
 	table = vdi_stream_client__parsec_decoder_table(parsec_context);
 	if (table == NULL) {
