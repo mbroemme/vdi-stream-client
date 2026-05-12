@@ -14,6 +14,6 @@
 
 #include "parsec.h"
 
-bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index);
+bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool request_color444);
 
 #endif /* _PARSEC_FFMPEG_H */

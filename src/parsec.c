@@ -365,7 +365,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		Uint32 ffmpeg_decoder_index = UINT32_MAX;
 
 		vdi_stream_client__log_info("Enable vdi-stream-client FFmpeg Video Decoder for H.265 (HEVC)\n");
-		if (vdi_stream_client__parsec_ffmpeg_decoder_enable(&parsec_context, &ffmpeg_decoder_index)) {
+		if (vdi_stream_client__parsec_ffmpeg_decoder_enable(&parsec_context, &ffmpeg_decoder_index, vdi_config->subsampling == 0)) {
 			cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
 			cfg.video[DEFAULT_STREAM].decoderH265 = 1;
 			ffmpeg_hevc_enabled = true;

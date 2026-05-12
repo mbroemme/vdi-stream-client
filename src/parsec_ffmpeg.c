@@ -151,6 +151,97 @@ static void vdi_stream_client__parsec_ffmpeg_query(void *h264, void *h265) {
 	}
 }
 
+
+static bool vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(struct parsec_context_s *parsec_context) {
+#if defined(__linux__) && defined(__x86_64__)
+	/*
+	 * The public Linux SDK has a special decoder444 path in its internal
+	 * capability-selection routine. Before it advertises 4:4:4 to the host it
+	 * calls its own FFmpeg dependency checker for the hidden SDK decoder. That is
+	 * correct for the bundled hidden decoder, but wrong after we replace the
+	 * decoder callbacks with vdi-stream-client's FFmpeg implementation: the SDK
+	 * dependency checker can fail even though our decoder can decode 4:4:4.
+	 *
+	 * Patch only the result branch of that checker:
+	 *
+	 *   test al, al
+	 *   pop  r8
+	 *   mov  r11, [rsp+0x18]
+	 *   jne  enable_decoder444
+	 *
+	 * into an unconditional jump to enable_decoder444. The surrounding code still
+	 * runs only when ParsecClientConfig.video[].decoder444 is true and still sets
+	 * the SDK's own decoder index to the hidden FFmpeg entry.
+	 */
+	static bool patched = false;
+	const Uint8 pattern[] = {
+		0x84, 0xc0,                         /* test al, al */
+		0x41, 0x58,                         /* pop r8 */
+		0x4c, 0x8b, 0x5c, 0x24, 0x18,       /* mov r11, [rsp+0x18] */
+		0x0f, 0x85                          /* jne rel32 */
+	};
+	Uint8 *func;
+	Uint8 *scan;
+	Uint8 *branch;
+	Uint8 replacement[6];
+	Uint32 i;
+	int32_t old_rel;
+	int32_t new_rel;
+	uintptr_t target;
+
+	if (patched) {
+		return true;
+	}
+
+#ifdef HAVE_LIBPARSEC
+	(void) parsec_context;
+	func = (Uint8 *) (void *) ParsecClientConnect;
+#else
+	if (parsec_context->parsec == NULL || parsec_context->parsec->api.ParsecClientConnect == NULL) {
+		return false;
+	}
+	func = (Uint8 *) (void *) parsec_context->parsec->api.ParsecClientConnect;
+#endif
+
+	/* On the SDK used here the helper is about 0xc600 bytes before
+	 * ParsecClientConnect(). Keep the window intentionally narrow to avoid
+	 * touching unrelated code in future SDKs. */
+	scan = func - 0x10000u;
+	for (i = 0; i + sizeof(pattern) + sizeof(old_rel) <= 0x14000u; i++) {
+		if (memcmp(scan + i, pattern, sizeof(pattern)) != 0) {
+			continue;
+		}
+
+		branch = scan + i + 9u;
+		memcpy(&old_rel, branch + 2u, sizeof(old_rel));
+		target = (uintptr_t) (branch + 6u + old_rel);
+		new_rel = (int32_t) (target - (uintptr_t) (branch + 5u));
+
+		replacement[0] = 0xe9; /* jmp rel32 */
+		memcpy(replacement + 1u, &new_rel, sizeof(new_rel));
+		replacement[5] = 0x90; /* preserve original 6-byte instruction length */
+
+		if (!vdi_stream_client__parsec_make_writable(branch, sizeof(replacement), PROT_READ | PROT_WRITE | PROT_EXEC)) {
+			vdi_stream_client__log_info("WARNING: Unable to make Parsec decoder444 negotiation branch writable\n");
+			return false;
+		}
+		memcpy(branch, replacement, sizeof(replacement));
+		__builtin___clear_cache((char *) branch, (char *) branch + sizeof(replacement));
+		(void) vdi_stream_client__parsec_make_writable(branch, sizeof(replacement), PROT_READ | PROT_EXEC);
+
+		patched = true;
+		vdi_stream_client__log_info("Patch Parsec SDK 4:4:4 negotiation gate for injected FFmpeg decoder\n");
+		return true;
+	}
+
+	vdi_stream_client__log_info("WARNING: Unable to locate Parsec decoder444 negotiation branch; 4:4:4 may fall back to 4:2:0\n");
+	return false;
+#else
+	(void) parsec_context;
+	return false;
+#endif
+}
+
 #ifdef HAVE_FFMPEG_DECODER
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len) {
 	if (buffer == NULL || len == 0) {
@@ -706,11 +797,12 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_decode(void *decoder, const void 
 }
 #endif
 
-bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index) {
+bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool request_color444) {
 #if defined(__linux__) && defined(__x86_64__)
 #ifndef HAVE_FFMPEG_DECODER
 	(void) parsec_context;
 	(void) decoder_index;
+	(void) request_color444;
 	vdi_stream_client__log_info("WARNING: vdi-stream-client was built without FFmpeg decoder support\n");
 	return false;
 #else
@@ -751,6 +843,12 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *pa
 	((uintptr_t *) (void *) (entry + VDI_STREAM_CLIENT_PARSEC_DECODER_QUERY_OFFSET))[0] = (uintptr_t) (void *) vdi_stream_client__parsec_ffmpeg_query;
 	(void) vdi_stream_client__parsec_make_writable(entry, VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE, PROT_READ);
 
+	if (request_color444) {
+		if (!vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(parsec_context)) {
+			vdi_stream_client__log_info("WARNING: Requested 4:4:4 color, but SDK negotiation patch failed; host may still send 4:2:0\n");
+		}
+	}
+
 	if (!vdi_stream_client__parsec_decoder_lookup(parsec_context, "FFMPEG", true, decoder_index)) {
 		vdi_stream_client__log_info("WARNING: Patched FFmpeg decoder is not visible through ParsecGetDecoders()\n");
 		return false;
@@ -761,6 +859,7 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(struct parsec_context_s *pa
 #else
 	(void) parsec_context;
 	(void) decoder_index;
+	(void) request_color444;
 	vdi_stream_client__log_info("WARNING: injected FFmpeg decoder is only implemented for Linux x86_64\n");
 	return false;
 #endif
