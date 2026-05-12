@@ -65,11 +65,89 @@ static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelF
 			*pixel_format = SDL_PIXELFORMAT_BGRA32;
 			return true;
 		case FORMAT_RGBA:
+		case FORMAT_I444:
+			/* SDL does not provide a streaming planar I444 texture format, so I444 is
+			 * converted to RGBA immediately before SDL_UpdateTexture(). */
 			*pixel_format = SDL_PIXELFORMAT_RGBA32;
 			return true;
 		default:
 			return false;
 	}
+}
+
+
+static Uint8 vdi_stream_client__video_clip_u8(Sint32 value) {
+	if (value < 0) {
+		return 0;
+	}
+	if (value > 255) {
+		return 255;
+	}
+	return (Uint8) value;
+}
+
+static bool vdi_stream_client__video_update_i444_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame, const Uint8 *pixels) {
+	const Uint32 width = frame->fullWidth;
+	const Uint32 height = frame->fullHeight;
+	Uint32 plane_size;
+	const Uint8 *y_plane;
+	const Uint8 *u_plane;
+	const Uint8 *v_plane;
+	Uint8 *rgba;
+	Uint32 required;
+	Uint32 row;
+	Uint32 col;
+
+	if (width == 0 || height == 0 || pixels == NULL) {
+		return false;
+	}
+	if (width > UINT32_MAX / height) {
+		vdi_stream_client__log_error("I444 frame is too large for RGBA conversion (%ux%u)\n", width, height);
+		return false;
+	}
+	plane_size = width * height;
+	if (plane_size > UINT32_MAX / 4u) {
+		vdi_stream_client__log_error("I444 frame is too large for RGBA conversion (%ux%u)\n", width, height);
+		return false;
+	}
+	y_plane = pixels;
+	u_plane = pixels + plane_size;
+	v_plane = pixels + plane_size * 2u;
+	required = plane_size * 4u;
+	if (parsec_context->texture_i444_rgba_size < required) {
+		Uint8 *tmp = SDL_realloc(parsec_context->texture_i444_rgba, required);
+		if (tmp == NULL) {
+			vdi_stream_client__log_error("I444 RGBA conversion buffer allocation failed\n");
+			return false;
+		}
+		parsec_context->texture_i444_rgba = tmp;
+		parsec_context->texture_i444_rgba_size = required;
+	}
+
+	rgba = parsec_context->texture_i444_rgba;
+	for (row = 0; row < height; row++) {
+		for (col = 0; col < width; col++) {
+			const Uint32 i = row * width + col;
+			const Sint32 c = (Sint32) y_plane[i] - 16;
+			const Sint32 d = (Sint32) u_plane[i] - 128;
+			const Sint32 e = (Sint32) v_plane[i] - 128;
+			Uint8 *dst = rgba + i * 4u;
+
+			/* BT.709 limited-range YUV to RGB. Parsec desktop streams are normally
+			 * tagged as video-range YUV, and this keeps color close to the stock
+			 * decoder while preserving full-resolution chroma for text. */
+			dst[0] = vdi_stream_client__video_clip_u8((298 * c + 459 * e + 128) >> 8);
+			dst[1] = vdi_stream_client__video_clip_u8((298 * c - 55 * d - 136 * e + 128) >> 8);
+			dst[2] = vdi_stream_client__video_clip_u8((298 * c + 541 * d + 128) >> 8);
+			dst[3] = 255;
+		}
+	}
+
+	if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, rgba, width * 4u)) {
+		vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+		return false;
+	}
+	return true;
 }
 
 static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame) {
@@ -155,6 +233,11 @@ static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, cons
 		case FORMAT_RGBA:
 			if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
 				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
+				return;
+			}
+			break;
+		case FORMAT_I444:
+			if (!vdi_stream_client__video_update_i444_texture(parsec_context, frame, pixels)) {
 				return;
 			}
 			break;
@@ -275,6 +358,10 @@ void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context) {
 
 	SDL_DestroyTexture(parsec_context->texture_video);
 	parsec_context->texture_video = NULL;
+
+	SDL_free(parsec_context->texture_i444_rgba);
+	parsec_context->texture_i444_rgba = NULL;
+	parsec_context->texture_i444_rgba_size = 0;
 
 	SDL_DestroyRenderer(parsec_context->renderer);
 	parsec_context->renderer = NULL;

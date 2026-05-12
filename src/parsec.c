@@ -342,12 +342,8 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 		cfg.video[DEFAULT_STREAM].decoder444 = 0;
 	}
 	if (vdi_config->subsampling == 0) {
-		vdi_stream_client__log_info("Disable Chroma Subsampling\n");
+		vdi_stream_client__log_info("Disable Chroma Subsampling; request 4:4:4 color\n");
 		cfg.video[DEFAULT_STREAM].decoder444 = 1;
-
-		/* TODO: parsec sdk bug. */
-		vdi_stream_client__log_info("WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n");
-		vdi_stream_client__log_info("WARNING: https://github.com/parsec-cloud/parsec-sdk/issues/36\n");
 	}
 
 	/* configure client decoding acceleration. */
@@ -456,6 +452,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 			    parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
 				vdi_stream_client__log_info("Use %s decoder\n", parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0' ? parsec_context.client_status.decoder[DEFAULT_STREAM].name : "unknown");
 				vdi_stream_client__log_info("Use %s codec\n", parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)" : "H.264 (AVC)");
+				vdi_stream_client__log_info("Use %s color\n", parsec_context.client_status.decoder[DEFAULT_STREAM].color444 ? "4:4:4" : "4:2:0");
 				vdi_stream_client__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder[DEFAULT_STREAM].width, parsec_context.client_status.decoder[DEFAULT_STREAM].height);
 				parsec_context.window_width = parsec_context.client_status.decoder[DEFAULT_STREAM].width;
 				parsec_context.window_height = parsec_context.client_status.decoder[DEFAULT_STREAM].height;
@@ -514,6 +511,7 @@ Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config) {
 				    parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
 					vdi_stream_client__log_info("Use %s decoder\n", parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0' ? parsec_context.client_status.decoder[DEFAULT_STREAM].name : "unknown");
 					vdi_stream_client__log_info("Use %s codec\n", parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)" : "H.264 (AVC)");
+					vdi_stream_client__log_info("Use %s color\n", parsec_context.client_status.decoder[DEFAULT_STREAM].color444 ? "4:4:4" : "4:2:0");
 					vdi_stream_client__log_info("Use resolution %dx%d\n", parsec_context.client_status.decoder[DEFAULT_STREAM].width, parsec_context.client_status.decoder[DEFAULT_STREAM].height);
 					parsec_context.window_width = parsec_context.client_status.decoder[DEFAULT_STREAM].width;
 					parsec_context.window_height = parsec_context.client_status.decoder[DEFAULT_STREAM].height;

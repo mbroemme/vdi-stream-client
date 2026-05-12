@@ -140,10 +140,14 @@ static void vdi_stream_client__parsec_ffmpeg_query(void *h264, void *h265) {
 	if (h264 != NULL) {
 		memset(h264, 0, 12);
 		((Uint8 *) h264)[0] = 1;
+		/* Advertise 4:4:4 capability to the client-connect capability blob. */
+		((Uint8 *) h264)[1] = 1;
 	}
 	if (h265 != NULL) {
 		memset(h265, 0, 12);
 		((Uint8 *) h265)[0] = 1;
+		/* Advertise 4:4:4 capability to the client-connect capability blob. */
+		((Uint8 *) h265)[1] = 1;
 	}
 }
 
@@ -421,7 +425,7 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_init(void *decoder, void *stream,
 		ffmpeg->hwaccel ? "VAAPI hardware" : "software",
 		ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)");
 	if (ffmpeg->hwaccel) {
-		vdi_stream_client__log_info("Use FFmpeg VAAPI device%s%s; output is transferred to system-memory NV12 for SDL\n",
+		vdi_stream_client__log_info("Use FFmpeg VAAPI device%s%s; output is transferred to system memory for SDL\n",
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? " " : "",
 			getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") != NULL && getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE")[0] != '\0' ? getenv("VDI_STREAM_CLIENT_VAAPI_DEVICE") : "default");
 	}
@@ -508,6 +512,58 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_i420(const AVFrame *source,
 	return PARSEC_OK;
 }
 
+
+static Sint32 vdi_stream_client__parsec_ffmpeg_write_i444(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
+	Uint32 width = (Uint32) source->width;
+	Uint32 height = (Uint32) source->height;
+	Uint32 plane_size;
+	Uint32 required;
+	Uint8 *dst = (Uint8 *) frame + sizeof(*frame);
+
+	if (width == 0 || height == 0) {
+		return DECODE_ERR_RESOLUTION;
+	}
+	if (width > UINT32_MAX / height) {
+		return DECODE_ERR_BUFFER;
+	}
+	plane_size = width * height;
+	if (plane_size > (UINT32_MAX - (Uint32) sizeof(*frame)) / 3u) {
+		return DECODE_ERR_BUFFER;
+	}
+	required = (Uint32) sizeof(*frame) + plane_size * 3u;
+	if (required > VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER) {
+		if (frame_size != NULL) {
+			*frame_size = required;
+		}
+		return DECODE_ERR_BUFFER;
+	}
+
+	frame->format = FORMAT_I444;
+	frame->rotation = ROTATION_NONE;
+	frame->size = required - (Uint32) sizeof(*frame);
+	frame->width = width;
+	frame->height = height;
+	frame->fullWidth = width;
+	frame->fullHeight = height;
+	if (frame_size != NULL) {
+		*frame_size = required;
+	}
+
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[0], (Sint32) width, source->linesize[0], (Sint32) width, (Sint32) height)) {
+		return DECODE_ERR_BUFFER;
+	}
+	dst += plane_size;
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[1], (Sint32) width, source->linesize[1], (Sint32) width, (Sint32) height)) {
+		return DECODE_ERR_BUFFER;
+	}
+	dst += plane_size;
+	if (!vdi_stream_client__parsec_ffmpeg_copy_plane(dst, source->data[2], (Sint32) width, source->linesize[2], (Sint32) width, (Sint32) height)) {
+		return DECODE_ERR_BUFFER;
+	}
+
+	return PARSEC_OK;
+}
+
 static Sint32 vdi_stream_client__parsec_ffmpeg_write_nv12(const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size) {
 	Uint32 width = (Uint32) source->width;
 	Uint32 height = (Uint32) source->height;
@@ -560,7 +616,6 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 	source = ffmpeg->frame;
 	if (ffmpeg->frame->format == ffmpeg->hw_pix_fmt && ffmpeg->hwaccel) {
 		av_frame_unref(ffmpeg->sw_frame);
-		ffmpeg->sw_frame->format = AV_PIX_FMT_NV12;
 		err = av_hwframe_transfer_data(ffmpeg->sw_frame, ffmpeg->frame, 0);
 		if (err < 0) {
 			av_frame_unref(ffmpeg->sw_frame);
@@ -590,6 +645,11 @@ static Sint32 vdi_stream_client__parsec_ffmpeg_write_frame(struct vdi_stream_cli
 			return vdi_stream_client__parsec_ffmpeg_write_i420(source, (ParsecFrame *) frame_data, frame_size);
 		case AV_PIX_FMT_NV12:
 			return vdi_stream_client__parsec_ffmpeg_write_nv12(source, (ParsecFrame *) frame_data, frame_size);
+		case AV_PIX_FMT_YUV444P:
+#if LIBAVUTIL_VERSION_MAJOR < 59
+		case AV_PIX_FMT_YUVJ444P:
+#endif
+			return vdi_stream_client__parsec_ffmpeg_write_i444(source, (ParsecFrame *) frame_data, frame_size);
 		default:
 			vdi_stream_client__log_info("WARNING: Unsupported FFmpeg pixel format %d\n", source->format);
 			return DECODE_ERR_PIXEL_FORMAT;

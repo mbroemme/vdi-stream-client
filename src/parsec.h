@@ -80,6 +80,8 @@ struct parsec_context_s {
 	SDL_Surface *surface_ttf;
 	SDL_Texture *texture_ttf;
 	SDL_Texture *texture_video;
+	Uint8 *texture_i444_rgba;
+	Uint32 texture_i444_rgba_size;
 	bool frame_video_updated;
 	ParsecColorFormat format_video;
 	Sint32 texture_width;
