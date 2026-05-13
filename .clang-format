@@ -1,0 +1,104 @@
+---
+# Alignment rules
+# These options control when clang-format vertically aligns related tokens across
+# consecutive lines, such as macros, assignments, operands, and trailing comments.
+AlignConsecutiveMacros: None
+AlignConsecutiveAssignments: None
+AlignConsecutiveBitFields: None
+AlignConsecutiveDeclarations: None
+AlignEscapedNewlines: Right
+AlignOperands: Align
+AlignTrailingComments: true
+
+# Compact single-line constructs
+# These settings decide which short declarations or statements may stay on one
+# line instead of being expanded into a multi-line block.
+AllowAllArgumentsOnNextLine: true
+AllowAllParametersOfDeclarationOnNextLine: true
+AllowShortEnumsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Forced line breaks
+# These rules specify where clang-format should always or conditionally introduce
+# line breaks around return types, multiline strings, and template declarations.
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: TopLevelDefinitions
+AlwaysBreakBeforeMultilineStrings: false
+AlwaysBreakTemplateDeclarations: MultiLine
+
+# Brace placement and wrapping
+# The custom brace style below defines where opening braces are placed for
+# classes, functions, namespaces, structs, enums, control statements, and related
+# language constructs.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Never
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterExternBlock: false
+  BeforeElse: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+
+# Function-call bracket wrapping
+# Keeps opening and closing function brackets on dedicated lines when the call or
+# declaration is broken across multiple lines.
+BreakAfterOpenBracketFunction: true
+BreakBeforeCloseBracketFunction: true
+
+# Braced initializer formatting
+# Disables C++11 braced-list style so container literals can use the project's
+# preferred multiline brace layout, including closing braces on their own line.
+Cpp11BracedListStyle: false
+
+# Include formatting
+# Preserve separate include blocks, but still allow sorting within each block.
+IncludeBlocks: Preserve
+
+# Line length
+# Sets the preferred maximum column width before clang-format starts wrapping.
+ColumnLimit: 100
+
+# Indentation
+# Controls base indentation, continuation indentation, case label indentation,
+# preprocessor directive indentation, and extern block indentation.
+IndentWidth: 4
+ContinuationIndentWidth: 4
+IndentCaseLabels: false
+IndentCaseBlocks: false
+IndentGotoLabels: true
+IndentPPDirectives: None
+IndentExternBlock: NoIndent
+
+# Pointer, operator, and parenthesis spacing
+# Defines spacing around pointer alignment, casts, conditional statements,
+# container literals, assignments, case labels, and control-statement parentheses.
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpacesInCStyleCastParentheses: false
+SpacesInConditionalStatement: false
+SpacesInContainerLiterals: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeCaseColon: false
+SpaceBeforeParens: ControlStatements
+SpaceAroundPointerQualifiers: Default
+SpaceInEmptyBlock: false
+SpaceInEmptyParentheses: false
+
+# Tabs and line endings
+# Enforces spaces instead of tabs and Unix-style line endings.
+UseCRLF: false
+UseTab: Never
+---
