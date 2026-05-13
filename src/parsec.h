@@ -43,91 +43,95 @@
 #include <arpa/inet.h>
 
 /* define audio defaults. */
-#define PARSEC_AUDIO_CHANNELS		2
-#define PARSEC_AUDIO_SAMPLE_RATE	48000
-#define PARSEC_AUDIO_FRAMES_PER_PACKET	960
+#define PARSEC_AUDIO_CHANNELS 2
+#define PARSEC_AUDIO_SAMPLE_RATE 48000
+#define PARSEC_AUDIO_FRAMES_PER_PACKET 960
 
 /* define parsec messages. */
-#define PARSEC_CLIPBOARD_MSG		7
+#define PARSEC_CLIPBOARD_MSG 7
 
 /* parsec configuration. */
-struct parsec_context_s {
+struct parsec_context_s
+{
 
-	/* parsec. */
-	bool done;
-	bool connection;
-	bool decoder;
-	bool focus;
-	bool relative;
-	bool pressed;
+    /* parsec. */
+    bool done;
+    bool connection;
+    bool decoder;
+    bool focus;
+    bool relative;
+    bool pressed;
 #ifdef HAVE_LIBPARSEC
-	Parsec *parsec;
+    Parsec *parsec;
 #else
-	ParsecDSO *parsec;
+    ParsecDSO *parsec;
 #endif
-	ParsecClientStatus client_status;
+    ParsecClientStatus client_status;
 
-	/* video. */
-	SDL_Window *window;
-	SDL_Renderer *renderer;
-	SDL_Cursor *cursor;
-	Sint32 window_width;
-	Sint32 window_height;
-	Sint32 requested_width;
-	Sint32 requested_height;
+    /* video. */
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    SDL_Cursor *cursor;
+    Sint32 window_width;
+    Sint32 window_height;
+    Sint32 requested_width;
+    Sint32 requested_height;
 
-	/* sdl textures for rendering. */
-	SDL_Surface *surface_ttf;
-	SDL_Texture *texture_ttf;
-	SDL_Texture *texture_video;
-	bool frame_video_updated;
-	ParsecColorFormat format_video;
-	Sint32 texture_width;
-	Sint32 texture_height;
-	TTF_Font *font;
+    /* sdl textures for rendering. */
+    SDL_Surface *surface_ttf;
+    SDL_Texture *texture_ttf;
+    SDL_Texture *texture_video;
+    bool frame_video_updated;
+    ParsecColorFormat format_video;
+    Sint32 texture_width;
+    Sint32 texture_height;
+    TTF_Font *font;
 
-	/* audio. */
-	SDL_AudioStream *audio;
-	bool playing;
-	Uint32 min_buffer;
-	Uint32 max_buffer;
+    /* audio. */
+    SDL_AudioStream *audio;
+    bool playing;
+    Uint32 min_buffer;
+    Uint32 max_buffer;
 
-	/* timeouts. */
-	Uint32 timeout;
-	Uint32 render_timeout;
-	Uint64 next_overlay_tick;
+    /* timeouts. */
+    Uint32 timeout;
+    Uint32 render_timeout;
+    Uint64 next_overlay_tick;
 
-	/* render stats. */
-	Uint16 stats_enabled;
-	Uint64 stats_period_ms;
-	Uint64 stats_next_tick;
-	Uint64 stats_last_frame_tick;
-	Uint64 stats_loops;
-	Uint64 stats_sdl_events;
-	Uint64 stats_parsec_events;
-	Uint64 stats_frames;
-	Uint64 stats_presents;
-	Uint64 stats_idle_waits;
-	Uint64 stats_idle_wait_ms;
+    /* render stats. */
+    Uint16 stats_enabled;
+    Uint64 stats_period_ms;
+    Uint64 stats_next_tick;
+    Uint64 stats_last_frame_tick;
+    Uint64 stats_loops;
+    Uint64 stats_sdl_events;
+    Uint64 stats_parsec_events;
+    Uint64 stats_frames;
+    Uint64 stats_presents;
+    Uint64 stats_idle_waits;
+    Uint64 stats_idle_wait_ms;
 };
 
 /* usb redirect. */
-struct redirect_context_s {
+struct redirect_context_s
+{
 
-	/* parsec context. */
-	struct parsec_context_s *parsec_context;
+    /* parsec context. */
+    struct parsec_context_s *parsec_context;
 
-	/* network. */
-	union {
-		struct sockaddr_in v4;
-		struct sockaddr_in6 v6;
-	} server_addr;
+    /* network. */
+    union
+    {
+        struct sockaddr_in v4;
+        struct sockaddr_in6 v6;
+    } server_addr;
 
-	/* usb. */
-	struct {
-		Sint32 vendor;
-		Sint32 product;
-	} usb_device;
+    /* usb. */
+    struct
+    {
+        Sint32 vendor;
+        Sint32 product;
+    } usb_device;
 };
 
 /* parsec event loop. */
