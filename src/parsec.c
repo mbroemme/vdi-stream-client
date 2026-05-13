@@ -194,7 +194,7 @@ vdi_stream_client__render_text(void *opaque, char *text)
 
 /* parsec event loop. */
 Sint32
-vdi_stream_client__event_loop(vdi_config_s *vdi_config)
+vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 {
     struct parsec_context_s parsec_context = { 0 };
     struct redirect_context_s redirect_context[USB_MAX] = { 0 };

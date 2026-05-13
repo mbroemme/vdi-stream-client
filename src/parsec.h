@@ -42,6 +42,9 @@
 /* network includes. */
 #include <arpa/inet.h>
 
+/* forward declarations. */
+struct vdi_config_s;
+
 /* define audio defaults. */
 #define PARSEC_AUDIO_CHANNELS 2
 #define PARSEC_AUDIO_SAMPLE_RATE 48000
@@ -135,6 +138,6 @@ struct redirect_context_s
 };
 
 /* parsec event loop. */
-Sint32 vdi_stream_client__event_loop(vdi_config_s *vdi_config);
+Sint32 vdi_stream_client__event_loop(struct vdi_config_s *vdi_config);
 
 #endif /* _PARSEC_H */

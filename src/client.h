@@ -41,7 +41,7 @@
 #define vdi_stream_client__log_error(...) fprintf(stderr, __VA_ARGS__);
 
 /* stored command line options. */
-typedef struct
+typedef struct vdi_config_s
 {
 
     /* parsec options. */
