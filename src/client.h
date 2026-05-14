@@ -52,26 +52,43 @@ typedef struct vdi_config_s
     Uint16 width;   /* screen width in pixel. (host resolution is used if not specified) */
     Uint16 height;  /* screen height in pixel. (host resolution is used if not specified) */
 
-    /* parsec warp options. */
-    Uint16 subsampling; /* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
+    /* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
+    Uint16 subsampling;
 
-    /* client options. */
-    Uint16 acceleration; /* client decoding type. (0 = software, 1 = hardware) */
-    Uint16 upnp;         /* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
-    Uint16 reconnect; /* automatic reconnect support in case of failures. (0 = disable reconnect, 1
-                         = enable reconnect). */
-    Uint16 grab; /* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab
-                    keyboard and mouse) */
-    Uint16 decoration; /* window manager decoration support. (0 = borderless window, 1 = decorated
-                          window) */
-    Uint16
-        screensaver; /* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
-    Uint16 clipboard; /* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable
-                         clipboard sharing) */
-    Uint16 audio;     /* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
-    Uint16 hevc;      /* streaming codec to use. (0 = h264, 1 = h265) */
-    Uint16 stats;     /* render stats logging. (0 = disable, 1 = enable) */
-    Uint64 stats_period; /* render stats logging interval in seconds. */
+    /* client decoding type. (0 = software, 1 = hardware) */
+    Uint16 acceleration;
+
+    /* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
+    Uint16 upnp;
+
+    /* automatic reconnect support in case of failures. (0 = disable reconnect, 1 = enable
+     * reconnect) */
+    Uint16 reconnect;
+
+    /* keyboard and mouse grabbing. (0 = grab only keyboard on mouse focus, 1 = grab keyboard and
+     * mouse) */
+    Uint16 grab;
+
+    /* window manager decoration support. (0 = borderless window, 1 = decorated window) */
+    Uint16 decoration;
+
+    /* screen saver support. (0 = disable screen saver, 1 = enable screen saver) */
+    Uint16 screensaver;
+
+    /* clipboard sharing support. (0 = disable clipboard sharing, 1 = enable clipboard sharing) */
+    Uint16 clipboard;
+
+    /* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
+    Uint16 audio;
+
+    /* streaming codec to use. (0 = h264, 1 = h265) */
+    Uint16 hevc;
+
+    /* render stats logging. (0 = disable, 1 = enable) */
+    Uint16 stats;
+
+    /* render stats logging interval in seconds. */
+    Uint64 stats_period;
 
     /* usb options. */
     union
