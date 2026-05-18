@@ -111,7 +111,7 @@ jobs:
       - name: Check C formatting
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files '*.c' '*.h')
+          mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h' 'include/*.h')
           clang-format-22 --dry-run --Werror "${sources[@]}"
 
       - name: Generate build system
@@ -140,7 +140,7 @@ jobs:
       - name: Run clang-tidy
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'src/*.c')
+          mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h' 'include/*.h')
           clang-tidy-22 --quiet -p . "${sources[@]}"
 
   build:

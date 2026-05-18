@@ -18,6 +18,9 @@ Checks: >
   bugprone-suspicious-string-compare,
   bugprone-swapped-arguments
 WarningsAsErrors: '*'
-HeaderFilterRegex: '(^|.*/)src/.*'
+# Limit header diagnostics to source files owned by this project.
+# This avoids matching third-party SDK headers through paths such as
+# src/../parsec-sdk/sdk/parsec-dso.h.
+HeaderFilterRegex: '(^|.*/)src/[^/]+\.[ch]$'
 SystemHeaders: false
 ...
