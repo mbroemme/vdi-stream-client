@@ -30,11 +30,11 @@
 #include <arpa/inet.h>
 
 /* define return values. */
-#define VDI_STREAM_CLIENT_SUCCESS 0 /* return value for all functions which success. */
-#define VDI_STREAM_CLIENT_ERROR -1  /* generic error. */
+#define VDI_STREAM_CLIENT_SUCCESS (0) /* return value for all functions which success. */
+#define VDI_STREAM_CLIENT_ERROR (-1)  /* generic error. */
 
 /* define limits. */
-#define USB_MAX 8 /* maximum number of usb redirects. */
+#define USB_MAX (8) /* maximum number of usb redirects. */
 
 /* define new print functions for logging. */
 #define vdi_stream_client__log_info(...) printf(__VA_ARGS__);
