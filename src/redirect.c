@@ -30,6 +30,7 @@
 #include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 /* network includes. */
@@ -117,11 +118,14 @@ vdi_stream_client__network_thread(void *opaque)
     struct redirect_context_s *redirect_context = (struct redirect_context_s *)opaque;
     struct libusb_device **devices;
     struct libusb_device *device;
-    libusb_context *usb_context;
-    libusb_hotplug_callback_handle callback_handle;
+    libusb_context *usb_context = NULL;
+    libusb_hotplug_callback_handle callback_handle = 0;
     struct libusb_device_descriptor desc;
     size_t count;
     Sint32 flag;
+    Sint32 callback_registered = 0;
+    struct sockaddr *server_addr;
+    socklen_t server_addr_len;
 
     /* variables for data processing loop. */
     const struct libusb_pollfd **pollfds = NULL;
@@ -168,6 +172,7 @@ vdi_stream_client__network_thread(void *opaque)
         );
         goto error;
     }
+    callback_registered = 1;
 
     while (!redirect_context->parsec_context->done) {
         memset(&timeout, 0, sizeof(timeout));
@@ -196,12 +201,23 @@ vdi_stream_client__network_thread(void *opaque)
                 retry = 0;
             }
 
+            server_addr = NULL;
+            server_addr_len = 0;
+
             /* set ipv4 or ipv6 socket. */
             if (redirect_context->server_addr.v4.sin_family == AF_INET) {
                 server_fd = socket(AF_INET, SOCK_STREAM, 0);
-            }
-            if (redirect_context->server_addr.v6.sin6_family == AF_INET6) {
+                server_addr = (struct sockaddr *)&redirect_context->server_addr.v4;
+                server_addr_len = sizeof(redirect_context->server_addr.v4);
+            } else if (redirect_context->server_addr.v6.sin6_family == AF_INET6) {
                 server_fd = socket(AF_INET6, SOCK_STREAM, 0);
+                server_addr = (struct sockaddr *)&redirect_context->server_addr.v6;
+                server_addr_len = sizeof(redirect_context->server_addr.v6);
+            }
+
+            if (server_fd == -1 || server_addr == NULL) {
+                retry++;
+                continue;
             }
 
             /* set tcp options. */
@@ -213,10 +229,7 @@ vdi_stream_client__network_thread(void *opaque)
             setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
             /* connect to qemu usbredir guest service. */
-            if (connect(
-                    server_fd, (struct sockaddr *)&redirect_context->server_addr,
-                    sizeof(redirect_context->server_addr)
-                ) == -1) {
+            if (connect(server_fd, server_addr, server_addr_len) == -1) {
                 close(server_fd);
                 server_fd = -1;
                 retry++;
@@ -420,8 +433,12 @@ vdi_stream_client__network_thread(void *opaque)
     }
 
     /* usb destroy. */
-    libusb_hotplug_deregister_callback(usb_context, callback_handle);
-    libusb_exit(usb_context);
+    if (callback_registered != 0) {
+        libusb_hotplug_deregister_callback(usb_context, callback_handle);
+    }
+    if (usb_context != NULL) {
+        libusb_exit(usb_context);
+    }
 
     /* user output. */
     vdi_stream_client__log_info(
@@ -440,11 +457,16 @@ error:
     /* close client socket. */
     if (server_fd != -1) {
         close(server_fd);
+        server_fd = -1;
     }
 
     /* usb destroy. */
-    libusb_hotplug_deregister_callback(usb_context, callback_handle);
-    libusb_exit(usb_context);
+    if (callback_registered != 0) {
+        libusb_hotplug_deregister_callback(usb_context, callback_handle);
+    }
+    if (usb_context != NULL) {
+        libusb_exit(usb_context);
+    }
 
     /* return with error. */
     return VDI_STREAM_CLIENT_ERROR;

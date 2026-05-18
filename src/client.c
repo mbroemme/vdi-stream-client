@@ -197,10 +197,6 @@ main(int argc, char **argv)
     if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
         goto error;
     }
-    if ((vdi_config->session = calloc(0, sizeof(vdi_config->session))) == NULL ||
-        (vdi_config->peer = calloc(0, sizeof(vdi_config->peer))) == NULL) {
-        goto error;
-    }
 
     /* parsec defaults. */
     vdi_config->timeout = 5000;
@@ -229,7 +225,7 @@ main(int argc, char **argv)
 
     if (argc <= 1) {
         vdi_stream_client__usage(program_name);
-        return VDI_STREAM_CLIENT_SUCCESS;
+        goto done;
     }
 
     /* parse command line. */
@@ -247,18 +243,26 @@ main(int argc, char **argv)
         case 'h':
         case OPTION_HELP:
             vdi_stream_client__usage(program_name);
-            return VDI_STREAM_CLIENT_SUCCESS;
+            goto done;
         case 'v':
         case OPTION_VERSION:
             vdi_stream_client__version(program_name);
-            return VDI_STREAM_CLIENT_SUCCESS;
+            goto done;
 
         /* parsec options. */
         case OPTION_SESSION:
+            free(vdi_config->session);
             vdi_config->session = strdup(argv[optind - 1]);
+            if (vdi_config->session == NULL) {
+                goto error;
+            }
             continue;
         case OPTION_PEER:
+            free(vdi_config->peer);
             vdi_config->peer = strdup(argv[optind - 1]);
+            if (vdi_config->peer == NULL) {
+                goto error;
+            }
             continue;
         case OPTION_TIMEOUT:
             timeout = strtol(optarg, &endptr, 10);
@@ -530,7 +534,8 @@ main(int argc, char **argv)
     }
 
     /* mandatory arguments not given. */
-    if (strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
+    if (vdi_config->session == NULL || vdi_config->peer == NULL ||
+        strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
         fprintf(stderr, "%s: mandatory arguments missing\n", program_name);
         fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
         goto error;
@@ -555,21 +560,26 @@ main(int argc, char **argv)
         goto error;
     }
 
-    /* free allocated memory. */
-    free(vdi_config->session);
-    free(vdi_config->peer);
-    free(vdi_config);
-
     /* quit application. */
-    return VDI_STREAM_CLIENT_SUCCESS;
+    goto done;
 
 error:
 
-    /* free allocated memory. */
-    free(vdi_config->session);
-    free(vdi_config->peer);
-    free(vdi_config);
-
-    /* quit application with error code. */
+    /* free allocated memory and quit application with error code. */
+    if (vdi_config != NULL) {
+        free(vdi_config->session);
+        free(vdi_config->peer);
+        free(vdi_config);
+    }
     return VDI_STREAM_CLIENT_ERROR;
+
+done:
+
+    /* free allocated memory and quit application. */
+    if (vdi_config != NULL) {
+        free(vdi_config->session);
+        free(vdi_config->peer);
+        free(vdi_config);
+    }
+    return VDI_STREAM_CLIENT_SUCCESS;
 }
