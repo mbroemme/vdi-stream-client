@@ -20,8 +20,8 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
-#ifndef _CLIENT_H
-#define _CLIENT_H
+#ifndef VDI_STREAM_CLIENT_CLIENT_H
+#define VDI_STREAM_CLIENT_CLIENT_H
 
 /* sdl includes. */
 #include <SDL3/SDL.h>
@@ -101,4 +101,4 @@ typedef struct vdi_config_s
     } usb_devices[USB_MAX];
 } vdi_config_s;
 
-#endif /* _CLIENT_H */
+#endif /* VDI_STREAM_CLIENT_CLIENT_H */

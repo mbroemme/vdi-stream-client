@@ -149,9 +149,9 @@ jobs:
       - name: Run clang-tidy
         run: |
           set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h' 'include/*.h')
+          mapfile -t sources < <(git ls-files 'src/*.c')
           if ((${#sources[@]} == 0)); then
-            echo 'No C sources found.' >&2
+            echo 'No C translation units found.' >&2
             exit 1
           fi
           clang-tidy-22 --quiet -p . "${sources[@]}"

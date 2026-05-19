@@ -20,6 +20,11 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
+/* configuration includes. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 /* internal includes. */
 #include "client.h"
 #include "parsec.h"
@@ -41,9 +46,9 @@
 #include <usbredirhost.h>
 
 /* thread specific variables. */
-static __thread Sint32 server_fd = -1;
-static __thread libusb_device_handle *device_handle = NULL;
-static __thread struct usbredirhost *host = NULL;
+static _Thread_local Sint32 server_fd = -1;
+static _Thread_local libusb_device_handle *device_handle = NULL;
+static _Thread_local struct usbredirhost *host = NULL;
 
 /* this must be defined, otherwise usbredir will crash. */
 static void

@@ -12,7 +12,20 @@ AC_CONFIG_HEADERS([config.h:config.h.in])
 AC_DEFINE([AUTHOR], ["Maik Broemme <mbroemme@libmpq.org>"], [Define to the author of this package.])
 
 # checking for programs.
+CFLAGS="$CFLAGS -std=c17"
+AC_USE_SYSTEM_EXTENSIONS
 AC_PROG_CC
+
+# require C17 capable compiler and use it for all project checks/builds.
+AC_MSG_CHECKING([whether $CC supports C17])
+AC_COMPILE_IFELSE(
+	[AC_LANG_PROGRAM([[#if !defined(__STDC_VERSION__) || __STDC_VERSION__ < 201710L
+#error "C17 support is required"
+#endif]])],
+	[AC_MSG_RESULT([yes])],
+	[AC_MSG_RESULT([no])
+	 AC_MSG_ERROR([*** a C17 capable compiler is required])]
+)
 
 # checking for pkg-config application.
 PKG_PROG_PKG_CONFIG

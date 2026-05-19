@@ -20,13 +20,16 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
-#ifndef _PARSEC_H
-#define _PARSEC_H
+#ifndef VDI_STREAM_CLIENT_PARSEC_H
+#define VDI_STREAM_CLIENT_PARSEC_H
 
 /* configuration includes. */
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
+
+/* system includes. */
+#include <stdbool.h>
 
 /* parsec includes. */
 #ifdef HAVE_LIBPARSEC
@@ -140,4 +143,4 @@ struct redirect_context_s
 /* parsec event loop. */
 Sint32 vdi_stream_client__event_loop(struct vdi_config_s *vdi_config);
 
-#endif /* _PARSEC_H */
+#endif /* VDI_STREAM_CLIENT_PARSEC_H */

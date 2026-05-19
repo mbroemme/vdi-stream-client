@@ -11,8 +11,8 @@
  *  Website: https://laemeur.sdf.org/fonts/
  */
 
-#ifndef _FONT_H
-#define _FONT_H
+#ifndef VDI_STREAM_CLIENT_FONT_H
+#define VDI_STREAM_CLIENT_FONT_H
 
 #include <stdint.h>
 
@@ -4912,4 +4912,4 @@ unsigned char MorePerfectDOSVGA_ttf[] = {
 
 uint32_t MorePerfectDOSVGA_ttf_len = 78252;
 
-#endif /* _FONT_H */
+#endif /* VDI_STREAM_CLIENT_FONT_H */

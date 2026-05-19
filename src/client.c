@@ -20,6 +20,11 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
+/* configuration includes. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 /* sdl main include. */
 #include <SDL3/SDL_main.h>
 
