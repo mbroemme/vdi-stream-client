@@ -135,6 +135,8 @@ vdi_stream_client__network_thread(void *opaque)
     Sint32 n;
     Sint32 nfds;
     struct timeval timeout;
+    static const struct timeval default_timeout = { 1, 0 };
+    static const struct timeval zero_timeout = { 0 };
 
     /* initial values. */
     Uint32 retry = 0;
@@ -142,15 +144,16 @@ vdi_stream_client__network_thread(void *opaque)
     Sint32 error = 0;
 
     /* user output. */
-    vdi_stream_client__log_info(
-        "Start USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor,
-        redirect_context->usb_device.product
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Start USB Redirect %04x:%04x\n",
+        redirect_context->usb_device.vendor, redirect_context->usb_device.product
     );
 
     /* usb init. */
     error = libusb_init(&usb_context);
     if (error != 0) {
-        vdi_stream_client__log_error(
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION,
             "USB Device %04x:%04x redirect initialization failed: %s\n",
             redirect_context->usb_device.vendor, redirect_context->usb_device.product,
             libusb_strerror(error)
@@ -165,7 +168,8 @@ vdi_stream_client__network_thread(void *opaque)
         vdi_stream_client__usb_remove, NULL, &callback_handle
     );
     if (error != 0) {
-        vdi_stream_client__log_error(
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION,
             "USB Device %04x:%04x redirect initialization failed: %s\n",
             redirect_context->usb_device.vendor, redirect_context->usb_device.product,
             libusb_strerror(error)
@@ -175,9 +179,7 @@ vdi_stream_client__network_thread(void *opaque)
     callback_registered = 1;
 
     while (!redirect_context->parsec_context->done) {
-        memset(&timeout, 0, sizeof(timeout));
-        timeout.tv_sec = 1;
-        timeout.tv_usec = 0;
+        timeout = default_timeout;
 
         /* try until connection established or application quits. */
         while (server_fd == -1) {
@@ -278,8 +280,8 @@ vdi_stream_client__network_thread(void *opaque)
 
                 /* check if permission denied. */
                 if (error == LIBUSB_ERROR_ACCESS) {
-                    vdi_stream_client__log_info(
-                        "USB Device %04x:%04x redirect failed: %s\n",
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x redirect failed: %s\n",
                         redirect_context->usb_device.vendor, redirect_context->usb_device.product,
                         libusb_strerror(error)
                     );
@@ -313,9 +315,9 @@ vdi_stream_client__network_thread(void *opaque)
         if (host != NULL) {
 
             /* user output. */
-            vdi_stream_client__log_info(
-                "USB Device %04x:%04x connected\n", redirect_context->usb_device.vendor,
-                redirect_context->usb_device.product
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x connected\n",
+                redirect_context->usb_device.vendor, redirect_context->usb_device.product
             );
         }
 
@@ -359,10 +361,9 @@ vdi_stream_client__network_thread(void *opaque)
             }
 
             /* get next timeout. */
-            memset(&timeout, 0, sizeof(timeout));
+            timeout = zero_timeout;
             if (libusb_get_next_timeout(usb_context, &timeout) == 0) {
-                timeout.tv_sec = 1;
-                timeout.tv_usec = 0;
+                timeout = default_timeout;
             }
 
             /* select will wait for data to arrive until timeout. */
@@ -375,7 +376,7 @@ vdi_stream_client__network_thread(void *opaque)
             }
 
             /* wait for usb events and cleanup timeout structure for re-use. */
-            memset(&timeout, 0, sizeof(timeout));
+            timeout = zero_timeout;
             if (n == 0) {
                 libusb_handle_events_timeout(usb_context, &timeout);
                 continue;
@@ -421,9 +422,9 @@ vdi_stream_client__network_thread(void *opaque)
         if (host != NULL) {
 
             /* user output. */
-            vdi_stream_client__log_info(
-                "USB Device %04x:%04x removed\n", redirect_context->usb_device.vendor,
-                redirect_context->usb_device.product
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x removed\n",
+                redirect_context->usb_device.vendor, redirect_context->usb_device.product
             );
 
             usbredirhost_close(host);
@@ -441,9 +442,9 @@ vdi_stream_client__network_thread(void *opaque)
     }
 
     /* user output. */
-    vdi_stream_client__log_info(
-        "Stop USB Redirect %04x:%04x\n", redirect_context->usb_device.vendor,
-        redirect_context->usb_device.product
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Stop USB Redirect %04x:%04x\n",
+        redirect_context->usb_device.vendor, redirect_context->usb_device.product
     );
 
     /* terminate loop. */

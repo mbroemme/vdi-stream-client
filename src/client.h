@@ -36,9 +36,11 @@
 /* define limits. */
 #define USB_MAX (8) /* maximum number of usb redirects. */
 
-/* define new print functions for logging. */
-#define vdi_stream_client__log_info(...) printf(__VA_ARGS__);
-#define vdi_stream_client__log_error(...) fprintf(stderr, __VA_ARGS__);
+typedef union
+{
+    struct sockaddr_in v4;  /* address (ipv4) to connect for usb redirection. */
+    struct sockaddr_in6 v6; /* address (ipv6) to connect for usb redirection. */
+} vdi_server_addr_u;
 
 /* stored command line options. */
 typedef struct vdi_config_s
@@ -91,11 +93,7 @@ typedef struct vdi_config_s
     Uint64 stats_period;
 
     /* usb options. */
-    union
-    {
-        struct sockaddr_in v4;  /* address (ipv4) to connect for usb redirection. */
-        struct sockaddr_in6 v6; /* address (ipv6) to connect for usb redirection. */
-    } server_addrs[USB_MAX];
+    vdi_server_addr_u server_addrs[USB_MAX];
     struct
     {
         Sint32 vendor;  /* vendor id of usb devices for redirection. */

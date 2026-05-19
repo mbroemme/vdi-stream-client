@@ -40,7 +40,9 @@ vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
     Uint32 queued_packets;
 
     if (size < 0) {
-        vdi_stream_client__log_error("Failed to query queued audio: %s\n", SDL_GetError());
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Failed to query queued audio: %s\n", SDL_GetError()
+        );
         return;
     }
 
@@ -59,7 +61,7 @@ vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
     if (!SDL_PutAudioStreamData(
             parsec_context->audio, pcm, frames * PARSEC_AUDIO_CHANNELS * sizeof(Sint16)
         )) {
-        vdi_stream_client__log_error("Failed to queue audio: %s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to queue audio: %s\n", SDL_GetError());
     }
 }
 

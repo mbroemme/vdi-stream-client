@@ -29,7 +29,6 @@
 
 /* system includes. */
 #include <getopt.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,44 +38,106 @@ vdi_stream_client__usage(char *program_name)
 {
 
     /* show the help. */
-    printf("Usage: %s [session] [peer] (options)...\n", program_name);
-    printf("GPU accelerated remote host graphical console\n");
-    printf("\n");
-    printf("Help Options:\n");
-    printf("  -h, --help               show this help screen\n");
-    printf("  -v, --version            show the version information\n");
-    printf("\n");
-    printf("Debug Options:\n");
-    printf("      --stats <seconds>    show render stats every <seconds> seconds\n");
-    printf("\n");
-    printf("Parsec Options:\n");
-    printf("      --session <id>       session id for connection (mandatory)\n");
-    printf("      --peer <id>          peer id for connection (mandatory)\n");
-    printf("      --timeout <seconds>  connection timeout (default: 5 seconds)\n");
-    printf("      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n");
-    printf("      --width <width>      horizontal resolution (default: host resolution)\n");
-    printf("      --height <height>    vertical resolution (default: host resolution)\n");
-    printf("\n");
-    printf("Parsec Warp Options:\n");
-    printf("      --no-subsampling     request 4:4:4 video without chroma subsampling\n");
-    printf("\n");
-    printf("Client Options:\n");
-    printf("      --no-acceleration    disable hardware accelerated decoding\n");
-    printf("      --no-upnp            disable upnp nat traversal\n");
-    printf("      --no-reconnect       disable automatic reconnect in case of failures\n");
-    printf("      --no-grab            disable exclusive mouse grab\n");
-    printf("      --no-decoration      disable client window decorations\n");
-    printf("      --no-screensaver     disable screen saver and lockers\n");
-    printf("      --no-clipboard       disable clipboard sharing\n");
-    printf("      --no-audio           disable audio streaming\n");
-    printf("      --no-hevc            disable H.265/HEVC video codec\n");
-    printf("\n");
-    printf("USB Options:\n");
-    printf("      --redirect <vendorID>:<productID>@<address>#<port>,[...]\n");
-    printf("                           redirect single or multiple local USB devices\n");
-    printf("\n");
-    printf("Please report bugs to the appropriate authors, which can be found in the\n");
-    printf("version information. All other things can be send to <%s>\n", PACKAGE_BUGREPORT);
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Usage: %s [session] [peer] (options)...\n", program_name
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU accelerated remote host graphical console\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Help Options:\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  -h, --help               show this help screen\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "  -v, --version            show the version information\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Debug Options:\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --stats <seconds>    show render stats every <seconds> seconds\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Parsec Options:\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --session <id>       session id for connection (mandatory)\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --peer <id>          peer id for connection (mandatory)\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --timeout <seconds>  connection timeout (default: 5 seconds)\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --width <width>      horizontal resolution (default: host resolution)\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --height <height>    vertical resolution (default: host resolution)\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Parsec Warp Options:\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-subsampling     request 4:4:4 video without chroma subsampling\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Client Options:\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-acceleration    disable hardware accelerated decoding\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "      --no-upnp            disable upnp nat traversal\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-reconnect       disable automatic reconnect in case of failures\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "      --no-grab            disable exclusive mouse grab\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-decoration      disable client window decorations\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-screensaver     disable screen saver and lockers\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "      --no-clipboard       disable clipboard sharing\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "      --no-audio           disable audio streaming\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "      --no-hevc            disable H.265/HEVC video codec\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "USB Options:\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "      --redirect <vendorID>:<productID>@<address>#<port>,[...]\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "                           redirect single or multiple local USB devices\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "Please report bugs to the appropriate authors, which can be found in the\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "version information. All other things can be send to <%s>\n",
+        PACKAGE_BUGREPORT
+    );
 
     /* if no error was found, return zero. */
     return VDI_STREAM_CLIENT_SUCCESS;
@@ -88,14 +149,24 @@ vdi_stream_client__version(char *program_name)
 {
 
     /* show the version. */
-    printf(
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
         "%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n", program_name, VERSION
     );
-    printf("License GPLv3+: GNU GPL version 3 or later with Parsec SDK linking exception\n");
-    printf("Written by %s\n", AUTHOR);
-    printf("\n");
-    printf("This is free software; see the source for copying conditions.  There is NO\n");
-    printf("warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "License GPLv3+: GNU GPL version 3 or later with Parsec SDK linking exception\n"
+    );
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Written by %s\n", AUTHOR);
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "This is free software; see the source for copying conditions.  There is NO\n"
+    );
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+    );
 
     /* if no error was found, return zero. */
     return VDI_STREAM_CLIENT_SUCCESS;
@@ -111,6 +182,7 @@ main(int argc, char **argv)
     Sint32 opt;
     char *program_name;
     vdi_config_s *vdi_config = NULL;
+    static const vdi_server_addr_u zero_server_addr = { 0 };
 
     /* temp variables for command line parser. */
     Sint32 device;
@@ -267,8 +339,13 @@ main(int argc, char **argv)
         case OPTION_TIMEOUT:
             timeout = strtol(optarg, &endptr, 10);
             if (*endptr != '\0' || timeout <= 0) {
-                fprintf(stderr, "%s: invalid timeout: %s\n", program_name, optarg);
-                fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid timeout: %s\n", program_name, optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
                 goto error;
             }
             vdi_config->timeout = timeout * 1000;
@@ -276,8 +353,13 @@ main(int argc, char **argv)
         case OPTION_SPEED:
             speed = strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0') {
-                fprintf(stderr, "%s: invalid speed: %s\n", program_name, optarg);
-                fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid speed: %s\n", program_name, optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
                 goto error;
             }
             if (speed < 0) {
@@ -291,8 +373,13 @@ main(int argc, char **argv)
         case OPTION_WIDTH:
             width = strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0' || width < 0 || width > UINT16_MAX) {
-                fprintf(stderr, "%s: invalid width: %s\n", program_name, optarg);
-                fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid width: %s\n", program_name, optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
                 goto error;
             }
             vdi_config->width = width;
@@ -300,8 +387,13 @@ main(int argc, char **argv)
         case OPTION_HEIGHT:
             height = strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0' || height < 0 || height > UINT16_MAX) {
-                fprintf(stderr, "%s: invalid height: %s\n", program_name, optarg);
-                fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid height: %s\n", program_name, optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
                 goto error;
             }
             vdi_config->height = height;
@@ -343,8 +435,14 @@ main(int argc, char **argv)
         case OPTION_STATS:
             stats_period = strtol(optarg, &endptr, 10);
             if (*endptr != '\0' || stats_period <= 0) {
-                fprintf(stderr, "%s: invalid stats period: %s\n", program_name, optarg);
-                fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid stats period: %s\n", program_name,
+                    optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
                 goto error;
             }
             vdi_config->stats = 1;
@@ -360,17 +458,19 @@ main(int argc, char **argv)
 
                 /* check if number of usb redirects are out of range. */
                 if (device >= USB_MAX) {
-                    fprintf(
-                        stderr, "%s: usb redirection limit of %d reached\n", program_name, USB_MAX
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "%s: usb redirection limit of %d reached\n",
+                        program_name, USB_MAX
                     );
-                    fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                        program_name
+                    );
                     goto error;
                 }
 
                 /* initialize. */
-                memset(
-                    &vdi_config->server_addrs[device], 0, sizeof(vdi_config->server_addrs[device])
-                );
+                vdi_config->server_addrs[device] = zero_server_addr;
 
                 /* loop through redirect categroy. (usb vendor, product, address and port) */
                 type = 0;
@@ -383,12 +483,14 @@ main(int argc, char **argv)
                         vdi_config->usb_devices[device].vendor = strtol(item, &endptr, 16);
                         if (vdi_config->usb_devices[device].vendor <= 0 ||
                             vdi_config->usb_devices[device].vendor > 0xffff) {
-                            fprintf(
-                                stderr, "%s: invalid vendor identifier in usb device: %s\n",
-                                program_name, item
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: invalid vendor identifier in usb device: %s\n", program_name,
+                                item
                             );
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -396,11 +498,13 @@ main(int argc, char **argv)
                         /* check if usb product is given. */
                         delim = strchr(item, ':');
                         if (*endptr != ':' || delim == NULL || strlen(delim) == 1) {
-                            fprintf(
-                                stderr, "%s: no product identifier in usb device\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: no product identifier in usb device\n", program_name
                             );
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -409,12 +513,14 @@ main(int argc, char **argv)
                         vdi_config->usb_devices[device].product = strtol(delim + 1, &endptr, 16);
                         if (*endptr != '\0' || vdi_config->usb_devices[device].product < 0 ||
                             vdi_config->usb_devices[device].product > 0xffff) {
-                            fprintf(
-                                stderr, "%s: invalid product identifier in usb device: %s\n",
-                                program_name, item
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: invalid product identifier in usb device: %s\n", program_name,
+                                item
                             );
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -425,9 +531,13 @@ main(int argc, char **argv)
 
                         /* check if empty ip address given. */
                         if (item[0] == '\0') {
-                            fprintf(stderr, "%s: no ip address in usb redirection\n", program_name);
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: no ip address in usb redirection\n", program_name
+                            );
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -449,12 +559,13 @@ main(int argc, char **argv)
                         /* check if bad formatted address. */
                         if (vdi_config->server_addrs[device].v4.sin_family != AF_INET &&
                             vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
-                            fprintf(
-                                stderr, "%s: invalid address in usb redirection: %s\n",
-                                program_name, item
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: invalid address in usb redirection: %s\n", program_name, item
                             );
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -465,9 +576,13 @@ main(int argc, char **argv)
 
                         /* check if empty port given. */
                         if (item[0] == '\0') {
-                            fprintf(stderr, "%s: no port in usb redirection\n", program_name);
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION, "%s: no port in usb redirection\n",
+                                program_name
+                            );
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -477,12 +592,13 @@ main(int argc, char **argv)
 
                         /* check if port is out of range. */
                         if (port <= 0 || port >= 65536) {
-                            fprintf(
-                                stderr, "%s: invalid port in usb redirection: %s\n", program_name,
-                                item
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "%s: invalid port in usb redirection: %s\n", program_name, item
                             );
-                            fprintf(
-                                stderr, "Try `%s --help' for more information.\n", program_name
+                            SDL_LogError(
+                                SDL_LOG_CATEGORY_APPLICATION,
+                                "Try `%s --help' for more information.\n", program_name
                             );
                             goto error;
                         }
@@ -502,15 +618,27 @@ main(int argc, char **argv)
 
                 /* check if no ip address was given. */
                 if (type == 1) {
-                    fprintf(stderr, "%s: no ip address in usb redirection\n", program_name);
-                    fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "%s: no ip address in usb redirection\n",
+                        program_name
+                    );
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                        program_name
+                    );
                     goto error;
                 }
 
                 /* check if no port was given. */
                 if (type == 2) {
-                    fprintf(stderr, "%s: no port in usb redirection\n", program_name);
-                    fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "%s: no port in usb redirection\n",
+                        program_name
+                    );
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                        program_name
+                    );
                     goto error;
                 }
                 device++;
@@ -519,16 +647,26 @@ main(int argc, char **argv)
 
         /* missing arguments. */
         case ':':
-            fprintf(
-                stderr, "%s: option `%s' requires an argument\n", program_name, argv[optind - 1]
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "%s: option `%s' requires an argument\n",
+                program_name, argv[optind - 1]
             );
-            fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                program_name
+            );
             goto error;
 
         /* unknown switches. */
         case '?':
-            fprintf(stderr, "%s: unrecognized option `%s'\n", program_name, argv[optind - 1]);
-            fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "%s: unrecognized option `%s'\n", program_name,
+                argv[optind - 1]
+            );
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                program_name
+            );
             goto error;
         }
     }
@@ -536,22 +674,36 @@ main(int argc, char **argv)
     /* mandatory arguments not given. */
     if (vdi_config->session == NULL || vdi_config->peer == NULL ||
         strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
-        fprintf(stderr, "%s: mandatory arguments missing\n", program_name);
-        fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "%s: mandatory arguments missing\n", program_name
+        );
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n", program_name
+        );
         goto error;
     }
 
     /* width and height must be specified together. */
     if ((vdi_config->width == 0) != (vdi_config->height == 0)) {
-        fprintf(stderr, "%s: --width and --height must be specified together\n", program_name);
-        fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "%s: --width and --height must be specified together\n",
+            program_name
+        );
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n", program_name
+        );
         goto error;
     }
 
     /* additional non-option arguments given. */
     if (argc > optind) {
-        fprintf(stderr, "%s: non-option argument `%s'\n", program_name, argv[optind]);
-        fprintf(stderr, "Try `%s --help' for more information.\n", program_name);
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "%s: non-option argument `%s'\n", program_name,
+            argv[optind]
+        );
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n", program_name
+        );
         goto error;
     }
 

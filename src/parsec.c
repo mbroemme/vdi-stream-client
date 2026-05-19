@@ -77,7 +77,8 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         return;
     }
 
-    vdi_stream_client__log_info(
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
         "Render:\n"
         "  loop: loops=%llu, presents=%llu\n"
         "  events: sdl=%llu, parsec=%llu\n"
@@ -176,7 +177,9 @@ vdi_stream_client__render_text(void *opaque, char *text)
     /* create the text surface. */
     parsec_context->surface_ttf = TTF_RenderText_Blended(parsec_context->font, text, 0, color);
     if (parsec_context->surface_ttf == NULL) {
-        vdi_stream_client__log_error("TTF surface creation failed: %s\n", SDL_GetError());
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "TTF surface creation failed: %s\n", SDL_GetError()
+        );
         return VDI_STREAM_CLIENT_ERROR;
     }
 
@@ -184,7 +187,9 @@ vdi_stream_client__render_text(void *opaque, char *text)
     parsec_context->texture_ttf =
         SDL_CreateTextureFromSurface(parsec_context->renderer, parsec_context->surface_ttf);
     if (parsec_context->texture_ttf == NULL) {
-        vdi_stream_client__log_error("TTF texture creation failed: %s\n", SDL_GetError());
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "TTF texture creation failed: %s\n", SDL_GetError()
+        );
         return VDI_STREAM_CLIENT_ERROR;
     }
 
@@ -223,16 +228,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     parsec_context.stats_period_ms = vdi_config->stats_period * 1000;
 
     /* sdl init. */
-    vdi_stream_client__log_info("Initialize SDL\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize SDL\n");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
-        vdi_stream_client__log_error("Initialization failed: %s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed: %s\n", SDL_GetError());
         goto error;
     }
 
     /* ttf init. */
-    vdi_stream_client__log_info("Initialize TTF\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize TTF\n");
     if (!TTF_Init()) {
-        vdi_stream_client__log_error("Initialization failed: %s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed: %s\n", SDL_GetError());
         goto error;
     }
 
@@ -241,26 +246,27 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_IOFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), true, 16.0f
     );
     if (parsec_context.font == NULL) {
-        vdi_stream_client__log_error("Loading font failed: %s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Loading font failed: %s\n", SDL_GetError());
         goto error;
     }
 
     /* parsec init. */
-    vdi_stream_client__log_info("Initialize Parsec\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Parsec\n");
 #ifdef HAVE_LIBPARSEC
     e = ParsecInit(PARSEC_VER, &network_cfg, NULL, &parsec_context.parsec);
 #else
     e = ParsecInit(NULL, &network_cfg, "libparsec.so", &parsec_context.parsec);
 #endif
     if (e != PARSEC_OK) {
-        vdi_stream_client__log_error("Initialization failed with code: %d\n", e);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed with code: %d\n", e);
         goto error;
     }
 
     /* use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
-        vdi_stream_client__log_info(
-            "Override resolution %dx%d\n", vdi_config->width, vdi_config->height
+        SDL_LogInfo(
+            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->width,
+            vdi_config->height
         );
         cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
         cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
@@ -271,7 +277,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         cfg.video[DEFAULT_STREAM].decoderH265 = 1;
     }
     if (vdi_config->hevc == 0) {
-        vdi_stream_client__log_info("Disable H.265 (HEVC) Video Codec\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable H.265 (HEVC) Video Codec\n");
         cfg.video[DEFAULT_STREAM].decoderH265 = 0;
     }
 
@@ -280,15 +286,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         cfg.video[DEFAULT_STREAM].decoder444 = 0;
     }
     if (vdi_config->subsampling == 0) {
-        vdi_stream_client__log_info("Disable Chroma Subsampling\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Chroma Subsampling\n");
         cfg.video[DEFAULT_STREAM].decoder444 = 1;
 
         /* TODO: parsec sdk bug. */
-        vdi_stream_client__log_info(
-            "WARNING: Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n"
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n"
         );
-        vdi_stream_client__log_info(
-            "WARNING: https://github.com/parsec-cloud/parsec-sdk/issues/36\n"
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "https://github.com/parsec-cloud/parsec-sdk/issues/36\n"
         );
     }
 
@@ -297,7 +304,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         cfg.video[DEFAULT_STREAM].decoderIndex = 1;
     }
     if (vdi_config->acceleration == 0) {
-        vdi_stream_client__log_info("Disable Hardware Accelerated Video Decoding\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
         cfg.video[DEFAULT_STREAM].decoderIndex = 0;
     }
 
@@ -306,23 +313,23 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         network_cfg.upnp = 1;
     }
     if (vdi_config->upnp == 0) {
-        vdi_stream_client__log_info("Disable UPnP\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable UPnP\n");
         network_cfg.upnp = 0;
     }
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
-        vdi_stream_client__log_info("Disable automatic reconnect\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable automatic reconnect\n");
     }
 
     /* check if exclusive mouse grab should be disabled. */
     if (vdi_config->grab == 0) {
-        vdi_stream_client__log_info("Disable exclusive mouse grab\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable exclusive mouse grab\n");
     }
 
     /* check if window decorations should be disabled. */
     if (vdi_config->decoration == 0) {
-        vdi_stream_client__log_info("Disable window decorations\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable window decorations\n");
         window_flags |= SDL_WINDOW_BORDERLESS;
     }
 
@@ -331,30 +338,30 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_EnableScreenSaver();
     }
     if (vdi_config->screensaver == 0) {
-        vdi_stream_client__log_info("Disable screen saver\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable screen saver\n");
         SDL_DisableScreenSaver();
     }
 
     /* check if clipboard should be disabled. */
     if (vdi_config->clipboard == 0) {
-        vdi_stream_client__log_info("Disable clipboard sharing\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable clipboard sharing\n");
     }
 
     /* check if audio should be streamed. */
     if (vdi_config->audio == 0) {
-        vdi_stream_client__log_info("Disable audio streaming\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable audio streaming\n");
     }
 
     /* parsec connect. */
-    vdi_stream_client__log_info("Connect to Parsec service\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec service\n");
     e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
     if (e != PARSEC_OK) {
-        vdi_stream_client__log_error("Connection failed with code: %d\n", e);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
         goto error;
     }
 
     /* wait until connection is established. */
-    vdi_stream_client__log_info("Connect to Parsec host\n");
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
     while (!parsec_context.decoder) {
 
         /* get client status. */
@@ -367,26 +374,26 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             if (parsec_context.client_status.decoder[DEFAULT_STREAM].width == 0 &&
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height == 0 &&
                 !parsec_context.connection) {
-                vdi_stream_client__log_info("Initialize Video Decoder\n");
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video Decoder\n");
                 parsec_context.connection = true;
             }
 
             /* decoder initialized. */
             if (parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
-                vdi_stream_client__log_info(
-                    "Use %s decoder\n",
+                SDL_LogInfo(
+                    SDL_LOG_CATEGORY_APPLICATION, "Use %s decoder\n",
                     parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0'
                         ? parsec_context.client_status.decoder[DEFAULT_STREAM].name
                         : "unknown"
                 );
-                vdi_stream_client__log_info(
-                    "Use %s codec\n", parsec_context.client_status.decoder[DEFAULT_STREAM].h265
-                                          ? "H.265 (HEVC)"
-                                          : "H.264 (AVC)"
+                SDL_LogInfo(
+                    SDL_LOG_CATEGORY_APPLICATION, "Use %s codec\n",
+                    parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)"
+                                                                              : "H.264 (AVC)"
                 );
-                vdi_stream_client__log_info(
-                    "Use resolution %dx%d\n",
+                SDL_LogInfo(
+                    SDL_LOG_CATEGORY_APPLICATION, "Use resolution %dx%d\n",
                     parsec_context.client_status.decoder[DEFAULT_STREAM].width,
                     parsec_context.client_status.decoder[DEFAULT_STREAM].height
                 );
@@ -415,11 +422,14 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
     /* detect sdl video driver. */
     video_driver = SDL_GetCurrentVideoDriver();
-    vdi_stream_client__log_info("Use %s video\n", video_driver != NULL ? video_driver : "unknown");
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Use %s video\n",
+        video_driver != NULL ? video_driver : "unknown"
+    );
 
     /* check if connected and decoder initialized. */
     if (!parsec_context.connection && !parsec_context.decoder) {
-        vdi_stream_client__log_error("Connection failed with code: %d\n", e);
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
         goto error;
     }
 
@@ -427,13 +437,15 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         "VDI Stream Client", parsec_context.window_width, parsec_context.window_height, window_flags
     );
     if (parsec_context.window == NULL) {
-        vdi_stream_client__log_error("Window creation failed: %s\n", SDL_GetError());
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window creation failed: %s\n", SDL_GetError());
         goto error;
     }
 
     parsec_context.renderer = SDL_CreateRenderer(parsec_context.window, NULL);
     if (parsec_context.renderer == NULL) {
-        vdi_stream_client__log_error("Renderer creation failed: %s\n", SDL_GetError());
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Renderer creation failed: %s\n", SDL_GetError()
+        );
         goto error;
     }
 
@@ -455,7 +467,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         parsec_context.audio =
             SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, NULL, NULL);
         if (parsec_context.audio == NULL) {
-            vdi_stream_client__log_error("Failed to open audio: %s\n", SDL_GetError());
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Failed to open audio: %s\n", SDL_GetError()
+            );
             goto error;
         }
 
@@ -464,14 +478,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context
         );
         if (audio_thread == NULL) {
-            vdi_stream_client__log_error("Audio thread creation failed: %s\n", SDL_GetError());
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Audio thread creation failed: %s\n", SDL_GetError()
+            );
             goto error;
         }
     }
 
     /* configure usb. */
     if (vdi_config->usb_devices[0].vendor != 0) {
-        vdi_stream_client__log_info("Initialize USB\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize USB\n");
 
         /* one thread per one usb device redirect. */
         for (device = 0; vdi_config->usb_devices[device].vendor != 0; device++) {
@@ -491,8 +507,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 &redirect_context[device]
             );
             if (network_thread[device] == NULL) {
-                vdi_stream_client__log_error(
-                    "Network thread creation failed: %s\n", SDL_GetError()
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Network thread creation failed: %s\n",
+                    SDL_GetError()
                 );
                 goto error;
             }
@@ -740,7 +757,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* render shutdown text. */
             vdi_stream_client__render_text(&parsec_context, "Closing...");
             force_redraw = true;
-            vdi_stream_client__log_error("Parsec disconnected\n");
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Parsec disconnected\n");
             parsec_context.done = true;
         }
         if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
@@ -761,7 +778,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* render shutdown text. */
             vdi_stream_client__render_text(&parsec_context, "Closing...");
             force_redraw = true;
-            vdi_stream_client__log_error("Network disconnected\n");
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Network disconnected\n");
             parsec_context.done = true;
         }
         if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
@@ -818,9 +835,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                  parsec_context.client_status.decoder[DEFAULT_STREAM].height) &&
             parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
             parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
-            vdi_stream_client__log_info(
-                "Change resolution from %dx%d to %dx%d\n", parsec_context.window_width,
-                parsec_context.window_height,
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "Change resolution from %dx%d to %dx%d\n",
+                parsec_context.window_width, parsec_context.window_height,
                 parsec_context.client_status.decoder[DEFAULT_STREAM].width,
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height
             );
@@ -862,7 +879,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
     /* stop network threads for usb redirection. */
     if (vdi_config->usb_devices[0].vendor != 0) {
-        vdi_stream_client__log_info("Stop Network Thread\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Network Thread\n");
         for (count = 0; count < USB_MAX; count++) {
             if (network_thread[count] == NULL) {
                 continue;
@@ -873,7 +890,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
     /* stop audio thread. */
     if (vdi_config->audio == 1) {
-        vdi_stream_client__log_info("Stop Audio Thread\n");
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Audio Thread\n");
         SDL_WaitThread(audio_thread, NULL);
     }
 
