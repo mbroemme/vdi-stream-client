@@ -39,104 +39,46 @@ vdi_stream_client__usage(char *program_name)
 
     /* show the help. */
     SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Usage: %s [session] [peer] (options)...\n", program_name
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "GPU accelerated remote host graphical console\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Help Options:\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "  -h, --help               show this help screen\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "  -v, --version            show the version information\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Debug Options:\n");
-    SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
+        "Usage: %s [session] [peer] (options)...\n"
+        "GPU accelerated remote host graphical console\n"
+        "\n"
+        "Help Options:\n"
+        "  -h, --help               show this help screen\n"
+        "  -v, --version            show the version information\n"
+        "\n"
+        "Debug Options:\n"
         "      --stats <seconds>    show render stats every <seconds> seconds\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Parsec Options:\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "\n"
+        "Parsec Options:\n"
         "      --session <id>       session id for connection (mandatory)\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --peer <id>          peer id for connection (mandatory)\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --timeout <seconds>  connection timeout (default: 5 seconds)\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --speed <speed>      mouse wheel sensitivity: 0 to 500 (default: 100)\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --width <width>      horizontal resolution (default: host resolution)\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --height <height>    vertical resolution (default: host resolution)\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Parsec Warp Options:\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "\n"
+        "Parsec Warp Options:\n"
         "      --no-subsampling     request 4:4:4 video without chroma subsampling\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Client Options:\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "\n"
+        "Client Options:\n"
         "      --no-acceleration    disable hardware accelerated decoding\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "      --no-upnp            disable upnp nat traversal\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-upnp            disable upnp nat traversal\n"
         "      --no-reconnect       disable automatic reconnect in case of failures\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "      --no-grab            disable exclusive mouse grab\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-grab            disable exclusive mouse grab\n"
         "      --no-decoration      disable client window decorations\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "      --no-screensaver     disable screen saver and lockers\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "      --no-clipboard       disable clipboard sharing\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "      --no-audio           disable audio streaming\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "      --no-hevc            disable H.265/HEVC video codec\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "USB Options:\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "      --no-clipboard       disable clipboard sharing\n"
+        "      --no-audio           disable audio streaming\n"
+        "      --no-hevc            disable H.265/HEVC video codec\n"
+        "\n"
+        "USB Options:\n"
         "      --redirect <vendorID>:<productID>@<address>#<port>,[...]\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
         "                           redirect single or multiple local USB devices\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "\n"
         "Please report bugs to the appropriate authors, which can be found in the\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "version information. All other things can be send to <%s>\n",
-        PACKAGE_BUGREPORT
+        "version information. All other things can be sent to <%s>\n",
+        program_name, PACKAGE_BUGREPORT
     );
 
     /* if no error was found, return zero. */
@@ -151,21 +93,13 @@ vdi_stream_client__version(char *program_name)
     /* show the version. */
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
-        "%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n", program_name, VERSION
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n"
         "License GPLv3+: GNU GPL version 3 or later with Parsec SDK linking exception\n"
-    );
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Written by %s\n", AUTHOR);
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "\n");
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
+        "Written by %s\n"
+        "\n"
         "This is free software; see the source for copying conditions.  There is NO\n"
-    );
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
-        "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n"
+        "warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n",
+        program_name, VERSION, AUTHOR
     );
 
     /* if no error was found, return zero. */
