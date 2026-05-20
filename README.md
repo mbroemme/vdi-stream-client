@@ -3,8 +3,8 @@
 [![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
 [![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
 [![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg?style=flat)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client.svg?style=flat)](https://github.com/mbroemme/vdi-stream-client/stargazers)
 [![GitHub license](https://img.shields.io/github/license/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/blob/main/LICENSE)
 [![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
 
@@ -69,6 +69,7 @@ Method                | Local | Remote | 3D
 [Virgil 3D](https://virgil3d.github.io/)             | Yes   | Yes    | Yes (Linux only)
 [SPICE Streaming Agent](https://gitlab.freedesktop.org/spice/spice-streaming-agent) | Yes   | Yes    | Yes (Linux only)
 [Moonlight](https://moonlight-stream.org/)             | Yes   | Yes    | Yes (Nvidia only)
+[Sunshine](https://app.lizardbyte.dev/Sunshine/)       | Yes   | Yes    | Yes
 [Parsec](https://parsec.app/)                | Yes   | Yes    | Yes
 
 So why another streaming client is needed if one for Windows, Linux and macOS
@@ -87,7 +88,7 @@ DirectX                 | Yes               | Yes
 SDL Renderer            | Yes               | No
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
-Minimal GUI             | Yes               | No
+No GUI                  | Yes               | No
 System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No

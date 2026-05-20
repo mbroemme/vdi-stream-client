@@ -20,8 +20,11 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
-#ifndef _VIDEO_H
-#define _VIDEO_H
+#ifndef VDI_STREAM_CLIENT_VIDEO_H
+#define VDI_STREAM_CLIENT_VIDEO_H
+
+/* system includes. */
+#include <stdbool.h>
 
 /* sdl includes. */
 #include <SDL3/SDL.h>
@@ -33,4 +36,4 @@ void vdi_stream_client__video_init(struct parsec_context_s *parsec_context);
 bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
 void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
 
-#endif /* _VIDEO_H */
+#endif /* VDI_STREAM_CLIENT_VIDEO_H */

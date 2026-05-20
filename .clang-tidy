@@ -1,0 +1,26 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-core.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-security.*,
+  clang-analyzer-unix.*,
+  clang-analyzer-optin.portability.UnixAPI,
+  bugprone-branch-clone,
+  bugprone-infinite-loop,
+  bugprone-macro-parentheses,
+  bugprone-macro-repeated-side-effects,
+  bugprone-misplaced-widening-cast,
+  bugprone-multiple-statement-macro,
+  bugprone-not-null-terminated-result,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-memset-usage,
+  bugprone-suspicious-string-compare,
+  bugprone-swapped-arguments
+WarningsAsErrors: '*'
+# Limit header diagnostics to files owned by this project.
+# This avoids matching third-party SDK headers through paths such as
+# src/../parsec-sdk/sdk/parsec-dso.h.
+HeaderFilterRegex: '(^|.*/)(src/[^/]+\.[ch]|include/[^/]+\.h)$'
+SystemHeaders: false
+...
