@@ -604,7 +604,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 }
 
                 /* check if we need to toggle runtime configuration. */
-                if ((msg.key.mod & SDL_KMOD_LSHIFT) != 0) {
+                if (vdi_config->grab == 0 && (msg.key.mod & SDL_KMOD_LSHIFT) != 0) {
 
                     /* check if we need to toggle forced grab. */
                     if (msg.key.key == SDLK_F12) {
