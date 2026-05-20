@@ -571,7 +571,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             case SDL_EVENT_KEY_DOWN:
 
                 /* check if we need to switch window grab state. */
-                if ((msg.key.mod & SDL_KMOD_LCTRL) != 0 && (msg.key.mod & SDL_KMOD_LALT) != 0) {
+                if (vdi_config->grab == 1 && (msg.key.mod & SDL_KMOD_LCTRL) != 0 &&
+                    (msg.key.mod & SDL_KMOD_LALT) != 0) {
 
                     /* check if no forced grab. */
                     if (!grab_forced) {
