@@ -93,7 +93,7 @@ System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
-[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK Bug](https://github.com/parsec-cloud/parsec-sdk/issues/36)           | Yes
+[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK limitation](https://github.com/mbroemme/parsec-sdk)                  | Yes
 
 # Requirements
 
@@ -150,9 +150,13 @@ without chroma subsampling for sharp and crystal clear text.
 
 # Known Issues
 
-* Color mode 4:4:4 is not yet supported by the SDK. There is an open bug at [Parsec SDK GitHub](https://github.com/parsec-cloud/parsec-sdk/issues/36)
-  and Parsec team want to fix it with next SDK release. In official [Parsec](https://parsec.app/downloads)
-  client it works already with some internal callbacks in the SDK.
+* Color mode 4:4:4 is not yet supported by the SDK. This limitation was
+  previously tracked in the original `parsec-cloud/parsec-sdk` issue tracker,
+  but that repository is no longer available after Parsec was acquired by
+  Unity. The SDK files referenced by this project are mirrored at
+  [Parsec SDK](https://github.com/mbroemme/parsec-sdk). In the official
+  [Parsec](https://parsec.app/downloads) client it works already with some
+  internal callbacks in the SDK.
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -177,10 +181,13 @@ applicable Parsec SDK terms allow you to do so.
 
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`
-and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk). The build
-system will search the SDK first in the build directory and use DSO loading for
-`libparsec.so`. If not found, it will search in system-wide include and library
-directories and link against the system `libparsec.so`.
+and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+`parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
+acquired by Unity, so this project references the mirrored SDK repository
+instead. The build system will search the SDK first in the build directory
+and use DSO loading for `libparsec.so`. If not found, it will search in
+system-wide include and library directories and link against the system
+`libparsec.so`.
 
 The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
 both build modes from the VDI Stream Client side. It does not grant permission
@@ -190,7 +197,7 @@ build and install use the commands below and if `--prefix=/usr` is used, the
 `make install` command must be run as root user.
 
 ```
-git clone https://github.com/parsec-cloud/parsec-sdk
+git clone https://github.com/mbroemme/parsec-sdk
 ./configure --prefix=/usr &&
 make &&
 make install
