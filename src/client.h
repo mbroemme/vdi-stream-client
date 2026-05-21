@@ -93,6 +93,7 @@ typedef struct vdi_config_s
     Uint64 stats_period;
 
     /* usb options. */
+    Uint32 usb_count; /* number of configured usb redirects. */
     vdi_server_addr_u server_addrs[USB_MAX];
     struct
     {

@@ -533,11 +533,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     }
 
     /* configure usb. */
-    if (vdi_config->usb_devices[0].vendor != 0) {
+    if (vdi_config->usb_count > 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize USB\n");
 
         /* one thread per one usb device redirect. */
-        for (device = 0; vdi_config->usb_devices[device].vendor != 0; device++) {
+        for (device = 0; device < vdi_config->usb_count; device++) {
 
             /* store main thread context in a pointer. */
             redirect_context[device].parsec_context = &parsec_context;
@@ -953,9 +953,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 
     /* stop network threads for usb redirection. */
-    if (vdi_config->usb_devices[0].vendor != 0) {
+    if (vdi_config->usb_count > 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Network Thread\n");
-        for (count = 0; count < USB_MAX; count++) {
+        for (count = 0; count < vdi_config->usb_count; count++) {
             if (network_thread[count] == NULL) {
                 continue;
             }

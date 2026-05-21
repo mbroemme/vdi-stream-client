@@ -124,13 +124,13 @@ main(int argc, char **argv)
     static const vdi_server_addr_u zero_server_addr = { 0 };
 
     /* temp variables for command line parser. */
-    Sint32 device;
+    Uint32 device;
     Sint32 type;
     char *redirect;
     char *item;
     char *delim;
     char *endptr;
-    Uint64 port;
+    Sint64 port;
     Sint64 timeout;
     Sint64 speed;
     Sint64 width;
@@ -392,7 +392,7 @@ main(int argc, char **argv)
         case OPTION_REDIRECT:
 
             /* loop through multiple redirect configs. */
-            device = 0;
+            device = vdi_config->usb_count;
             while ((redirect = strsep(&argv[optind - 1], ",")) != NULL) {
 
                 /* check if number of usb redirects are out of range. */
@@ -527,10 +527,10 @@ main(int argc, char **argv)
                         }
 
                         /* convert port string to integer. */
-                        port = strtol(item, NULL, 10);
+                        port = strtol(item, &endptr, 10);
 
                         /* check if port is out of range. */
-                        if (port <= 0 || port >= 65536) {
+                        if (endptr == item || *endptr != '\0' || port <= 0 || port >= 65536) {
                             SDL_LogError(
                                 SDL_LOG_CATEGORY_APPLICATION,
                                 "%s: invalid port in usb redirection: %s\n", program_name, item
@@ -543,12 +543,12 @@ main(int argc, char **argv)
                         }
 
                         /* check if ipv4 address has been assigned previosuly. */
-                        if (vdi_config->server_addrs[device].v4.sin_family != AF_INET) {
+                        if (vdi_config->server_addrs[device].v4.sin_family == AF_INET) {
                             vdi_config->server_addrs[device].v4.sin_port = htons(port);
                         }
 
                         /* check if ipv6 address has been assigned previosuly. */
-                        if (vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
+                        if (vdi_config->server_addrs[device].v6.sin6_family == AF_INET6) {
                             vdi_config->server_addrs[device].v6.sin6_port = htons(port);
                         }
                     }
@@ -581,6 +581,7 @@ main(int argc, char **argv)
                     goto error;
                 }
                 device++;
+                vdi_config->usb_count = device;
             }
             continue;
 
