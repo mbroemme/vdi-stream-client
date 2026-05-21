@@ -127,6 +127,7 @@ vdi_stream_client__network_thread(void *opaque)
     libusb_hotplug_callback_handle callback_handle = 0;
     struct libusb_device_descriptor desc;
     size_t count;
+    ssize_t device_count;
     Sint32 flag;
     Sint32 callback_registered = 0;
     struct sockaddr *server_addr;
@@ -256,7 +257,16 @@ vdi_stream_client__network_thread(void *opaque)
             }
 
             /* get list of usb devices. */
-            libusb_get_device_list(usb_context, &devices);
+            device_count = libusb_get_device_list(usb_context, &devices);
+            if (device_count < 0) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x scan failed: %s\n",
+                    redirect_context->usb_device.vendor, redirect_context->usb_device.product,
+                    libusb_strerror((Sint32)device_count)
+                );
+                SDL_Delay(delay);
+                continue;
+            }
 
             /* find device to open. */
             count = 0;
@@ -309,6 +319,10 @@ vdi_stream_client__network_thread(void *opaque)
                 vdi_stream_client__usb_write, NULL, NULL, 0, 0
             );
             if (host == NULL) {
+
+                /* close device handle if usbredir host setup failed. */
+                libusb_close(device_handle);
+                device_handle = NULL;
 
                 /* wait some time before rescan for usb device. */
                 SDL_Delay(delay);
@@ -464,6 +478,16 @@ error:
     if (server_fd != -1) {
         close(server_fd);
         server_fd = -1;
+    }
+
+    /* usbredirhost_close() calls libusb_close() so close either host or handle. */
+    if (host != NULL) {
+        usbredirhost_close(host);
+        device_handle = NULL;
+        host = NULL;
+    } else if (device_handle != NULL) {
+        libusb_close(device_handle);
+        device_handle = NULL;
     }
 
     /* usb destroy. */
