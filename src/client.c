@@ -415,6 +415,19 @@ main(int argc, char **argv)
                 type = 0;
                 while ((item = strsep(&redirect, "@#")) != NULL) {
 
+                    /* reject additional fields after port. */
+                    if (type > 2) {
+                        SDL_LogError(
+                            SDL_LOG_CATEGORY_APPLICATION,
+                            "%s: invalid usb redirection format: too many fields\n", program_name
+                        );
+                        SDL_LogError(
+                            SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                            program_name
+                        );
+                        goto error;
+                    }
+
                     /* usb device. */
                     if (type == 0) {
 
@@ -580,6 +593,20 @@ main(int argc, char **argv)
                     );
                     goto error;
                 }
+
+                /* exactly usb device, ip address and port must be given. */
+                if (type != 3) {
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "%s: invalid usb redirection format\n",
+                        program_name
+                    );
+                    SDL_LogError(
+                        SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                        program_name
+                    );
+                    goto error;
+                }
+
                 device++;
                 vdi_config->usb_count = device;
             }
