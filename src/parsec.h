@@ -65,7 +65,10 @@ struct parsec_context_s
     bool connection;
     bool decoder;
     bool focus;
+    bool hidden;
+    bool hidden_drag;
     bool relative;
+    bool cursor_grab;
     bool pressed;
 #ifdef HAVE_LIBPARSEC
     Parsec *parsec;
