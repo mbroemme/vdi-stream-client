@@ -54,13 +54,15 @@ vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
     queued_frames = (Uint32)size / (PARSEC_AUDIO_CHANNELS * sizeof(Sint16));
     queued_packets = queued_frames / PARSEC_AUDIO_FRAMES_PER_PACKET;
 
-    if (parsec_context->playing && queued_packets > parsec_context->max_buffer) {
+    if (vdi_stream_client__context_playing(parsec_context) &&
+        queued_packets > parsec_context->max_buffer) {
         SDL_ClearAudioStream(parsec_context->audio);
         SDL_PauseAudioStreamDevice(parsec_context->audio);
-        parsec_context->playing = false;
-    } else if (!parsec_context->playing && queued_packets >= parsec_context->min_buffer) {
+        vdi_stream_client__context_set_playing(parsec_context, false);
+    } else if (!vdi_stream_client__context_playing(parsec_context) &&
+               queued_packets >= parsec_context->min_buffer) {
         SDL_ResumeAudioStreamDevice(parsec_context->audio);
-        parsec_context->playing = true;
+        vdi_stream_client__context_set_playing(parsec_context, true);
     }
 
     if (!SDL_PutAudioStreamData(
@@ -76,23 +78,23 @@ vdi_stream_client__audio_thread(void *opaque)
 {
     struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
 
-    while (!parsec_context->done) {
+    while (!vdi_stream_client__context_done(parsec_context)) {
 
         /* poll audio only if connected. */
-        if (parsec_context->connection) {
+        if (vdi_stream_client__context_connected(parsec_context)) {
             ParsecClientPollAudio(
                 parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context
             );
         }
 
         /* delay loop if in reconnect state. */
-        if (!parsec_context->connection) {
+        if (!vdi_stream_client__context_connected(parsec_context)) {
 
             /* clear queue and pause audio device. */
-            if (parsec_context->playing) {
+            if (vdi_stream_client__context_playing(parsec_context)) {
                 SDL_ClearAudioStream(parsec_context->audio);
                 SDL_PauseAudioStreamDevice(parsec_context->audio);
-                parsec_context->playing = false;
+                vdi_stream_client__context_set_playing(parsec_context, false);
             }
             SDL_Delay(parsec_context->timeout);
         }

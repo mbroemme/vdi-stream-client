@@ -183,14 +183,14 @@ vdi_stream_client__network_thread(void *opaque)
     }
     callback_registered = 1;
 
-    while (!redirect_context->parsec_context->done) {
+    while (!vdi_stream_client__context_done(redirect_context->parsec_context)) {
         timeout = default_timeout;
 
         /* try until connection established or application quits. */
         while (server_fd == -1) {
 
             /* check if main thread is still running. */
-            if (redirect_context->parsec_context->done) {
+            if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
@@ -251,7 +251,7 @@ vdi_stream_client__network_thread(void *opaque)
         while (host == NULL) {
 
             /* check if main thread is still running. */
-            if (redirect_context->parsec_context->done) {
+            if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
@@ -330,7 +330,7 @@ vdi_stream_client__network_thread(void *opaque)
         while (server_fd != -1) {
 
             /* check if main thread is still running. */
-            if (redirect_context->parsec_context->done) {
+            if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
@@ -458,7 +458,7 @@ vdi_stream_client__network_thread(void *opaque)
 error:
 
     /* stop main thread. */
-    redirect_context->parsec_context->done = true;
+    vdi_stream_client__context_set_done(redirect_context->parsec_context, true);
 
     /* close client socket. */
     if (server_fd != -1) {

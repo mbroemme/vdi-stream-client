@@ -228,7 +228,7 @@ vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool fo
 {
 
     /* show parsec frame. */
-    if (parsec_context->connection) {
+    if (vdi_stream_client__context_connected(parsec_context)) {
         if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
             return false;
         }

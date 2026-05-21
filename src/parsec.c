@@ -108,6 +108,44 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     parsec_context->stats_idle_wait_ms = 0;
 }
 
+/* signal worker threads and wait until they stop using shared runtime resources. */
+static void
+vdi_stream_client__stop_threads(
+    struct parsec_context_s *parsec_context, SDL_Thread **audio_thread,
+    SDL_Thread *network_thread[USB_MAX], Uint32 usb_count
+)
+{
+    bool network_started = false;
+
+    vdi_stream_client__context_set_done(parsec_context, true);
+
+    if (usb_count > 0) {
+        for (Uint32 count = 0; count < usb_count; count++) {
+            if (network_thread[count] != NULL) {
+                network_started = true;
+                break;
+            }
+        }
+    }
+
+    if (network_started) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Network Thread\n");
+        for (Uint32 count = 0; count < usb_count; count++) {
+            if (network_thread[count] == NULL) {
+                continue;
+            }
+            SDL_WaitThread(network_thread[count], NULL);
+            network_thread[count] = NULL;
+        }
+    }
+
+    if (*audio_thread != NULL) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Audio Thread\n");
+        SDL_WaitThread(*audio_thread, NULL);
+        *audio_thread = NULL;
+    }
+}
+
 /* keep cursor-induced grabs separate from user-requested grabs. */
 static void
 vdi_stream_client__cursor_set_grab(
@@ -261,7 +299,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
     Uint32 device;
-    Uint32 count;
     SDL_Thread *audio_thread = NULL;
     SDL_Thread *network_thread[USB_MAX] = { 0 };
     SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -420,9 +457,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* decoder not yet initialized. */
             if (parsec_context.client_status.decoder[DEFAULT_STREAM].width == 0 &&
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height == 0 &&
-                !parsec_context.connection) {
+                !vdi_stream_client__context_connected(&parsec_context)) {
                 SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video Decoder\n");
-                parsec_context.connection = true;
+                vdi_stream_client__context_set_connection(&parsec_context, true);
             }
 
             /* decoder initialized. */
@@ -475,7 +512,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     );
 
     /* check if connected and decoder initialized. */
-    if (!parsec_context.connection && !parsec_context.decoder) {
+    if (!parsec_context.decoder) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
         goto error;
     }
@@ -564,7 +601,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     }
 
     /* event loop. */
-    while (!parsec_context.done) {
+    while (!vdi_stream_client__context_done(&parsec_context)) {
         Uint64 loop_sdl_events = 0;
         Uint64 loop_parsec_events = 0;
         Uint64 loop_frames = 0;
@@ -592,13 +629,13 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* Only the overlay needs a forced redraw for arbitrary SDL events; the
              * connected video path should present on new frames instead of repainting
              * the same texture for every keyboard/mouse event. */
-            if (!parsec_context.connection) {
+            if (!vdi_stream_client__context_connected(&parsec_context)) {
                 force_redraw = true;
             }
 
             switch (msg.type) {
             case SDL_EVENT_QUIT:
-                parsec_context.done = true;
+                vdi_stream_client__context_set_done(&parsec_context, true);
 
                 /* render shutdown text. */
                 vdi_stream_client__render_text(&parsec_context, "Closing...");
@@ -833,7 +870,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             vdi_stream_client__render_text(&parsec_context, "Closing...");
             force_redraw = true;
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Parsec disconnected\n");
-            parsec_context.done = true;
+            vdi_stream_client__context_set_done(&parsec_context, true);
         }
         if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
             SDL_GetTicks() > last_time + vdi_config->timeout) {
@@ -843,7 +880,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             force_redraw = true;
             ParsecClientDisconnect(parsec_context.parsec);
             ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
-            parsec_context.connection = false;
+            vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
 
@@ -854,7 +891,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             vdi_stream_client__render_text(&parsec_context, "Closing...");
             force_redraw = true;
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Network disconnected\n");
-            parsec_context.done = true;
+            vdi_stream_client__context_set_done(&parsec_context, true);
         }
         if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 1 &&
             SDL_GetTicks() > last_time + vdi_config->timeout) {
@@ -864,14 +901,14 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             force_redraw = true;
             ParsecClientDisconnect(parsec_context.parsec);
             ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
-            parsec_context.connection = false;
+            vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
 
         /* set connection status if reconnected. */
         if (vdi_config->reconnect == 1 && parsec_context.client_status.networkFailure == 0 &&
-            e == PARSEC_OK && !parsec_context.connection) {
-            parsec_context.connection = true;
+            e == PARSEC_OK && !vdi_stream_client__context_connected(&parsec_context)) {
+            vdi_stream_client__context_set_connection(&parsec_context, true);
         }
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
@@ -933,7 +970,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
          * frame delivery. When disconnected, no frame source is blocking this
          * loop, so keep a small coarse idle sleep to avoid busy-spinning while
          * reconnecting or showing the overlay. */
-        if (!parsec_context.connection && !rendered && parsec_context.render_timeout > 0) {
+        if (!vdi_stream_client__context_connected(&parsec_context) && !rendered &&
+            parsec_context.render_timeout > 0) {
             SDL_Delay(parsec_context.render_timeout);
         }
 
@@ -952,22 +990,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_SetWindowMouseGrab(parsec_context.window, false);
     SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 
-    /* stop network threads for usb redirection. */
-    if (vdi_config->usb_count > 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Network Thread\n");
-        for (count = 0; count < vdi_config->usb_count; count++) {
-            if (network_thread[count] == NULL) {
-                continue;
-            }
-            SDL_WaitThread(network_thread[count], NULL);
-        }
-    }
-
-    /* stop audio thread. */
-    if (vdi_config->audio == 1) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Audio Thread\n");
-        SDL_WaitThread(audio_thread, NULL);
-    }
+    vdi_stream_client__stop_threads(
+        &parsec_context, &audio_thread, network_thread, vdi_config->usb_count
+    );
 
     /* destroy video resources before releasing the parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
@@ -991,6 +1016,10 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     return VDI_STREAM_CLIENT_SUCCESS;
 
 error:
+
+    vdi_stream_client__stop_threads(
+        &parsec_context, &audio_thread, network_thread, vdi_config->usb_count
+    );
 
     /* destroy video resources before releasing the parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
