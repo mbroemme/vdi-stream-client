@@ -33,7 +33,9 @@
 #include "parsec.h"
 
 /* system includes. */
+#include <errno.h>
 #include <getopt.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -277,8 +279,10 @@ main(int argc, char **argv)
             }
             continue;
         case OPTION_TIMEOUT:
-            timeout = strtol(optarg, &endptr, 10);
-            if (*endptr != '\0' || timeout <= 0) {
+            errno = 0;
+            timeout = strtoll(optarg, &endptr, 10);
+            if (endptr == optarg || *endptr != '\0' || errno == ERANGE || timeout <= 0 ||
+                timeout > UINT32_MAX / 1000) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid timeout: %s\n", program_name, optarg
                 );

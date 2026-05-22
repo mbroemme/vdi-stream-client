@@ -49,7 +49,7 @@ typedef struct vdi_config_s
     /* parsec options. */
     char *session;  /* session id for connection. */
     char *peer;     /* peer id for connection. */
-    Uint16 timeout; /* connection timeout in milliseconds. */
+    Uint32 timeout; /* connection timeout in milliseconds. */
     Uint16 speed;   /* mouse wheel sensitivity. (0 - 255) */
     Uint16 width;   /* screen width in pixel. (host resolution is used if not specified) */
     Uint16 height;  /* screen height in pixel. (host resolution is used if not specified) */
