@@ -334,6 +334,15 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
+    /* configure upnp before parsec init consumes the network configuration. */
+    if (vdi_config->upnp == 1) {
+        network_cfg.upnp = 1;
+    }
+    if (vdi_config->upnp == 0) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable UPnP\n");
+        network_cfg.upnp = 0;
+    }
+
     /* parsec init. */
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Parsec\n");
 #ifdef HAVE_LIBPARSEC
@@ -390,15 +399,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
         cfg.video[DEFAULT_STREAM].decoderIndex = 0;
-    }
-
-    /* configure upnp. */
-    if (vdi_config->upnp == 1) {
-        network_cfg.upnp = 1;
-    }
-    if (vdi_config->upnp == 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable UPnP\n");
-        network_cfg.upnp = 0;
     }
 
     /* check if reconnect should be disabled. */
