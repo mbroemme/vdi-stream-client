@@ -126,6 +126,7 @@ main(int argc, char **argv)
     /* temp variables for command line parser. */
     Uint32 device;
     Sint32 type;
+    char *redirect_list;
     char *redirect;
     char *item;
     char *delim;
@@ -263,14 +264,14 @@ main(int argc, char **argv)
         /* parsec options. */
         case OPTION_SESSION:
             free(vdi_config->session);
-            vdi_config->session = strdup(argv[optind - 1]);
+            vdi_config->session = strdup(optarg);
             if (vdi_config->session == NULL) {
                 goto error;
             }
             continue;
         case OPTION_PEER:
             free(vdi_config->peer);
-            vdi_config->peer = strdup(argv[optind - 1]);
+            vdi_config->peer = strdup(optarg);
             if (vdi_config->peer == NULL) {
                 goto error;
             }
@@ -393,7 +394,8 @@ main(int argc, char **argv)
 
             /* loop through multiple redirect configs. */
             device = vdi_config->usb_count;
-            while ((redirect = strsep(&argv[optind - 1], ",")) != NULL) {
+            redirect_list = optarg;
+            while ((redirect = strsep(&redirect_list, ",")) != NULL) {
 
                 /* check if number of usb redirects are out of range. */
                 if (device >= USB_MAX) {
