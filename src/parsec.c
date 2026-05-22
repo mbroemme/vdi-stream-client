@@ -41,6 +41,27 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#ifdef HAVE_LIBPARSEC
+static ParsecStatus
+vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecConfig *network_cfg)
+{
+    return ParsecInit(PARSEC_VER, network_cfg, NULL, &parsec_context->parsec);
+}
+#else
+static ParsecStatus
+vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecConfig *network_cfg)
+{
+    ParsecStatus e = ParsecInit(network_cfg, NULL, "libparsec.so", &parsec_context->parsec);
+
+    /* The vendored DSO wrapper can return PARSEC_OK even if the loaded SDK
+     * initialization failed. Treat a missing inner context as init failure. */
+    if (e == PARSEC_OK && (parsec_context->parsec == NULL || parsec_context->parsec->ps == NULL)) {
+        e = ERR_DEFAULT;
+    }
+    return e;
+}
+#endif
+
 /* parsec clipboard event. */
 static void
 vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key)
@@ -345,11 +366,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
     /* parsec init. */
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Parsec\n");
-#ifdef HAVE_LIBPARSEC
-    e = ParsecInit(PARSEC_VER, &network_cfg, NULL, &parsec_context.parsec);
-#else
-    e = ParsecInit(NULL, &network_cfg, "libparsec.so", &parsec_context.parsec);
-#endif
+    e = vdi_stream_client__parsec_init(&parsec_context, &network_cfg);
     if (e != PARSEC_OK) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed with code: %d\n", e);
         goto error;
