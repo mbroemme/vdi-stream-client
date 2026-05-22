@@ -82,9 +82,14 @@ vdi_stream_client__audio_thread(void *opaque)
 
         /* poll audio only if connected. */
         if (vdi_stream_client__context_connected(parsec_context)) {
-            ParsecClientPollAudio(
-                parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context
-            );
+            vdi_stream_client__context_set_audio_polling(parsec_context, true);
+            if (vdi_stream_client__context_connected(parsec_context) &&
+                !vdi_stream_client__context_done(parsec_context)) {
+                ParsecClientPollAudio(
+                    parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context
+                );
+            }
+            vdi_stream_client__context_set_audio_polling(parsec_context, false);
         }
 
         /* delay loop if in reconnect state. */

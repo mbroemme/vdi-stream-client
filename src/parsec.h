@@ -100,6 +100,7 @@ struct parsec_context_s
     /* audio. */
     SDL_AudioStream *audio;
     atomic_bool playing;
+    atomic_bool audio_polling;
     Uint32 min_buffer;
     Uint32 max_buffer;
 
@@ -156,6 +157,20 @@ static inline void
 vdi_stream_client__context_set_playing(struct parsec_context_s *parsec_context, bool playing)
 {
     atomic_store_explicit(&parsec_context->playing, playing, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_audio_polling(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->audio_polling, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_audio_polling(
+    struct parsec_context_s *parsec_context, bool audio_polling
+)
+{
+    atomic_store_explicit(&parsec_context->audio_polling, audio_polling, memory_order_release);
 }
 
 /* usb redirect. */

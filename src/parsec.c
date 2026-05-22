@@ -64,10 +64,16 @@ vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecCo
 
 static ParsecStatus
 vdi_stream_client__parsec_reconnect(
-    struct parsec_context_s *parsec_context, ParsecClientConfig *cfg, struct vdi_config_s *vdi_config
+    struct parsec_context_s *parsec_context, ParsecClientConfig *cfg,
+    struct vdi_config_s *vdi_config
 )
 {
     ParsecStatus e;
+
+    vdi_stream_client__context_set_connection(parsec_context, false);
+    while (vdi_stream_client__context_audio_polling(parsec_context)) {
+        SDL_Delay(1);
+    }
 
     ParsecClientDisconnect(parsec_context->parsec);
     e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
@@ -911,7 +917,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
             force_redraw = true;
             e = vdi_stream_client__parsec_reconnect(&parsec_context, &cfg, vdi_config);
-            vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
 
@@ -931,7 +936,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
             force_redraw = true;
             e = vdi_stream_client__parsec_reconnect(&parsec_context, &cfg, vdi_config);
-            vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
 
