@@ -554,7 +554,7 @@ vdi_stream_client__show_connection_overlay(
     *force_redraw = true;
 }
 
-static ParsecStatus
+static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
     ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw
@@ -590,8 +590,6 @@ vdi_stream_client__handle_connection_status(
         e == PARSEC_OK && !vdi_stream_client__context_connected(parsec_context)) {
         vdi_stream_client__context_set_connection(parsec_context, true);
     }
-
-    return e;
 }
 
 /* parsec event loop. */
@@ -939,7 +937,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
          * redundant presents of the last video frame. */
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
-        e = vdi_stream_client__handle_connection_status(
+        vdi_stream_client__handle_connection_status(
             &parsec_context, vdi_config, &cfg, &last_time, &force_redraw
         );
 
