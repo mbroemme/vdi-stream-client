@@ -62,6 +62,21 @@ vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecCo
 }
 #endif
 
+static ParsecStatus
+vdi_stream_client__parsec_reconnect(
+    struct parsec_context_s *parsec_context, ParsecClientConfig *cfg, struct vdi_config_s *vdi_config
+)
+{
+    ParsecStatus e;
+
+    ParsecClientDisconnect(parsec_context->parsec);
+    e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
+    if (e != PARSEC_OK) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Reconnect failed with code: %d\n", e);
+    }
+    return e;
+}
+
 /* parsec clipboard event. */
 static void
 vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key)
@@ -895,8 +910,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* render reconnect text. */
             vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
             force_redraw = true;
-            ParsecClientDisconnect(parsec_context.parsec);
-            ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+            e = vdi_stream_client__parsec_reconnect(&parsec_context, &cfg, vdi_config);
             vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
@@ -916,8 +930,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             /* render reconnect text. */
             vdi_stream_client__render_text(&parsec_context, "Reconnecting...");
             force_redraw = true;
-            ParsecClientDisconnect(parsec_context.parsec);
-            ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+            e = vdi_stream_client__parsec_reconnect(&parsec_context, &cfg, vdi_config);
             vdi_stream_client__context_set_connection(&parsec_context, false);
             last_time = SDL_GetTicks();
         }
