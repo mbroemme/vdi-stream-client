@@ -271,7 +271,10 @@ vdi_stream_client__network_thread(void *opaque)
             /* find device to open. */
             count = 0;
             while ((device = devices[count++]) != NULL) {
-                libusb_get_device_descriptor(device, &desc);
+                error = libusb_get_device_descriptor(device, &desc);
+                if (error != 0) {
+                    continue;
+                }
                 if (desc.idVendor == redirect_context->usb_device.vendor &&
                     desc.idProduct == redirect_context->usb_device.product) {
                     break;
