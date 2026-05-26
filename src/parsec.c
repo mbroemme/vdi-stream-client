@@ -71,6 +71,8 @@ vdi_stream_client__parsec_reconnect(
     ParsecStatus e;
 
     vdi_stream_client__context_set_connection(parsec_context, false);
+    parsec_context->requested_width = 0;
+    parsec_context->requested_height = 0;
     while (vdi_stream_client__context_audio_polling(parsec_context)) {
         SDL_Delay(1);
     }
@@ -519,7 +521,7 @@ vdi_stream_client__handle_sdl_event(
         pmsg.mouseWheel.y = msg->wheel.y * vdi_config->speed;
         break;
     case SDL_EVENT_CLIPBOARD_UPDATE:
-        if (vdi_config->clipboard == 1) {
+        if (vdi_config->clipboard == 1 && vdi_stream_client__context_connected(parsec_context)) {
             char *clipboard = SDL_GetClipboardText();
 
             if (clipboard != NULL) {
@@ -540,7 +542,7 @@ vdi_stream_client__handle_sdl_event(
         break;
     }
 
-    if (pmsg.type != 0) {
+    if (pmsg.type != 0 && vdi_stream_client__context_connected(parsec_context)) {
         ParsecClientSendMessage(parsec_context->parsec, &pmsg);
     }
 }

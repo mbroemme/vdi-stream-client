@@ -174,16 +174,21 @@ static bool
 vdi_stream_client__frame_video(void *opaque, bool force_redraw)
 {
     struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    ParsecStatus e;
     SDL_FRect src;
 
     if (parsec_context->requested_width != parsec_context->window_width ||
         parsec_context->requested_height != parsec_context->window_height) {
-        ParsecClientSetDimensions(
+        e = ParsecClientSetDimensions(
             parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width,
             parsec_context->window_height, 1
         );
-        parsec_context->requested_width = parsec_context->window_width;
-        parsec_context->requested_height = parsec_context->window_height;
+        if (e != PARSEC_OK) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Set dimensions failed with code: %d\n", e);
+        } else {
+            parsec_context->requested_width = parsec_context->window_width;
+            parsec_context->requested_height = parsec_context->window_height;
+        }
     }
 
     parsec_context->frame_video_updated = false;
