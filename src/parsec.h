@@ -29,6 +29,7 @@
 #endif
 
 /* system includes. */
+#include <stdatomic.h>
 #include <stdbool.h>
 
 /* parsec includes. */
@@ -61,11 +62,14 @@ struct parsec_context_s
 {
 
     /* parsec. */
-    bool done;
-    bool connection;
+    atomic_bool done;
+    atomic_bool connection;
     bool decoder;
     bool focus;
+    bool hidden;
+    bool hidden_drag;
     bool relative;
+    bool cursor_grab;
     bool pressed;
 #ifdef HAVE_LIBPARSEC
     Parsec *parsec;
@@ -95,7 +99,8 @@ struct parsec_context_s
 
     /* audio. */
     SDL_AudioStream *audio;
-    bool playing;
+    atomic_bool playing;
+    atomic_bool audio_polling;
     Uint32 min_buffer;
     Uint32 max_buffer;
 
@@ -117,6 +122,56 @@ struct parsec_context_s
     Uint64 stats_idle_waits;
     Uint64 stats_idle_wait_ms;
 };
+
+static inline bool
+vdi_stream_client__context_done(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->done, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_done(struct parsec_context_s *parsec_context, bool done)
+{
+    atomic_store_explicit(&parsec_context->done, done, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_connected(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->connection, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_connection(struct parsec_context_s *parsec_context, bool connection)
+{
+    atomic_store_explicit(&parsec_context->connection, connection, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_playing(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->playing, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_playing(struct parsec_context_s *parsec_context, bool playing)
+{
+    atomic_store_explicit(&parsec_context->playing, playing, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_audio_polling(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->audio_polling, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_audio_polling(
+    struct parsec_context_s *parsec_context, bool audio_polling
+)
+{
+    atomic_store_explicit(&parsec_context->audio_polling, audio_polling, memory_order_release);
+}
 
 /* usb redirect. */
 struct redirect_context_s

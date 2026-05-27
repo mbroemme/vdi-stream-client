@@ -119,6 +119,8 @@ jobs:
 
           printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
           gpg --batch --list-secret-keys --keyid-format LONG
+          key_fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ { print $10; exit }')"
+          gpg --batch --armor --export "${key_fingerprint}" > dist/vdi-stream-client-release-signing-key.asc
           gpg --batch --yes --pinentry-mode loopback \
             --passphrase "${GPG_PASSPHRASE}" \
             --detach-sig --armor dist/SHA256SUMS
@@ -150,6 +152,7 @@ jobs:
               "dist/vdi-stream-client-${version}.tar.bz2" \
               dist/SHA256SUMS \
               dist/SHA256SUMS.asc \
+              dist/vdi-stream-client-release-signing-key.asc \
               --clobber
           else
             gh release create "${tag}" \
@@ -157,6 +160,7 @@ jobs:
               "dist/vdi-stream-client-${version}.tar.bz2" \
               dist/SHA256SUMS \
               dist/SHA256SUMS.asc \
+              dist/vdi-stream-client-release-signing-key.asc \
               --verify-tag \
               --title "${tag}" \
               --notes-from-tag
