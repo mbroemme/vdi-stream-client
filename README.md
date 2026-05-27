@@ -1,12 +1,12 @@
 # VDI Stream Client
 
 [![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
-[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg?style=flat)](https://github.com/mbroemme/vdi-stream-client/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client.svg?style=flat)](https://github.com/mbroemme/vdi-stream-client/stargazers)
-[![GitHub license](https://img.shields.io/github/license/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/blob/main/LICENSE)
-[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/issues)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![License: GPL-3.0 + exception](https://img.shields.io/badge/license-GPL--3.0%20%2B%20exception-orange.svg)](LICENSE)
+[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
 
 A very tiny and low latency desktop streaming client for remote Windows guests
 with GPU passthrough which supports [Nvidia NVENC](https://en.wikipedia.org/wiki/Nvidia_NVENC),
