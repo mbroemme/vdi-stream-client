@@ -20,8 +20,8 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
-#ifndef _REDIRECT_H
-#define _REDIRECT_H
+#ifndef VDI_STREAM_CLIENT_REDIRECT_H
+#define VDI_STREAM_CLIENT_REDIRECT_H
 
 /* sdl includes. */
 #include <SDL3/SDL.h>
@@ -29,4 +29,4 @@
 /* usb redirection thread. */
 Sint32 vdi_stream_client__network_thread(void *opaque);
 
-#endif /* _REDIRECT_H */
+#endif /* VDI_STREAM_CLIENT_REDIRECT_H */

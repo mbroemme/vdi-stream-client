@@ -20,209 +20,261 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
+/* configuration includes. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 /* internal includes. */
 #include "client.h"
 #include "parsec.h"
 
 /* system includes. */
 #include <limits.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
-static bool vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel_format) {
-	switch (format) {
-		case FORMAT_NV12:
-			*pixel_format = SDL_PIXELFORMAT_NV12;
-			return true;
-		case FORMAT_I420:
-			*pixel_format = SDL_PIXELFORMAT_IYUV;
-			return true;
-		case FORMAT_BGRA:
-			*pixel_format = SDL_PIXELFORMAT_BGRA32;
-			return true;
-		case FORMAT_RGBA:
-			*pixel_format = SDL_PIXELFORMAT_RGBA32;
-			return true;
-		default:
-			return false;
-	}
+static bool
+vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel_format)
+{
+    switch (format) {
+    case FORMAT_NV12:
+        *pixel_format = SDL_PIXELFORMAT_NV12;
+        return true;
+    case FORMAT_I420:
+        *pixel_format = SDL_PIXELFORMAT_IYUV;
+        return true;
+    case FORMAT_BGRA:
+        *pixel_format = SDL_PIXELFORMAT_BGRA32;
+        return true;
+    case FORMAT_RGBA:
+        *pixel_format = SDL_PIXELFORMAT_RGBA32;
+        return true;
+    default:
+        return false;
+    }
 }
 
-static bool vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame) {
-	SDL_PixelFormat pixel_format;
+static bool
+vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame)
+{
+    SDL_PixelFormat pixel_format;
 
-	if (!vdi_stream_client__video_format(frame->format, &pixel_format)) {
-		vdi_stream_client__log_error("Unsupported video format: %d\n", frame->format);
-		return false;
-	}
+    if (!vdi_stream_client__video_format(frame->format, &pixel_format)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unsupported video format: %d\n", frame->format);
+        return false;
+    }
 
-	if (parsec_context->texture_video != NULL &&
-	    parsec_context->texture_width == (Sint32) frame->fullWidth &&
-	    parsec_context->texture_height == (Sint32) frame->fullHeight &&
-	    parsec_context->format_video == frame->format) {
-		return true;
-	}
+    if (parsec_context->texture_video != NULL &&
+        parsec_context->texture_width == (Sint32)frame->fullWidth &&
+        parsec_context->texture_height == (Sint32)frame->fullHeight &&
+        parsec_context->format_video == frame->format) {
+        return true;
+    }
 
-	SDL_DestroyTexture(parsec_context->texture_video);
-	parsec_context->texture_video = SDL_CreateTexture(parsec_context->renderer,
-		pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth, frame->fullHeight);
-	if (parsec_context->texture_video == NULL) {
-		vdi_stream_client__log_error("Video texture creation failed: %s\n", SDL_GetError());
-		return false;
-	}
+    SDL_DestroyTexture(parsec_context->texture_video);
+    parsec_context->texture_video = SDL_CreateTexture(
+        parsec_context->renderer, pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth,
+        frame->fullHeight
+    );
+    if (parsec_context->texture_video == NULL) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Video texture creation failed: %s\n", SDL_GetError()
+        );
+        return false;
+    }
 
-	parsec_context->texture_width = frame->fullWidth;
-	parsec_context->texture_height = frame->fullHeight;
-	parsec_context->format_video = frame->format;
-	return true;
+    parsec_context->texture_width = frame->fullWidth;
+    parsec_context->texture_height = frame->fullHeight;
+    parsec_context->format_video = frame->format;
+    return true;
 }
 
-static void vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	const Uint8 *pixels = (const Uint8 *) image;
+static void
+vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque)
+{
+    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    const Uint8 *pixels = (const Uint8 *)image;
 
-	if (!vdi_stream_client__video_texture(parsec_context, frame)) {
-		return;
-	}
+    if (!vdi_stream_client__video_texture(parsec_context, frame)) {
+        return;
+    }
 
-	switch (frame->format) {
-		case FORMAT_NV12:
-			if (!SDL_UpdateNVTexture(parsec_context->texture_video, NULL,
-			    pixels, frame->fullWidth,
-			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth)) {
-				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
-				return;
-			}
-			break;
-		case FORMAT_I420:
-			if (!SDL_UpdateYUVTexture(parsec_context->texture_video, NULL,
-			    pixels, frame->fullWidth,
-			    pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
-			    pixels + frame->fullWidth * frame->fullHeight + (frame->fullWidth / 2) * (frame->fullHeight / 2), frame->fullWidth / 2)) {
-				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
-				return;
-			}
-			break;
-		case FORMAT_BGRA:
-		case FORMAT_RGBA:
-			if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
-				vdi_stream_client__log_error("Video texture update failed: %s\n", SDL_GetError());
-				return;
-			}
-			break;
-		default:
-			return;
-	}
+    switch (frame->format) {
+    case FORMAT_NV12:
+        if (!SDL_UpdateNVTexture(
+                parsec_context->texture_video, NULL, pixels, frame->fullWidth,
+                pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth
+            )) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
+            );
+            return;
+        }
+        break;
+    case FORMAT_I420:
+        if (!SDL_UpdateYUVTexture(
+                parsec_context->texture_video, NULL, pixels, frame->fullWidth,
+                pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
+                pixels + frame->fullWidth * frame->fullHeight +
+                    (frame->fullWidth / 2) * (frame->fullHeight / 2),
+                frame->fullWidth / 2
+            )) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
+            );
+            return;
+        }
+        break;
+    case FORMAT_BGRA:
+    case FORMAT_RGBA:
+        if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
+            );
+            return;
+        }
+        break;
+    default:
+        return;
+    }
 
-	if (parsec_context->stats_enabled) {
-		parsec_context->stats_frames++;
-		parsec_context->stats_last_frame_tick = SDL_GetTicks();
-	}
-	parsec_context->frame_video_updated = true;
+    if (parsec_context->stats_enabled) {
+        parsec_context->stats_frames++;
+        parsec_context->stats_last_frame_tick = SDL_GetTicks();
+    }
+    parsec_context->frame_video_updated = true;
 }
 
 /* sdl frame text event. */
-static void vdi_stream_client__frame_text(void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	SDL_FRect dst;
+static void
+vdi_stream_client__frame_text(void *opaque)
+{
+    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    SDL_FRect dst;
 
-	if (parsec_context->texture_ttf == NULL || parsec_context->surface_ttf == NULL) {
-		return;
-	}
+    if (parsec_context->texture_ttf == NULL || parsec_context->surface_ttf == NULL) {
+        return;
+    }
 
-	/* calculate position and size to center of window. */
-	dst.x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2.0f;
-	dst.y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2.0f;
-	dst.w = parsec_context->surface_ttf->w;
-	dst.h = parsec_context->surface_ttf->h;
+    /* calculate position and size to center of window. */
+    dst.x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2.0f;
+    dst.y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2.0f;
+    dst.w = parsec_context->surface_ttf->w;
+    dst.h = parsec_context->surface_ttf->h;
 
-	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
-	SDL_RenderClear(parsec_context->renderer);
-	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_ttf, NULL, &dst);
+    SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
+    SDL_RenderClear(parsec_context->renderer);
+    SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_ttf, NULL, &dst);
 }
 
 /* sdl frame video event. */
-static bool vdi_stream_client__frame_video(void *opaque, bool force_redraw) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	SDL_FRect src;
+static bool
+vdi_stream_client__frame_video(void *opaque, bool force_redraw)
+{
+    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    ParsecStatus e;
+    SDL_FRect src;
 
-	if (parsec_context->requested_width != parsec_context->window_width ||
-	    parsec_context->requested_height != parsec_context->window_height) {
-		ParsecClientSetDimensions(parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width, parsec_context->window_height, 1);
-		parsec_context->requested_width = parsec_context->window_width;
-		parsec_context->requested_height = parsec_context->window_height;
-	}
+    if (parsec_context->requested_width != parsec_context->window_width ||
+        parsec_context->requested_height != parsec_context->window_height) {
+        e = ParsecClientSetDimensions(
+            parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width,
+            parsec_context->window_height, 1
+        );
+        if (e != PARSEC_OK) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Set dimensions failed with code: %d\n", e);
+        } else {
+            parsec_context->requested_width = parsec_context->window_width;
+            parsec_context->requested_height = parsec_context->window_height;
+        }
+    }
 
-	parsec_context->frame_video_updated = false;
-	ParsecClientPollFrame(parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update, parsec_context->render_timeout, parsec_context);
+    parsec_context->frame_video_updated = false;
+    ParsecClientPollFrame(
+        parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update,
+        parsec_context->render_timeout, parsec_context
+    );
 
-	if (!force_redraw && !parsec_context->frame_video_updated) {
-		return false;
-	}
+    if (!force_redraw && !parsec_context->frame_video_updated) {
+        return false;
+    }
 
-	SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
-	SDL_RenderClear(parsec_context->renderer);
+    SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
+    SDL_RenderClear(parsec_context->renderer);
 
-	if (parsec_context->texture_video == NULL) {
-		return force_redraw;
-	}
+    if (parsec_context->texture_video == NULL) {
+        return force_redraw;
+    }
 
-	src.x = 0.0f;
-	src.y = 0.0f;
-	src.w = parsec_context->window_width;
-	src.h = parsec_context->window_height;
-	SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_video, &src, NULL);
-	return true;
+    src.x = 0.0f;
+    src.y = 0.0f;
+    src.w = parsec_context->window_width;
+    src.h = parsec_context->window_height;
+    SDL_RenderTexture(parsec_context->renderer, parsec_context->texture_video, &src, NULL);
+    return true;
 }
 
 /* initialize video rendering on the main thread. */
-void vdi_stream_client__video_init(struct parsec_context_s *parsec_context) {
-	if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
-		vdi_stream_client__log_error("SDL_SetRenderVSync failed: %s\n", SDL_GetError());
-	}
+void
+vdi_stream_client__video_init(struct parsec_context_s *parsec_context)
+{
+    if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "SDL_SetRenderVSync failed: %s\n", SDL_GetError()
+        );
+    }
 }
 
 /* render a single frame on the main thread. */
-bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw) {
+bool
+vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw)
+{
 
-	/* show parsec frame. */
-	if (parsec_context->connection) {
-		if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
-			return false;
-		}
-		if (!SDL_RenderPresent(parsec_context->renderer)) {
-			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
-		} else if (parsec_context->stats_enabled) {
-			parsec_context->stats_presents++;
-		}
-		return true;
-	}
+    /* show parsec frame. */
+    if (vdi_stream_client__context_connected(parsec_context)) {
+        if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
+            return false;
+        }
+        if (!SDL_RenderPresent(parsec_context->renderer)) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "SDL_RenderPresent failed: %s\n", SDL_GetError()
+            );
+        } else if (parsec_context->stats_enabled) {
+            parsec_context->stats_presents++;
+        }
+        return true;
+    }
 
-	/* show reconnecting/shutdown text if available. */
-	if (parsec_context->surface_ttf != NULL &&
-	    (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
-		vdi_stream_client__frame_text(parsec_context);
-		if (!SDL_RenderPresent(parsec_context->renderer)) {
-			vdi_stream_client__log_error("SDL_RenderPresent failed: %s\n", SDL_GetError());
-		} else if (parsec_context->stats_enabled) {
-			parsec_context->stats_presents++;
-		}
-		parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
-		return true;
-	}
+    /* show reconnecting/shutdown text if available. */
+    if (parsec_context->surface_ttf != NULL &&
+        (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
+        vdi_stream_client__frame_text(parsec_context);
+        if (!SDL_RenderPresent(parsec_context->renderer)) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "SDL_RenderPresent failed: %s\n", SDL_GetError()
+            );
+        } else if (parsec_context->stats_enabled) {
+            parsec_context->stats_presents++;
+        }
+        parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
+        return true;
+    }
 
-	return false;
+    return false;
 }
 
 /* release video resources on the main thread. */
-void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context) {
-	SDL_DestroyTexture(parsec_context->texture_ttf);
-	parsec_context->texture_ttf = NULL;
+void
+vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context)
+{
+    SDL_DestroyTexture(parsec_context->texture_ttf);
+    parsec_context->texture_ttf = NULL;
 
-	SDL_DestroyTexture(parsec_context->texture_video);
-	parsec_context->texture_video = NULL;
+    SDL_DestroyTexture(parsec_context->texture_video);
+    parsec_context->texture_video = NULL;
 
-	SDL_DestroyRenderer(parsec_context->renderer);
-	parsec_context->renderer = NULL;
+    SDL_DestroyRenderer(parsec_context->renderer);
+    parsec_context->renderer = NULL;
 }

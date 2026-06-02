@@ -20,68 +20,90 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
+/* configuration includes. */
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 /* internal includes. */
 #include "client.h"
 #include "parsec.h"
 
 /* system includes. */
 #include <limits.h>
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 /* parsec audio event. */
-static void vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
-	int size = SDL_GetAudioStreamQueued(parsec_context->audio);
-	Uint32 queued_frames;
-	Uint32 queued_packets;
+static void
+vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
+{
+    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    int size = SDL_GetAudioStreamQueued(parsec_context->audio);
+    Uint32 queued_frames;
+    Uint32 queued_packets;
 
-	if (size < 0) {
-		vdi_stream_client__log_error("Failed to query queued audio: %s\n", SDL_GetError());
-		return;
-	}
+    if (size < 0) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Failed to query queued audio: %s\n", SDL_GetError()
+        );
+        return;
+    }
 
-	queued_frames = (Uint32) size / (PARSEC_AUDIO_CHANNELS * sizeof(Sint16));
-	queued_packets = queued_frames / PARSEC_AUDIO_FRAMES_PER_PACKET;
+    queued_frames = (Uint32)size / (PARSEC_AUDIO_CHANNELS * sizeof(Sint16));
+    queued_packets = queued_frames / PARSEC_AUDIO_FRAMES_PER_PACKET;
 
-	if (parsec_context->playing && queued_packets > parsec_context->max_buffer) {
-		SDL_ClearAudioStream(parsec_context->audio);
-		SDL_PauseAudioStreamDevice(parsec_context->audio);
-		parsec_context->playing = false;
-	} else if (!parsec_context->playing && queued_packets >= parsec_context->min_buffer) {
-		SDL_ResumeAudioStreamDevice(parsec_context->audio);
-		parsec_context->playing = true;
-	}
+    if (vdi_stream_client__context_playing(parsec_context) &&
+        queued_packets > parsec_context->max_buffer) {
+        SDL_ClearAudioStream(parsec_context->audio);
+        SDL_PauseAudioStreamDevice(parsec_context->audio);
+        vdi_stream_client__context_set_playing(parsec_context, false);
+    } else if (!vdi_stream_client__context_playing(parsec_context) &&
+               queued_packets >= parsec_context->min_buffer) {
+        SDL_ResumeAudioStreamDevice(parsec_context->audio);
+        vdi_stream_client__context_set_playing(parsec_context, true);
+    }
 
-	if (!SDL_PutAudioStreamData(parsec_context->audio, pcm, frames * PARSEC_AUDIO_CHANNELS * sizeof(Sint16))) {
-		vdi_stream_client__log_error("Failed to queue audio: %s\n", SDL_GetError());
-	}
+    if (!SDL_PutAudioStreamData(
+            parsec_context->audio, pcm, frames * PARSEC_AUDIO_CHANNELS * sizeof(Sint16)
+        )) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to queue audio: %s\n", SDL_GetError());
+    }
 }
 
 /* sdl audio thread. */
-Sint32 vdi_stream_client__audio_thread(void *opaque) {
-	struct parsec_context_s *parsec_context = (struct parsec_context_s *) opaque;
+Sint32
+vdi_stream_client__audio_thread(void *opaque)
+{
+    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
 
-	while (!parsec_context->done) {
+    while (!vdi_stream_client__context_done(parsec_context)) {
 
-		/* poll audio only if connected. */
-		if (parsec_context->connection) {
-			ParsecClientPollAudio(parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context);
-		}
+        /* poll audio only if connected. */
+        if (vdi_stream_client__context_connected(parsec_context)) {
+            vdi_stream_client__context_set_audio_polling(parsec_context, true);
+            if (vdi_stream_client__context_connected(parsec_context) &&
+                !vdi_stream_client__context_done(parsec_context)) {
+                ParsecClientPollAudio(
+                    parsec_context->parsec, vdi_stream_client__audio, 100, parsec_context
+                );
+            }
+            vdi_stream_client__context_set_audio_polling(parsec_context, false);
+        }
 
-		/* delay loop if in reconnect state. */
-		if (!parsec_context->connection) {
+        /* delay loop if in reconnect state. */
+        if (!vdi_stream_client__context_connected(parsec_context)) {
 
-			/* clear queue and pause audio device. */
-			if (parsec_context->playing) {
-				SDL_ClearAudioStream(parsec_context->audio);
-				SDL_PauseAudioStreamDevice(parsec_context->audio);
-				parsec_context->playing = false;
-			}
-			SDL_Delay(parsec_context->timeout);
-		}
-	}
+            /* clear queue and pause audio device. */
+            if (vdi_stream_client__context_playing(parsec_context)) {
+                SDL_ClearAudioStream(parsec_context->audio);
+                SDL_PauseAudioStreamDevice(parsec_context->audio);
+                vdi_stream_client__context_set_playing(parsec_context, false);
+            }
+            SDL_Delay(parsec_context->timeout);
+        }
+    }
 
-	return VDI_STREAM_CLIENT_SUCCESS;
+    return VDI_STREAM_CLIENT_SUCCESS;
 }

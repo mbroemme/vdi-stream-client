@@ -1,0 +1,167 @@
+# Copyright (c) 2026 Maik Broemme <mbroemme@libmpq.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    name: Build and publish release archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+    steps:
+      - name: Install release dependencies
+        run: |
+          set -euxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            coreutils \
+            gawk \
+            git \
+            gnupg \
+            gzip \
+            make \
+            tar
+
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Trust repository checkout
+        run: |
+          set -euxo pipefail
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          set -euxo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+
+          if [[ "${tag}" == "${version}" ]]; then
+            echo "Release tags must start with 'v' (for example: v0.2.0)." >&2
+            exit 1
+          fi
+
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "archive_base=vdi-stream-client-${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Generate configure-ready source tree
+        run: |
+          set -euxo pipefail
+          version="${{ steps.release.outputs.version }}"
+          archive_base="${{ steps.release.outputs.archive_base }}"
+
+          mkdir -p dist/build
+          git archive --format=tar --prefix="${archive_base}/" "${GITHUB_REF_NAME}" | \
+            tar -xf - -C dist/build
+
+          cd "dist/build/${archive_base}"
+          sh autogen.sh
+          rm -rf .git .github autom4te.cache
+
+      - name: Create release archives
+        run: |
+          set -euxo pipefail
+          archive_base="${{ steps.release.outputs.archive_base }}"
+
+          cd dist/build
+          tar czf "../${archive_base}.tar.gz" --owner=0 --group=0 "${archive_base}"
+          tar cjf "../${archive_base}.tar.bz2" --owner=0 --group=0 "${archive_base}"
+
+      - name: Create SHA256SUMS
+        run: |
+          set -euxo pipefail
+          cd dist
+          sha256sum \
+            "${{ steps.release.outputs.archive_base }}.tar.gz" \
+            "${{ steps.release.outputs.archive_base }}.tar.bz2" \
+            > SHA256SUMS
+
+      - name: Sign SHA256SUMS
+        if: env.GPG_PRIVATE_KEY != ''
+        run: |
+          set -euxo pipefail
+          export GNUPGHOME="$(mktemp -d)"
+          chmod 0700 "${GNUPGHOME}"
+
+          printf '%s\n' "${GPG_PRIVATE_KEY}" | gpg --batch --import
+          gpg --batch --list-secret-keys --keyid-format LONG
+          key_fingerprint="$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ { print $10; exit }')"
+          gpg --batch --armor --export "${key_fingerprint}" > dist/vdi-stream-client-release-signing-key.asc
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase "${GPG_PASSPHRASE}" \
+            --detach-sig --armor dist/SHA256SUMS
+          gpg --batch --verify dist/SHA256SUMS.asc dist/SHA256SUMS
+
+      - name: Refuse to publish unsigned checksums
+        if: env.GPG_PRIVATE_KEY == ''
+        run: |
+          echo 'GPG_PRIVATE_KEY is not configured. Refusing to publish unsigned release checksums.' >&2
+          echo 'Add GPG_PRIVATE_KEY and GPG_PASSPHRASE repository secrets, then rerun this workflow.' >&2
+          exit 1
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          tag="${{ steps.release.outputs.tag }}"
+          version="${{ steps.release.outputs.version }}"
+
+          if gh release view "${tag}" --json isDraft --jq .isDraft > release-draft.txt 2>/dev/null; then
+            if [[ "$(cat release-draft.txt)" == "true" ]]; then
+              echo "Release ${tag} already exists as a draft; publish or delete it before uploading assets." >&2
+              exit 1
+            fi
+
+            gh release upload "${tag}" \
+              "dist/vdi-stream-client-${version}.tar.gz" \
+              "dist/vdi-stream-client-${version}.tar.bz2" \
+              dist/SHA256SUMS \
+              dist/SHA256SUMS.asc \
+              dist/vdi-stream-client-release-signing-key.asc \
+              --clobber
+          else
+            gh release create "${tag}" \
+              "dist/vdi-stream-client-${version}.tar.gz" \
+              "dist/vdi-stream-client-${version}.tar.bz2" \
+              dist/SHA256SUMS \
+              dist/SHA256SUMS.asc \
+              dist/vdi-stream-client-release-signing-key.asc \
+              --verify-tag \
+              --title "${tag}" \
+              --notes-from-tag
+          fi

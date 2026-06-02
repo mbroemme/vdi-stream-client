@@ -20,8 +20,8 @@
  *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
  */
 
-#ifndef _AUDIO_H
-#define _AUDIO_H
+#ifndef VDI_STREAM_CLIENT_AUDIO_H
+#define VDI_STREAM_CLIENT_AUDIO_H
 
 /* sdl includes. */
 #include <SDL3/SDL.h>
@@ -29,4 +29,4 @@
 /* audio thread. */
 Sint32 vdi_stream_client__audio_thread(void *opaque);
 
-#endif /* _AUDIO_H */
+#endif /* VDI_STREAM_CLIENT_AUDIO_H */

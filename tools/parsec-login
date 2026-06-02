@@ -67,13 +67,13 @@ function parsec_login__version() {
 }
 
 # check if curl exist.
-[ -x "/bin/curl" ] || [ -x "/usr/bin/curl" ] || [ -x "/usr/local/bin/curl" ] || {
+GLOBAL__curl="$(command -v curl)" || {
 	printf "No curl found, please install it\n"
 	exit 1
 }
 
 # check if jq exist.
-[ -x "/bin/jq" ] || [ -x "/usr/bin/jq" ] || [ -x "/usr/local/bin/jq" ] || {
+GLOBAL__jq="$(command -v jq)" || {
 	printf "No jq found, please install it\n"
 	exit 1
 }
@@ -191,7 +191,7 @@ done
 
 # check if we need to ask for 2fa code.
 [ -z "${GLOBAL__tfa}" ] && {
-	[ "$(/bin/curl --max-time 5 --silent --fail --request POST --write-out '{ "session_id":"%{http_code}" }' --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" }' "${PARSEC_HOST}/v1/auth" | /bin/jq --raw-output '.session_id')" == "403" ] && {
+	[ "$("${GLOBAL__curl}" --max-time 5 --silent --fail --request POST --write-out '{ "session_id":"%{http_code}" }' --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" }' "${PARSEC_HOST}/v1/auth" | "${GLOBAL__jq}" --raw-output '.session_id')" == "403" ] && {
 
 		# ask for 2fa code.
 		read -r -p "2FA code: " GLOBAL__tfa
@@ -206,7 +206,7 @@ done
 printf "Retrieve Session ID: "
 
 # get session id.
-/bin/curl --max-time 5 --silent --fail --request POST --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" , "tfa": "'"${GLOBAL__tfa}"'" }' "${PARSEC_HOST}/v1/auth" | /bin/jq --raw-output '.session_id' | {
+"${GLOBAL__curl}" --max-time 5 --silent --fail --request POST --header 'Content-Type: application/json' --data-binary '{ "email": "'"${GLOBAL__username}"'" , "password": "'"${GLOBAL__password}"'" , "tfa": "'"${GLOBAL__tfa}"'" }' "${PARSEC_HOST}/v1/auth" | "${GLOBAL__jq}" --raw-output '.session_id' | {
 	while read LOCAL__line ; do
 		declare -g GLOBAL__session_id="${LOCAL__line}"
 	done
@@ -221,7 +221,7 @@ printf "Retrieve Session ID: "
 	printf "Retrieve Peer ID: "
 
 	# get peer ids.
-	/bin/curl --max-time 5 --silent --fail --request GET --header 'Content-Type: application/json' --header 'Authorization: Bearer '"${GLOBAL__session_id}"'' "${PARSEC_HOST}/v2/hosts?mode=desktop&public=false" | /bin/jq -r '.data[] | "\(.peer_id) (\(.name))"' | {
+	"${GLOBAL__curl}" --max-time 5 --silent --fail --request GET --header 'Content-Type: application/json' --header 'Authorization: Bearer '"${GLOBAL__session_id}"'' "${PARSEC_HOST}/v2/hosts?mode=desktop&public=false" | "${GLOBAL__jq}" -r '.data[] | "\(.peer_id) (\(.name))"' | {
 		while read LOCAL__line ; do
 
 			# store result.

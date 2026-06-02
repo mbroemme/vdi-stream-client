@@ -1,12 +1,12 @@
 # VDI Stream Client
 
 [![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
-[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/stargazers)
-[![GitHub license](https://img.shields.io/github/license/mbroemme/vdi-stream-client.svg)](https://github.com/mbroemme/vdi-stream-client/blob/main/LICENSE)
-[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total.svg)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/issues)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![License: GPL-3.0 + exception](https://img.shields.io/badge/license-GPL--3.0%20%2B%20exception-orange.svg)](LICENSE)
+[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
 
 A very tiny and low latency desktop streaming client for remote Windows guests
 with GPU passthrough which supports [Nvidia NVENC](https://en.wikipedia.org/wiki/Nvidia_NVENC),
@@ -69,6 +69,7 @@ Method                | Local | Remote | 3D
 [Virgil 3D](https://virgil3d.github.io/)             | Yes   | Yes    | Yes (Linux only)
 [SPICE Streaming Agent](https://gitlab.freedesktop.org/spice/spice-streaming-agent) | Yes   | Yes    | Yes (Linux only)
 [Moonlight](https://moonlight-stream.org/)             | Yes   | Yes    | Yes (Nvidia only)
+[Sunshine](https://app.lizardbyte.dev/Sunshine/)       | Yes   | Yes    | Yes
 [Parsec](https://parsec.app/)                | Yes   | Yes    | Yes
 
 So why another streaming client is needed if one for Windows, Linux and macOS
@@ -87,12 +88,12 @@ DirectX                 | Yes               | Yes
 SDL Renderer            | Yes               | No
 Resolution Sync         | Host-to-Client    | Client-to-Host
 Alt+Tab Integration     | Yes               | No
-Minimal GUI             | Yes               | No
+No GUI                  | Yes               | No
 System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
-[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK Bug](https://github.com/parsec-cloud/parsec-sdk/issues/36)           | Yes
+[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK limitation](https://github.com/mbroemme/parsec-sdk)                  | Yes
 
 # Requirements
 
@@ -181,10 +182,14 @@ enabled this uses FFmpeg software decoding.
 # Known Issues
 
 * Color mode 4:4:4 is not yet supported by the public SDK path used by this
-  client. There is an open bug at [Parsec SDK GitHub](https://github.com/parsec-cloud/parsec-sdk/issues/36).
+  client. This limitation was previously tracked in the original
+  `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
+  available after Parsec was acquired by Unity. The SDK files referenced by this
+  project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
   The FFmpeg H.265 decoder currently outputs I420 or NV12 frames for the SDL
-  renderer and does not add 4:4:4 support. In the official [Parsec](https://parsec.app/downloads)
-  client 4:4:4 works already with internal SDK callbacks.
+  renderer and does not add 4:4:4 support. In the official
+  [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
+  internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -209,12 +214,15 @@ applicable Parsec SDK terms allow you to do so.
 
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
-`libavcodec`, `libavutil` and the [Parsec SDK](https://github.com/parsec-cloud/parsec-sdk).
-FFmpeg is a mandatory dependency because the H.265 decoder is implemented in
-VDI Stream Client with `libavcodec` and `libavutil`. The build system will
-search the SDK first in the build directory and use DSO loading for
-`libparsec.so`. If not found, it will search in system-wide include and library
-directories and link against the system `libparsec.so`.
+and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+`parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
+acquired by Unity, so this project references the mirrored SDK repository
+instead. It also requires `libavcodec` and `libavutil`; FFmpeg is a mandatory
+dependency because the H.265 decoder is implemented in VDI Stream Client with
+those libraries. The build system will search the SDK first in the build
+directory and use DSO loading for `libparsec.so`. If not found, it will search
+in system-wide include and library directories and link against the system
+`libparsec.so`.
 
 The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
 both build modes from the VDI Stream Client side. It does not grant permission
@@ -241,7 +249,7 @@ For build and install use the commands below and if `--prefix=/usr` is used,
 the `make install` command must be run as root user.
 
 ```
-git clone https://github.com/parsec-cloud/parsec-sdk
+git clone https://github.com/mbroemme/parsec-sdk
 ./configure --prefix=/usr &&
 make &&
 make install
