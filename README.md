@@ -213,6 +213,48 @@ API to identify users to make secure connections. For convenience you can use
 hosts. This is one-time operation whenever you add Parsec host application to
 another Windows machine.
 
+## Environment Variables
+
+The command line switches are the stable public interface. The variables below
+are intended for advanced debugging and latency tuning of the FFmpeg based HEVC
+decoder path added in the commit series. Unless noted otherwise, boolean
+variables are enabled by any non-empty value except `0`, `false`, `FALSE`, `no`,
+or `NO`.
+
+### FFmpeg decoder selection and hardware acceleration
+
+Variable | Values | Default | Description
+---------|--------|---------|------------
+`VDI_STREAM_CLIENT_FFMPEG_HWACCEL` | `vaapi`, `auto`, `none`, `software`, `0`, `false`, `no` | `vaapi` | Controls whether the injected FFmpeg decoder tries VAAPI hardware decoding. `vaapi` and `auto` request VAAPI first and fall back to software decoding if VAAPI setup fails. `none`, `software`, `0`, `false`, or `no` force FFmpeg software decoding.
+`VDI_STREAM_CLIENT_VAAPI_DEVICE` | path such as `/dev/dri/renderD128` | empty | Selects the VAAPI render node/device passed to FFmpeg. If unset, FFmpeg/libva chooses the default VAAPI device.
+
+### FFmpeg latency and decode behavior
+
+Variable | Values | Default | Description
+---------|--------|---------|------------
+`VDI_STREAM_CLIENT_FFMPEG_THREADS` | integer `0`-`64` | `0` | Sets `AVCodecContext.thread_count`. `0` lets FFmpeg choose automatically. A fixed value such as `4` can be useful when comparing CPU usage and latency.
+`VDI_STREAM_CLIENT_FFMPEG_FRAME_THREADS` | boolean | disabled | Enables FFmpeg frame threading in addition to slice threading. This can improve throughput, but it may add buffered-frame latency and make interactive desktop input feel delayed.
+`VDI_STREAM_CLIENT_FFMPEG_LOW_DELAY` | boolean | enabled | Enables `AV_CODEC_FLAG_LOW_DELAY` for the injected FFmpeg decoder. Disable only for decoder compatibility testing.
+`VDI_STREAM_CLIENT_FFMPEG_DROP_NONREF` | boolean | disabled | Drops non-reference frames through FFmpeg when enabled. This is a latency emergency knob and can cause visible artifacts.
+
+### 4:4:4 output and renderer tuning
+
+Variable | Values | Default | Description
+---------|--------|---------|------------
+`VDI_STREAM_CLIENT_FFMPEG_444_OUTPUT` | `native`, `i444`, `rgba` | `native` with OpenGL, `rgba` when SDL renderer is forced | Selects how 4:4:4 FFmpeg frames are handed to the renderer. `native` keeps I444 or VAAPI-transferred VUYX-style frames and lets the OpenGL shader render them directly. `i444` forces planar I444 output. `rgba` converts to RGBA with libswscale before rendering.
+`VDI_STREAM_CLIENT_VIDEO_RENDERER` | `opengl`, `sdl` | `opengl` when built and available | Selects the video renderer. Set to `sdl` to force the legacy SDL texture renderer. Any non-empty value other than `sdl` requests OpenGL.
+`VDI_STREAM_CLIENT_DISABLE_OPENGL` | boolean | disabled | Disables the OpenGL renderer even when it was compiled in. This is equivalent to forcing the SDL renderer for troubleshooting.
+`VDI_STREAM_CLIENT_NO_VSYNC` | boolean-like; any non-empty value except `0` disables vsync | disabled | Disables SDL renderer vsync or the OpenGL swap interval. This can reduce visual latency, but may increase tearing.
+`VDI_STREAM_CLIENT_FRAME_DRAIN` | integer `0`-`8` | `1` | Drains additional already-queued video frames with zero timeout and presents only the newest one. Set to `0` to present every queued frame. Higher values can reduce visual latency at the cost of dropping more stale frames.
+
+### Asynchronous FFmpeg decode
+
+Variable | Values | Default | Description
+---------|--------|---------|------------
+`VDI_STREAM_CLIENT_FFMPEG_ASYNC` | boolean | enabled for 4:4:4, disabled otherwise | Moves FFmpeg decode, VAAPI transfer, and color conversion work to a decoder thread for 4:4:4 streams. This can reduce Parsec/input-loop backpressure, but may show artifacts if the queue limits are too aggressive.
+`VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_PACKETS` | integer `0`-`65535` | `512` | Maximum number of compressed packets kept in the async decoder queue. Lower values reduce queue latency but may drop data under load.
+`VDI_STREAM_CLIENT_FFMPEG_ASYNC_MAX_BYTES` | integer `0`-`536870912` | `67108864` | Maximum total compressed packet bytes kept in the async decoder queue. Lower values reduce buffering; higher values tolerate temporary decode stalls.
+
 ## USB Redirection
 
 If you are using [libvirt](https://libvirt.org/) for virtualization, you can
