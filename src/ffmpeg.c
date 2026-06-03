@@ -24,8 +24,6 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
@@ -301,7 +299,7 @@ vdi_stream_client__parsec_decoder_table(struct parsec_context_s *parsec_context)
 #endif
 
     for (offset = 0; offset + sizeof(pattern) + sizeof(displacement_raw) < scan_len; offset++) {
-        if (memcmp(func + offset, pattern, sizeof(pattern)) != 0) {
+        if (SDL_memcmp(func + offset, pattern, sizeof(pattern)) != 0) {
             continue;
         }
 
@@ -331,7 +329,7 @@ vdi_stream_client__parsec_decoder_lookup(
 #endif
 
     for (i = 0; i < count; i++) {
-        if (name != NULL && strncmp(decoders[i].name, name, sizeof(decoders[i].name)) != 0) {
+        if (name != NULL && SDL_strncmp(decoders[i].name, name, sizeof(decoders[i].name)) != 0) {
             continue;
         }
         if (h265 && !decoders[i].h265) {
@@ -511,7 +509,7 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
     av_frame_free(&ffmpeg->frame);
     avcodec_free_context(&ffmpeg->codec);
     av_buffer_unref(&ffmpeg->hw_device_ctx);
-    free(ffmpeg);
+    SDL_free(ffmpeg);
 }
 
 static Sint32
@@ -534,7 +532,7 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         return DECODE_ERR_INIT;
     }
 
-    ffmpeg = calloc(1, sizeof(*ffmpeg));
+    ffmpeg = SDL_calloc(1, sizeof(*ffmpeg));
     if (ffmpeg == NULL) {
         return DECODE_ERR_BUFFER;
     }
