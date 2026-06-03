@@ -44,8 +44,11 @@ Print the currently installed version on the standard output.
 Debug options:
 .TP 8
 .B  \-\-stats <\fIseconds\fP>
-Show render statistics every \fIseconds\fP seconds. It is disabled by
-default. See
+Show render statistics and video stream bandwidth every \fIseconds\fP
+seconds. It is disabled by default. With the FFmpeg H.265 decoder, video
+bandwidth is calculated from compressed video packets delivered during the
+current stats period. With SDK-owned decoders, the value is the SDK video
+stream bitrate average. See
 .BR "PERFORMANCE TIPS"
 for guidance on interpreting idle frame delivery and Parsec host-side
 FPS settings.

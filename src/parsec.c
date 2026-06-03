@@ -64,6 +64,16 @@ vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecCo
 }
 #endif
 
+static double
+vdi_stream_client__stats_mbps(Uint64 bytes, Uint64 elapsed_ms)
+{
+    if (elapsed_ms == 0) {
+        return 0.0;
+    }
+
+    return (double)bytes * 8.0 / ((double)elapsed_ms * 1000.0);
+}
+
 static ParsecStatus
 vdi_stream_client__parsec_reconnect(
     struct parsec_context_s *parsec_context, ParsecClientConfig *cfg,
@@ -109,6 +119,11 @@ static void
 vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
 {
     Uint64 now;
+    Uint64 period_start_ms;
+    Uint64 elapsed_ms;
+    Uint64 video_packet_bytes;
+    double video_mbps;
+    bool ffmpeg_decoder;
 
     if (!parsec_context->stats_enabled) {
         return;
@@ -128,20 +143,36 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         return;
     }
 
+    period_start_ms = parsec_context->stats_next_tick > parsec_context->stats_period_ms
+                          ? parsec_context->stats_next_tick - parsec_context->stats_period_ms
+                          : now;
+    elapsed_ms = now > period_start_ms ? now - period_start_ms : parsec_context->stats_period_ms;
+    video_packet_bytes = vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes();
+    ffmpeg_decoder =
+        SDL_strncmp(
+            parsec_context->client_status.decoder[DEFAULT_STREAM].name, "FFMPEG", DECODER_NAME_LEN
+        ) == 0;
+    if (ffmpeg_decoder) {
+        video_mbps = vdi_stream_client__stats_mbps(video_packet_bytes, elapsed_ms);
+    } else {
+        video_mbps = parsec_context->client_status.self.metrics[DEFAULT_STREAM].bitrate;
+    }
+
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
         "Render:\n"
         "  loop: loops=%llu, presents=%llu\n"
         "  events: sdl=%llu, parsec=%llu\n"
         "  frames: frames=%llu, age=%llums\n"
-        "  idle: waits=%llu, ms=%llu\n",
+        "  idle: waits=%llu, ms=%llu\n"
+        "  bandwidth: video=%.3fMbps\n",
         (unsigned long long)parsec_context->stats_loops,
         (unsigned long long)parsec_context->stats_presents,
         (unsigned long long)parsec_context->stats_sdl_events,
         (unsigned long long)parsec_context->stats_parsec_events,
         (unsigned long long)parsec_context->stats_frames, (unsigned long long)last_frame_age_ms,
         (unsigned long long)parsec_context->stats_idle_waits,
-        (unsigned long long)parsec_context->stats_idle_wait_ms
+        (unsigned long long)parsec_context->stats_idle_wait_ms, video_mbps
     );
 
     parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;

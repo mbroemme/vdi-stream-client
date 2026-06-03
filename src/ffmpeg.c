@@ -83,6 +83,8 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     Uint32 frame_slot;
 };
 
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_video_packet_bytes;
+
 static const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *
 vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, const void *image)
 {
@@ -260,6 +262,14 @@ vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const v
     av_frame_free(&slot->frame);
     slot->generation = 0;
     vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+}
+
+Uint64
+vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes(void)
+{
+    return (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_video_packet_bytes, (uint_fast64_t)0, memory_order_relaxed
+    );
 }
 
 static bool
@@ -915,6 +925,10 @@ vdi_stream_client__parsec_ffmpeg_decode(
     if (packet_data == NULL || packet_size == 0) {
         return DECODE_WRN_ACCEPTED;
     }
+    atomic_fetch_add_explicit(
+        &vdi_stream_client__parsec_ffmpeg_video_packet_bytes, (uint_fast64_t)packet_size,
+        memory_order_relaxed
+    );
 
     av_packet_unref(ffmpeg->packet);
     ffmpeg->packet->data = (Uint8 *)packet_data;

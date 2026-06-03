@@ -26,6 +26,7 @@ bool vdi_stream_client__parsec_ffmpeg_frame_update(
     SDL_Texture *texture, const ParsecFrame *frame, const void *image
 );
 void vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image);
+Uint64 vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes(void);
 
 bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
     struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration
