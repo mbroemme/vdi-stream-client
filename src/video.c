@@ -27,6 +27,7 @@
 
 /* internal includes. */
 #include "client.h"
+#include "ffmpeg.h"
 #include "parsec.h"
 
 /* system includes. */
@@ -36,9 +37,15 @@
 #include <unistd.h>
 
 static bool
-vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel_format)
+vdi_stream_client__video_format(
+    const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
+)
 {
-    switch (format) {
+    if (vdi_stream_client__parsec_ffmpeg_frame_texture_format(frame, image, pixel_format)) {
+        return true;
+    }
+
+    switch (frame->format) {
     case FORMAT_NV12:
         *pixel_format = SDL_PIXELFORMAT_NV12;
         return true;
@@ -57,11 +64,13 @@ vdi_stream_client__video_format(ParsecColorFormat format, SDL_PixelFormat *pixel
 }
 
 static bool
-vdi_stream_client__video_texture(struct parsec_context_s *parsec_context, const ParsecFrame *frame)
+vdi_stream_client__video_texture(
+    struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image
+)
 {
     SDL_PixelFormat pixel_format;
 
-    if (!vdi_stream_client__video_format(frame->format, &pixel_format)) {
+    if (!vdi_stream_client__video_format(frame, image, &pixel_format)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unsupported video format: %d\n", frame->format);
         return false;
     }
@@ -96,9 +105,17 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
 {
     struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
     const Uint8 *pixels = (const Uint8 *)image;
+    bool updated = false;
 
-    if (!vdi_stream_client__video_texture(parsec_context, frame)) {
-        return;
+    if (!vdi_stream_client__video_texture(parsec_context, frame, image)) {
+        goto done;
+    }
+
+    if (vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(frame, image)) {
+        updated = vdi_stream_client__parsec_ffmpeg_frame_update(
+            parsec_context->texture_video, frame, image
+        );
+        goto done;
     }
 
     switch (frame->format) {
@@ -110,8 +127,9 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
             );
-            return;
+            goto done;
         }
+        updated = true;
         break;
     case FORMAT_I420:
         if (!SDL_UpdateYUVTexture(
@@ -124,8 +142,9 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
             );
-            return;
+            goto done;
         }
+        updated = true;
         break;
     case FORMAT_BGRA:
     case FORMAT_RGBA:
@@ -133,18 +152,23 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
             );
-            return;
+            goto done;
         }
+        updated = true;
         break;
     default:
-        return;
+        goto done;
     }
 
-    if (parsec_context->stats_enabled) {
+done:
+    if (updated && parsec_context->stats_enabled) {
         parsec_context->stats_frames++;
         parsec_context->stats_last_frame_tick = SDL_GetTicks();
     }
-    parsec_context->frame_video_updated = true;
+    if (updated) {
+        parsec_context->frame_video_updated = true;
+    }
+    vdi_stream_client__parsec_ffmpeg_frame_release(frame, image);
 }
 
 /* sdl frame text event. */

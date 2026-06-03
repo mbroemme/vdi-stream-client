@@ -28,6 +28,7 @@
 /* internal includes. */
 #include "audio.h"
 #include "client.h"
+#include "ffmpeg.h"
 #include "parsec.h"
 #include "redirect.h"
 #include "video.h"
@@ -37,6 +38,7 @@
 
 /* system includes. */
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -557,9 +559,27 @@ vdi_stream_client__show_connection_overlay(
 }
 
 static void
+vdi_stream_client__use_h264_fallback(
+    ParsecClientConfig *cfg, Uint32 fallback_decoder_index, bool *hevc_attempt_active,
+    bool *h264_fallback_done
+)
+{
+    if (!*hevc_attempt_active || *h264_fallback_done) {
+        return;
+    }
+
+    cfg->video[DEFAULT_STREAM].decoderH265 = 0;
+    cfg->video[DEFAULT_STREAM].decoderCompatibility = 0;
+    cfg->video[DEFAULT_STREAM].decoderIndex = fallback_decoder_index;
+    *hevc_attempt_active = false;
+    *h264_fallback_done = true;
+}
+
+static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
-    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw
+    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw, Uint32 fallback_decoder_index,
+    bool *hevc_attempt_active, bool *h264_fallback_done
 )
 {
     ParsecStatus e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
@@ -572,6 +592,9 @@ vdi_stream_client__handle_connection_status(
     if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
         SDL_GetTicks() > *last_time + vdi_config->timeout) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
+        vdi_stream_client__use_h264_fallback(
+            cfg, fallback_decoder_index, hevc_attempt_active, h264_fallback_done
+        );
         e = vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
         *last_time = SDL_GetTicks();
     }
@@ -608,6 +631,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     ParsecStatus e;
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
+    Uint32 fallback_decoder_index = 1;
+    bool hevc_attempt_active = false;
+    bool h264_fallback_done = false;
     Uint32 device;
     SDL_Thread *audio_thread = NULL;
     SDL_Thread *network_thread[USB_MAX] = { 0 };
@@ -706,6 +732,31 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
         cfg.video[DEFAULT_STREAM].decoderIndex = 0;
     }
+    fallback_decoder_index = cfg.video[DEFAULT_STREAM].decoderIndex;
+
+    /* Configure client-side FFmpeg for H.265. The public Linux SDK exposes a
+     * hidden FFmpeg decoder entry; replace that entry with the client decoder so
+     * HEVC can be decoded through FFmpeg VAAPI or software. */
+    if (vdi_config->hevc == 1) {
+        Uint32 ffmpeg_decoder_index = UINT32_MAX;
+
+        if (vdi_stream_client__parsec_ffmpeg_decoder_enable(
+                &parsec_context, &ffmpeg_decoder_index, vdi_config->acceleration == 1
+            )) {
+            cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
+            cfg.video[DEFAULT_STREAM].decoderH265 = 1;
+            hevc_attempt_active = true;
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg Video Decoder for H.265 (HEVC)\n"
+            );
+        } else {
+            cfg.video[DEFAULT_STREAM].decoderH265 = 0;
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "FFmpeg H.265 decoder unavailable, use H.264 (AVC) fallback\n"
+            );
+        }
+    }
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
@@ -742,72 +793,93 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable audio streaming\n");
     }
 
-    /* parsec connect. */
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec service\n");
-    e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
-    if (e != PARSEC_OK) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
-        goto error;
-    }
+    for (;;) {
+        wait_time = 0;
+        vdi_stream_client__context_set_connection(&parsec_context, false);
+        parsec_context.decoder = false;
 
-    /* wait until connection is established. */
-    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
-    while (!parsec_context.decoder) {
+        /* parsec connect. */
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec service\n");
+        e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
+        if (e != PARSEC_OK) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
+            goto error;
+        }
 
-        /* get client status. */
-        e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
+        /* wait until connection is established. */
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
+        while (!parsec_context.decoder) {
 
-        /* connection established */
-        if (e == PARSEC_OK) {
+            /* get client status. */
+            e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 
-            /* decoder not yet initialized. */
-            if (parsec_context.client_status.decoder[DEFAULT_STREAM].width == 0 &&
-                parsec_context.client_status.decoder[DEFAULT_STREAM].height == 0 &&
-                !vdi_stream_client__context_connected(&parsec_context)) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video Decoder\n");
-                vdi_stream_client__context_set_connection(&parsec_context, true);
+            /* connection established */
+            if (e == PARSEC_OK) {
+
+                /* decoder not yet initialized. */
+                if (parsec_context.client_status.decoder[DEFAULT_STREAM].width == 0 &&
+                    parsec_context.client_status.decoder[DEFAULT_STREAM].height == 0 &&
+                    !vdi_stream_client__context_connected(&parsec_context)) {
+                    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video Decoder\n");
+                    vdi_stream_client__context_set_connection(&parsec_context, true);
+                }
+
+                /* decoder initialized. */
+                if (parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
+                    parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION, "Use %s decoder\n",
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0'
+                            ? parsec_context.client_status.decoder[DEFAULT_STREAM].name
+                            : "unknown"
+                    );
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION, "Use %s codec\n",
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)"
+                                                                                  : "H.264 (AVC)"
+                    );
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION, "Use resolution %dx%d\n",
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].width,
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].height
+                    );
+                    parsec_context.window_width =
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].width;
+                    parsec_context.window_height =
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].height;
+                    parsec_context.decoder = true;
+                }
             }
 
-            /* decoder initialized. */
-            if (parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
-                parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
-                SDL_LogInfo(
-                    SDL_LOG_CATEGORY_APPLICATION, "Use %s decoder\n",
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0'
-                        ? parsec_context.client_status.decoder[DEFAULT_STREAM].name
-                        : "unknown"
-                );
-                SDL_LogInfo(
-                    SDL_LOG_CATEGORY_APPLICATION, "Use %s codec\n",
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)"
-                                                                              : "H.264 (AVC)"
-                );
-                SDL_LogInfo(
-                    SDL_LOG_CATEGORY_APPLICATION, "Use resolution %dx%d\n",
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].width,
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].height
-                );
-                parsec_context.window_width =
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].width;
-                parsec_context.window_height =
-                    parsec_context.client_status.decoder[DEFAULT_STREAM].height;
-                parsec_context.decoder = true;
+            /* unknown error. */
+            if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+                break;
             }
+
+            /* check if timeout reached. */
+            if (wait_time >= vdi_config->timeout) {
+                break;
+            }
+
+            /* wait some time and re-check. */
+            SDL_Delay(250);
+            wait_time = wait_time + 250;
         }
 
-        /* unknown error. */
-        if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
-            break;
+        if (hevc_attempt_active && !h264_fallback_done && e != PARSEC_CONNECTING &&
+            e != PARSEC_OK && !parsec_context.decoder) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "FFmpeg H.265 decoder failed, retry H.264 (AVC) fallback\n"
+            );
+            ParsecClientDisconnect(parsec_context.parsec);
+            vdi_stream_client__use_h264_fallback(
+                &cfg, fallback_decoder_index, &hevc_attempt_active, &h264_fallback_done
+            );
+            continue;
         }
 
-        /* check if timeout reached. */
-        if (wait_time >= vdi_config->timeout) {
-            break;
-        }
-
-        /* wait some time and re-check. */
-        SDL_Delay(250);
-        wait_time = wait_time + 250;
+        break;
     }
 
     /* detect sdl video driver. */
@@ -940,7 +1012,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
         vdi_stream_client__handle_connection_status(
-            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw
+            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw, fallback_decoder_index,
+            &hevc_attempt_active, &h264_fallback_done
         );
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
