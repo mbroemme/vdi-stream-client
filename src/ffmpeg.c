@@ -45,6 +45,28 @@
 #define VDI_STREAM_CLIENT_PARSEC_DECODER_HIDDEN_OFFSET 0x20u
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_DECODER_INDEX 2u
 #define VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER 0x1fa4000u
+#define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_MAGIC 0x56444646u
+#define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_VERSION 1u
+#define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS 16u
+
+/* The public Parsec frame callback only carries a raw image pointer. For FFmpeg
+ * frames, carry a small descriptor through that buffer so the renderer can
+ * upload directly from retained AVFrame planes instead of copying them into a
+ * second contiguous ParsecFrame image first. */
+struct vdi_stream_client__parsec_ffmpeg_frame_slot_s
+{
+    SDL_Mutex *lock;
+    AVFrame *frame;
+    Uint64 generation;
+};
+
+struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s
+{
+    Uint32 magic;
+    Uint32 version;
+    uintptr_t slot;
+    Uint64 generation;
+};
 
 struct vdi_stream_client__parsec_ffmpeg_decoder_s
 {
@@ -56,7 +78,191 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     enum AVCodecID codec_id;
     enum AVPixelFormat hw_pix_fmt;
     bool hwaccel;
+    SDL_Mutex *frame_lock;
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s
+        frame_slots[VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS];
+    Uint64 frame_generation;
+    Uint32 frame_slot;
 };
+
+static const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *
+vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, const void *image)
+{
+    const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *descriptor = image;
+
+    if (frame == NULL || image == NULL || frame->size != sizeof(*descriptor) ||
+        descriptor->magic != VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_MAGIC ||
+        descriptor->version != VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_VERSION) {
+        return NULL;
+    }
+    return descriptor;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
+    enum AVPixelFormat format, ParsecColorFormat *parsec_format, SDL_PixelFormat *sdl_format
+)
+{
+    switch (format) {
+    case AV_PIX_FMT_YUV420P:
+#if LIBAVUTIL_VERSION_MAJOR < 59
+    case AV_PIX_FMT_YUVJ420P:
+#endif
+        if (parsec_format != NULL) {
+            *parsec_format = FORMAT_I420;
+        }
+        if (sdl_format != NULL) {
+            *sdl_format = SDL_PIXELFORMAT_IYUV;
+        }
+        return true;
+    case AV_PIX_FMT_NV12:
+        if (parsec_format != NULL) {
+            *parsec_format = FORMAT_NV12;
+        }
+        if (sdl_format != NULL) {
+            *sdl_format = SDL_PIXELFORMAT_NV12;
+        }
+        return true;
+    default:
+        return false;
+    }
+}
+
+static AVFrame *
+vdi_stream_client__parsec_ffmpeg_frame_lock(
+    const ParsecFrame *frame, const void *image,
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s **slot_out
+)
+{
+    const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *descriptor;
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+
+    if (slot_out != NULL) {
+        *slot_out = NULL;
+    }
+    descriptor = vdi_stream_client__parsec_ffmpeg_frame_descriptor(frame, image);
+    if (descriptor == NULL || descriptor->slot == 0) {
+        return NULL;
+    }
+
+    slot = (struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *)(uintptr_t)descriptor->slot;
+    if (slot->lock != NULL) {
+        SDL_LockMutex(slot->lock);
+    }
+    if (slot->generation != descriptor->generation || slot->frame == NULL) {
+        if (slot->lock != NULL) {
+            SDL_UnlockMutex(slot->lock);
+        }
+        return NULL;
+    }
+
+    if (slot_out != NULL) {
+        *slot_out = slot;
+    }
+    return slot->frame;
+}
+
+static void
+vdi_stream_client__parsec_ffmpeg_frame_unlock(
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot
+)
+{
+    if (slot != NULL && slot->lock != NULL) {
+        SDL_UnlockMutex(slot->lock);
+    }
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, const void *image)
+{
+    return vdi_stream_client__parsec_ffmpeg_frame_descriptor(frame, image) != NULL;
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_frame_texture_format(
+    const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
+)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *av_frame;
+    bool supported;
+
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    if (av_frame == NULL) {
+        return false;
+    }
+
+    supported =
+        vdi_stream_client__parsec_ffmpeg_frame_pixel_format(av_frame->format, NULL, pixel_format);
+    vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+    return supported;
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_frame_update(
+    SDL_Texture *texture, const ParsecFrame *frame, const void *image
+)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *av_frame;
+    bool ok = false;
+
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    if (av_frame == NULL) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg frame descriptor is no longer valid\n");
+        return false;
+    }
+
+    switch (av_frame->format) {
+    case AV_PIX_FMT_YUV420P:
+#if LIBAVUTIL_VERSION_MAJOR < 59
+    case AV_PIX_FMT_YUVJ420P:
+#endif
+        if (av_frame->data[0] != NULL && av_frame->data[1] != NULL && av_frame->data[2] != NULL) {
+            ok = SDL_UpdateYUVTexture(
+                texture, NULL, av_frame->data[0], av_frame->linesize[0], av_frame->data[1],
+                av_frame->linesize[1], av_frame->data[2], av_frame->linesize[2]
+            );
+        }
+        break;
+    case AV_PIX_FMT_NV12:
+        if (av_frame->data[0] != NULL && av_frame->data[1] != NULL) {
+            ok = SDL_UpdateNVTexture(
+                texture, NULL, av_frame->data[0], av_frame->linesize[0], av_frame->data[1],
+                av_frame->linesize[1]
+            );
+        }
+        break;
+    default:
+        break;
+    }
+
+    vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+
+    if (!ok) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
+        );
+    }
+    return ok;
+}
+
+void
+vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *av_frame;
+
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    if (av_frame == NULL) {
+        return;
+    }
+
+    (void)av_frame;
+    av_frame_free(&slot->frame);
+    slot->generation = 0;
+    vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+}
 
 static bool
 vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
@@ -287,6 +493,19 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
     if (ffmpeg == NULL) {
         return;
     }
+
+    if (ffmpeg->frame_lock != NULL) {
+        SDL_LockMutex(ffmpeg->frame_lock);
+    }
+    for (Uint32 i = 0; i < VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS; i++) {
+        av_frame_free(&ffmpeg->frame_slots[i].frame);
+        ffmpeg->frame_slots[i].generation = 0;
+    }
+    if (ffmpeg->frame_lock != NULL) {
+        SDL_UnlockMutex(ffmpeg->frame_lock);
+        SDL_DestroyMutex(ffmpeg->frame_lock);
+    }
+
     av_packet_free(&ffmpeg->packet);
     av_frame_free(&ffmpeg->sw_frame);
     av_frame_free(&ffmpeg->frame);
@@ -320,6 +539,16 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         return DECODE_ERR_BUFFER;
     }
     *((void **)decoder) = ffmpeg;
+
+    ffmpeg->frame_lock = SDL_CreateMutex();
+    if (ffmpeg->frame_lock == NULL) {
+        vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
+        *((void **)decoder) = NULL;
+        return DECODE_ERR_BUFFER;
+    }
+    for (Uint32 i = 0; i < VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS; i++) {
+        ffmpeg->frame_slots[i].lock = ffmpeg->frame_lock;
+    }
 
     selector = codec_selector != NULL ? ((const Uint8 *)codec_selector)[0] : 2;
     ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
@@ -433,11 +662,77 @@ vdi_stream_client__parsec_ffmpeg_copy_plane(
         Uint8 *dst_row = dst + (size_t)row * (size_t)dst_pitch;
         const Uint8 *src_row = src + (size_t)row * (size_t)src_pitch;
 
-        for (Sint32 column = 0; column < width; column++) {
-            dst_row[column] = src_row[column];
-        }
+        SDL_memcpy(dst_row, src_row, (size_t)width);
     }
     return true;
+}
+
+static Sint32
+vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+    struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVFrame *source,
+    ParsecFrame *frame, Uint32 *frame_size
+)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *descriptor;
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *retained;
+    ParsecColorFormat parsec_format;
+    Uint32 width;
+    Uint32 height;
+    Uint32 required = (Uint32)sizeof(*frame) + (Uint32)sizeof(*descriptor);
+    Uint64 generation;
+
+    if (ffmpeg == NULL || source == NULL || frame == NULL || ffmpeg->frame_lock == NULL) {
+        return DECODE_ERR_BUFFER;
+    }
+
+    width = (Uint32)source->width;
+    height = (Uint32)source->height;
+    if (width == 0 || height == 0 || (width & 1u) != 0 || (height & 1u) != 0) {
+        return DECODE_ERR_RESOLUTION;
+    }
+    if (!vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
+            source->format, &parsec_format, NULL
+        )) {
+        return DECODE_ERR_PIXEL_FORMAT;
+    }
+
+    retained = av_frame_clone(source);
+    if (retained == NULL) {
+        return DECODE_ERR_BUFFER;
+    }
+
+    SDL_LockMutex(ffmpeg->frame_lock);
+    slot = &ffmpeg->frame_slots[ffmpeg->frame_slot % VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS];
+    ffmpeg->frame_slot++;
+    av_frame_free(&slot->frame);
+    slot->frame = retained;
+    ffmpeg->frame_generation++;
+    if (ffmpeg->frame_generation == 0) {
+        ffmpeg->frame_generation++;
+    }
+    slot->generation = ffmpeg->frame_generation;
+    generation = slot->generation;
+    SDL_UnlockMutex(ffmpeg->frame_lock);
+
+    frame->format = parsec_format;
+    frame->rotation = ROTATION_NONE;
+    frame->size = sizeof(*descriptor);
+    frame->width = width;
+    frame->height = height;
+    frame->fullWidth = width;
+    frame->fullHeight = height;
+    if (frame_size != NULL) {
+        *frame_size = required;
+    }
+
+    descriptor = (struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *)((Uint8 *)frame +
+                                                                                sizeof(*frame));
+    descriptor->magic = VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_MAGIC;
+    descriptor->version = VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_VERSION;
+    descriptor->slot = (uintptr_t)slot;
+    descriptor->generation = generation;
+    return PARSEC_OK;
 }
 
 static Sint32
@@ -579,10 +874,22 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
 #if LIBAVUTIL_VERSION_MAJOR < 59
     case AV_PIX_FMT_YUVJ420P:
 #endif
+        err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+            ffmpeg, source, (ParsecFrame *)frame_data, frame_size
+        );
+        if (err == PARSEC_OK) {
+            return PARSEC_OK;
+        }
         return vdi_stream_client__parsec_ffmpeg_write_i420(
             source, (ParsecFrame *)frame_data, frame_size
         );
     case AV_PIX_FMT_NV12:
+        err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+            ffmpeg, source, (ParsecFrame *)frame_data, frame_size
+        );
+        if (err == PARSEC_OK) {
+            return PARSEC_OK;
+        }
         return vdi_stream_client__parsec_ffmpeg_write_nv12(
             source, (ParsecFrame *)frame_data, frame_size
         );

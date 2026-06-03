@@ -17,6 +17,16 @@
 
 #include "parsec.h"
 
+bool
+vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, const void *image);
+bool vdi_stream_client__parsec_ffmpeg_frame_texture_format(
+    const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
+);
+bool vdi_stream_client__parsec_ffmpeg_frame_update(
+    SDL_Texture *texture, const ParsecFrame *frame, const void *image
+);
+void vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image);
+
 bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
     struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration
 );
