@@ -21,6 +21,7 @@
 #include <libavutil/hwcontext.h>
 #include <libavutil/pixfmt.h>
 #include <limits.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -253,6 +254,34 @@ vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *codec)
 }
 
 static void
+vdi_stream_client__parsec_ffmpeg_log_decoder_mode(
+    const struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    static atomic_int logged_modes;
+    int mode;
+    int mask;
+    int previous;
+
+    if (ffmpeg == NULL) {
+        return;
+    }
+
+    mode = (ffmpeg->hwaccel ? 1 : 0) | (ffmpeg->codec_id == AV_CODEC_ID_HEVC ? 2 : 0);
+    mask = 1 << mode;
+    previous = atomic_fetch_or_explicit(&logged_modes, mask, memory_order_relaxed);
+    if ((previous & mask) != 0) {
+        return;
+    }
+
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg %s decoder for %s\n",
+        ffmpeg->hwaccel ? "VAAPI hardware" : "software",
+        ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)"
+    );
+}
+
+static void
 vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg)
 {
     if (ffmpeg == NULL) {
@@ -347,11 +376,7 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         return DECODE_ERR_BUFFER;
     }
 
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg %s decoder for %s\n",
-        ffmpeg->hwaccel ? "VAAPI hardware" : "software",
-        ffmpeg->codec_id == AV_CODEC_ID_HEVC ? "H.265 (HEVC)" : "H.264 (AVC)"
-    );
+    vdi_stream_client__parsec_ffmpeg_log_decoder_mode(ffmpeg);
     return PARSEC_OK;
 }
 
