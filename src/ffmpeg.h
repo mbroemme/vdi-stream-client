@@ -17,6 +17,8 @@
 
 #include "parsec.h"
 
+struct AVFrame;
+
 struct vdi_stream_client__parsec_ffmpeg_stats_s
 {
     Uint64 video_packet_bytes;
@@ -32,11 +34,15 @@ struct vdi_stream_client__parsec_ffmpeg_stats_s
 
 bool
 vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, const void *image);
+bool
+vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, const void *image);
+struct AVFrame *
+vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void *image);
 bool vdi_stream_client__parsec_ffmpeg_frame_texture_format(
     const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
 );
 bool vdi_stream_client__parsec_ffmpeg_frame_update(
-    SDL_Texture *texture, const ParsecFrame *frame, const void *image
+    SDL_Texture *texture, const ParsecFrame *frame, const void *image, Uint64 *upload_ns
 );
 void vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image);
 void vdi_stream_client__parsec_ffmpeg_drain_stats(

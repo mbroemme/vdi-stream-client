@@ -104,6 +104,9 @@ vdi_stream_client__render_stats_reset(struct parsec_context_s *parsec_context)
     parsec_context->stats_render_ns = 0;
     parsec_context->stats_present_calls = 0;
     parsec_context->stats_present_ns = 0;
+    parsec_context->stats_zero_copy_calls = 0;
+    parsec_context->stats_zero_copy_ns = 0;
+    parsec_context->stats_zero_copy_fallbacks = 0;
     parsec_context->stats_idle_waits = 0;
     parsec_context->stats_idle_wait_ms = 0;
 }
@@ -208,6 +211,7 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         "    avcodec_receive_frame: calls=%llu, total=%.3fms, avg=%.3fms\n"
         "    av_hwframe_transfer_data: calls=%llu, total=%.3fms, avg=%.3fms\n"
         "    descriptor_fallback: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    vaapi_zero_copy: calls=%llu, total=%.3fms, avg=%.3fms, fallbacks=%llu\n"
         "    sdl_upload: calls=%llu, total=%.3fms, avg=%.3fms\n"
         "    render: calls=%llu, total=%.3fms, avg=%.3fms\n"
         "    present: calls=%llu, total=%.3fms, avg=%.3fms\n",
@@ -237,6 +241,12 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         vdi_stream_client__stats_avg_ms(
             ffmpeg_stats.descriptor_fallback_ns, ffmpeg_stats.descriptor_fallback_calls
         ),
+        (unsigned long long)parsec_context->stats_zero_copy_calls,
+        vdi_stream_client__stats_ms(parsec_context->stats_zero_copy_ns),
+        vdi_stream_client__stats_avg_ms(
+            parsec_context->stats_zero_copy_ns, parsec_context->stats_zero_copy_calls
+        ),
+        (unsigned long long)parsec_context->stats_zero_copy_fallbacks,
         (unsigned long long)parsec_context->stats_uploads,
         vdi_stream_client__stats_ms(parsec_context->stats_upload_ns),
         vdi_stream_client__stats_avg_ms(
@@ -677,6 +687,29 @@ vdi_stream_client__handle_connection_status(
     }
 }
 
+static bool
+vdi_stream_client__video_setup(
+    struct parsec_context_s *parsec_context, SDL_WindowFlags window_flags, bool acceleration
+)
+{
+    parsec_context->window = SDL_CreateWindow(
+        "VDI Stream Client", parsec_context->window_width, parsec_context->window_height,
+        window_flags
+    );
+    if (parsec_context->window == NULL) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window creation failed: %s\n", SDL_GetError());
+        return false;
+    }
+    if (vdi_stream_client__video_init(parsec_context, acceleration)) {
+        return true;
+    }
+
+    vdi_stream_client__video_destroy(parsec_context);
+    SDL_DestroyWindow(parsec_context->window);
+    parsec_context->window = NULL;
+    return false;
+}
+
 /* parsec event loop. */
 Sint32
 vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
@@ -700,7 +733,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_Thread *network_thread[USB_MAX] = { 0 };
     SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
     const char *video_driver;
-    const char *renderer_name;
 
     /* default values. */
     parsec_context.timeout = 100;
@@ -935,28 +967,23 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    parsec_context.window = SDL_CreateWindow(
-        "VDI Stream Client", parsec_context.window_width, parsec_context.window_height, window_flags
-    );
-    if (parsec_context.window == NULL) {
-        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Window creation failed: %s\n", SDL_GetError());
-        goto error;
-    }
+    window_flags |= vdi_stream_client__video_window_flags(vdi_config->acceleration == 1);
+    if (!vdi_stream_client__video_setup(
+            &parsec_context, window_flags, vdi_config->acceleration == 1
+        )) {
+        if ((window_flags & SDL_WINDOW_VULKAN) == 0) {
+            goto error;
+        }
 
-    parsec_context.renderer = SDL_CreateRenderer(parsec_context.window, NULL);
-    if (parsec_context.renderer == NULL) {
-        SDL_LogError(
-            SDL_LOG_CATEGORY_APPLICATION, "Renderer creation failed: %s\n", SDL_GetError()
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "Vulkan video setup failed; retry without VA-API zero-copy rendering\n"
         );
-        goto error;
+        window_flags &= ~SDL_WINDOW_VULKAN;
+        if (!vdi_stream_client__video_setup(&parsec_context, window_flags, false)) {
+            goto error;
+        }
     }
-    renderer_name = SDL_GetRendererName(parsec_context.renderer);
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
-        renderer_name != NULL ? renderer_name : "unknown"
-    );
-
-    vdi_stream_client__video_init(&parsec_context);
 
     /* check if audio should be streamed. */
     if (vdi_config->audio == 1) {

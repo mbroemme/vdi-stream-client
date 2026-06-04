@@ -67,12 +67,15 @@ jobs:
             clang-tidy-22 \
             git \
             libavcodec-dev \
+            libavformat-dev \
             libavutil-dev \
+            libplacebo-dev \
             libsdl3-dev \
             libsdl3-ttf-dev \
             libusb-1.0-0-dev \
             libusbredirhost-dev \
             libusbredirparser-dev \
+            libvulkan-dev \
             libx11-dev \
             pkg-config \
             python3 \
@@ -200,7 +203,10 @@ jobs:
             libusbredirhost-dev \
             libusbredirparser-dev \
             libavcodec-dev \
+            libavformat-dev \
             libavutil-dev \
+            libplacebo-dev \
+            libvulkan-dev \
             libx11-dev \
             pkg-config \
             tar

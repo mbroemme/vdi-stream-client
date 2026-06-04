@@ -49,6 +49,7 @@
 
 /* forward declarations. */
 struct vdi_config_s;
+struct vdi_stream_client__placebo_s;
 
 /* define audio defaults. */
 #define PARSEC_AUDIO_CHANNELS 2
@@ -98,6 +99,8 @@ struct parsec_context_s
     SDL_Surface *surface_ttf;
     SDL_Texture *texture_ttf;
     SDL_Texture *texture_video;
+    SDL_Texture *frame_video_texture;
+    struct vdi_stream_client__placebo_s *placebo;
     bool frame_video_updated;
     SDL_PixelFormat pixel_format_video;
     Sint32 texture_width;
@@ -132,6 +135,9 @@ struct parsec_context_s
     Uint64 stats_render_ns;
     Uint64 stats_present_calls;
     Uint64 stats_present_ns;
+    Uint64 stats_zero_copy_calls;
+    Uint64 stats_zero_copy_ns;
+    Uint64 stats_zero_copy_fallbacks;
     Uint64 stats_idle_waits;
     Uint64 stats_idle_wait_ms;
 };

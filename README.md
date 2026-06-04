@@ -109,6 +109,8 @@ Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_AP
 support can be used for FFmpeg hardware decoding. If VA-API setup is not
 available, FFmpeg falls back to software decoding. The `--no-acceleration`
 option disables FFmpeg VA-API, so both codecs use FFmpeg software decoding.
+With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
+DMA-BUFs and rendered without copying frame pixels through CPU memory.
 
 Nothing exist without drawbacks and that one for Parsec is that it is mandatory
 to have an [account](https://parsec.app/signup) which is completely free.
@@ -162,15 +164,18 @@ FFmpeg decoder entry, but its Linux implementation does not reliably initialize
 HEVC. VDI Stream Client therefore installs its own FFmpeg decoder callbacks into
 that SDK decoder entry at startup and uses it for both H.264 and H.265. The SDK
 still handles networking, transport and frame delivery, while FFmpeg decodes the
-encoded video packet and returns a regular `ParsecFrame` buffer to the existing
-SDL renderer.
+encoded video packet and retains the decoded frame behind a `ParsecFrame`
+descriptor for the main-thread renderer.
 
-The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. The
-decoded VA-API frame is transferred back to system-memory NV12 so the current
-SDL rendering path can be reused. If VA-API is unavailable or initialization
-fails, the decoder falls back to FFmpeg software decoding. If the complete H.265
-startup attempt fails, the client reconnects once with H.265 disabled and uses
-the FFmpeg H.264 decoder.
+The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. It
+retains the decoded `AV_PIX_FMT_VAAPI` frame through the Parsec frame descriptor.
+libplacebo maps the frame to DRM PRIME, imports its modifier-aware DMA-BUF planes
+into Vulkan and renders YUV directly with a shader. If Vulkan setup, DMA-BUF
+import or device matching fails at runtime, the client transfers that frame to
+system-memory NV12 and uses the existing SDL upload path. If VA-API is
+unavailable or initialization fails, the decoder falls back to FFmpeg software
+decoding. If the complete H.265 startup attempt fails, the client reconnects
+once with H.265 disabled and uses the FFmpeg H.264 decoder.
 
 Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
 `--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
@@ -189,8 +194,8 @@ for either codec.
   `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
   available after Parsec was acquired by Unity. The SDK files referenced by this
   project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
-  The FFmpeg decoder currently outputs I420 or NV12 frames for the SDL renderer
-  and does not add 4:4:4 support. In the official
+  The FFmpeg decoder currently supports I420 or NV12 frame content and does not
+  add 4:4:4 support. In the official
   [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
   internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
@@ -217,15 +222,16 @@ applicable Parsec SDK terms allow you to do so.
 
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
-and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+`libavcodec`, `libavutil`, `libavformat`, `libplacebo`, Vulkan and the
+[Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
-instead. It also requires `libavcodec` and `libavutil`; FFmpeg is a mandatory
-dependency because video decoding is implemented in VDI Stream Client with those
-libraries. The build system will search the SDK first in the build
-directory and use DSO loading for `libparsec.so`. If not found, it will search
-in system-wide include and library directories and link against the system
-`libparsec.so`.
+instead. FFmpeg is a mandatory dependency because video decoding is implemented
+in VDI Stream Client with those libraries. libplacebo, Vulkan and libavformat
+are mandatory build dependencies for VA-API DRM PRIME zero-copy rendering. The
+build system will search the SDK first in the build directory and use DSO
+loading for `libparsec.so`. If not found, it will search in system-wide include
+and library directories and link against the system `libparsec.so`.
 
 The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
 both build modes from the VDI Stream Client side. It does not grant permission
@@ -238,14 +244,15 @@ On Debian or Ubuntu, install the build dependencies with:
 sudo apt install build-essential autoconf automake pkg-config \
   libsdl3-dev libsdl3-ttf-dev libusb-1.0-0-dev \
   libusbredirhost-dev libusbredirparser-dev \
-  libavcodec-dev libavutil-dev
+  libavcodec-dev libavformat-dev libavutil-dev \
+  libplacebo-dev libvulkan-dev
 ```
 
 On Arch Linux, install the build dependencies with:
 
 ```
 sudo pacman -S base-devel autoconf automake pkgconf \
-  sdl3 sdl3_ttf libusb usbredir ffmpeg
+  sdl3 sdl3_ttf libusb usbredir ffmpeg libplacebo vulkan-headers
 ```
 
 For build and install use the commands below and if `--prefix=/usr` is used,

@@ -96,6 +96,45 @@ static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls;
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns;
 
+static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
+
+static enum AVPixelFormat
+vdi_stream_client__parsec_ffmpeg_frame_software_format(const AVFrame *frame)
+{
+    AVHWFramesContext *frames_context;
+
+    if (frame == NULL) {
+        return AV_PIX_FMT_NONE;
+    }
+    if (frame->format != AV_PIX_FMT_VAAPI || frame->hw_frames_ctx == NULL) {
+        return frame->format;
+    }
+
+    frames_context = (AVHWFramesContext *)frame->hw_frames_ctx->data;
+    return frames_context != NULL ? frames_context->sw_format : AV_PIX_FMT_NONE;
+}
+
+static Sint32
+vdi_stream_client__parsec_ffmpeg_hwframe_transfer(AVFrame *destination, const AVFrame *source)
+{
+    bool stats_enabled =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed);
+    Uint64 stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
+    Sint32 err = av_hwframe_transfer_data(destination, source, 0);
+
+    if (stats_enabled) {
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_calls, (uint_fast64_t)1,
+            memory_order_relaxed
+        );
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns,
+            (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
+        );
+    }
+    return err;
+}
+
 static const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *
 vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, const void *image)
 {
@@ -190,6 +229,37 @@ vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, c
 }
 
 bool
+vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, const void *image)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *av_frame;
+    bool hardware;
+
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    if (av_frame == NULL) {
+        return false;
+    }
+    hardware = av_frame->format == AV_PIX_FMT_VAAPI && av_frame->hw_frames_ctx != NULL;
+    vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+    return hardware;
+}
+
+AVFrame *
+vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void *image)
+{
+    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
+    AVFrame *av_frame;
+    AVFrame *reference = NULL;
+
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    if (av_frame != NULL) {
+        reference = av_frame_clone(av_frame);
+        vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
+    }
+    return reference;
+}
+
+bool
 vdi_stream_client__parsec_ffmpeg_frame_texture_format(
     const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
 )
@@ -203,27 +273,50 @@ vdi_stream_client__parsec_ffmpeg_frame_texture_format(
         return false;
     }
 
-    supported =
-        vdi_stream_client__parsec_ffmpeg_frame_pixel_format(av_frame->format, NULL, pixel_format);
+    supported = vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
+        vdi_stream_client__parsec_ffmpeg_frame_software_format(av_frame), NULL, pixel_format
+    );
     vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
     return supported;
 }
 
 bool
 vdi_stream_client__parsec_ffmpeg_frame_update(
-    SDL_Texture *texture, const ParsecFrame *frame, const void *image
+    SDL_Texture *texture, const ParsecFrame *frame, const void *image, Uint64 *upload_ns
 )
 {
-    struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot;
     AVFrame *av_frame;
+    AVFrame *sw_frame = NULL;
+    Uint64 upload_start_ns;
+    Sint32 err;
+    char errbuf[AV_ERROR_MAX_STRING_SIZE];
     bool ok = false;
 
-    av_frame = vdi_stream_client__parsec_ffmpeg_frame_lock(frame, image, &slot);
+    av_frame = vdi_stream_client__parsec_ffmpeg_frame_ref(frame, image);
     if (av_frame == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg frame descriptor is no longer valid\n");
         return false;
     }
 
+    if (av_frame->format == AV_PIX_FMT_VAAPI) {
+        sw_frame = av_frame_alloc();
+        if (sw_frame == NULL) {
+            goto done;
+        }
+        err = vdi_stream_client__parsec_ffmpeg_hwframe_transfer(sw_frame, av_frame);
+        if (err < 0) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "FFmpeg hardware frame transfer failed: %s\n",
+                vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf))
+            );
+            goto done;
+        }
+        av_frame_free(&av_frame);
+        av_frame = sw_frame;
+        sw_frame = NULL;
+    }
+
+    upload_start_ns = upload_ns != NULL ? SDL_GetTicksNS() : 0;
     switch (av_frame->format) {
     case AV_PIX_FMT_YUV420P:
 #if LIBAVUTIL_VERSION_MAJOR < 59
@@ -247,9 +340,13 @@ vdi_stream_client__parsec_ffmpeg_frame_update(
     default:
         break;
     }
+    if (upload_ns != NULL) {
+        *upload_ns += SDL_GetTicksNS() - upload_start_ns;
+    }
 
-    vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
-
+done:
+    av_frame_free(&sw_frame);
+    av_frame_free(&av_frame);
     if (!ok) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
@@ -762,7 +859,7 @@ vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
         return DECODE_ERR_RESOLUTION;
     }
     if (!vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
-            source->format, &parsec_format, NULL
+            vdi_stream_client__parsec_ffmpeg_frame_software_format(source), &parsec_format, NULL
         )) {
         return DECODE_ERR_PIXEL_FORMAT;
     }
@@ -931,19 +1028,15 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
     stats_enabled =
         atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed);
     if (ffmpeg->hwaccel && ffmpeg->frame->format == ffmpeg->hw_pix_fmt) {
-        av_frame_unref(ffmpeg->sw_frame);
-        stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
-        err = av_hwframe_transfer_data(ffmpeg->sw_frame, ffmpeg->frame, 0);
-        if (stats_enabled) {
-            atomic_fetch_add_explicit(
-                &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_calls, (uint_fast64_t)1,
-                memory_order_relaxed
-            );
-            atomic_fetch_add_explicit(
-                &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns,
-                (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
-            );
+        err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+            ffmpeg, source, (ParsecFrame *)frame_data, frame_size
+        );
+        if (err == PARSEC_OK) {
+            return PARSEC_OK;
         }
+
+        av_frame_unref(ffmpeg->sw_frame);
+        err = vdi_stream_client__parsec_ffmpeg_hwframe_transfer(ffmpeg->sw_frame, ffmpeg->frame);
         if (err < 0) {
             SDL_LogWarn(
                 SDL_LOG_CATEGORY_APPLICATION, "FFmpeg hardware frame transfer failed: %s\n",
