@@ -32,7 +32,7 @@
 struct parsec_context_s;
 
 /* video rendering. */
-SDL_WindowFlags vdi_stream_client__video_window_flags(bool acceleration);
+SDL_WindowFlags vdi_stream_client__video_window_flags(void);
 bool vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acceleration);
 bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
 void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);

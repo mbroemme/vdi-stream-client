@@ -967,7 +967,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    window_flags |= vdi_stream_client__video_window_flags(vdi_config->acceleration == 1);
+    window_flags |= vdi_stream_client__video_window_flags();
     if (!vdi_stream_client__video_setup(
             &parsec_context, window_flags, vdi_config->acceleration == 1
         )) {
@@ -977,7 +977,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
         SDL_LogWarn(
             SDL_LOG_CATEGORY_APPLICATION,
-            "Vulkan video setup failed; retry without VA-API zero-copy rendering\n"
+            "Vulkan video setup failed; retry with default SDL renderer\n"
         );
         window_flags &= ~SDL_WINDOW_VULKAN;
         if (!vdi_stream_client__video_setup(&parsec_context, window_flags, false)) {

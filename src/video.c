@@ -314,9 +314,9 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
 }
 
 SDL_WindowFlags
-vdi_stream_client__video_window_flags(bool acceleration)
+vdi_stream_client__video_window_flags(void)
 {
-    return acceleration ? SDL_WINDOW_VULKAN : 0;
+    return SDL_WINDOW_VULKAN;
 }
 
 /* initialize video rendering on the main thread. */
@@ -334,7 +334,10 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
         }
     }
     if (parsec_context->renderer == NULL) {
-        parsec_context->renderer = SDL_CreateRenderer(parsec_context->window, NULL);
+        parsec_context->renderer = SDL_CreateRenderer(
+            parsec_context->window,
+            (SDL_GetWindowFlags(parsec_context->window) & SDL_WINDOW_VULKAN) != 0 ? "vulkan" : NULL
+        );
     }
     if (parsec_context->renderer == NULL) {
         SDL_LogError(
