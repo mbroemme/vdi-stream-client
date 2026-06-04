@@ -29,6 +29,7 @@
 #include "audio.h"
 #include "client.h"
 #include "ffmpeg.h"
+#include "input.h"
 #include "parsec.h"
 #include "redirect.h"
 #include "video.h"
@@ -88,6 +89,9 @@ vdi_stream_client__parsec_reconnect(
     while (vdi_stream_client__context_audio_polling(parsec_context)) {
         SDL_Delay(1);
     }
+    while (vdi_stream_client__context_input_polling(parsec_context)) {
+        SDL_Delay(1);
+    }
 
     ParsecClientDisconnect(parsec_context->parsec);
     e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
@@ -122,6 +126,7 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     Uint64 period_start_ms;
     Uint64 elapsed_ms;
     Uint64 video_packet_bytes;
+    Uint64 sdl_events;
     double video_mbps;
     bool ffmpeg_decoder;
 
@@ -157,6 +162,9 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     } else {
         video_mbps = parsec_context->client_status.self.metrics[DEFAULT_STREAM].bitrate;
     }
+    sdl_events = (Uint64)atomic_exchange_explicit(
+        &parsec_context->stats_sdl_events, (uint_fast64_t)0, memory_order_relaxed
+    );
 
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
@@ -167,8 +175,7 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         "  idle: waits=%llu, ms=%llu\n"
         "  bandwidth: video=%.3fMbps\n",
         (unsigned long long)parsec_context->stats_loops,
-        (unsigned long long)parsec_context->stats_presents,
-        (unsigned long long)parsec_context->stats_sdl_events,
+        (unsigned long long)parsec_context->stats_presents, (unsigned long long)sdl_events,
         (unsigned long long)parsec_context->stats_parsec_events,
         (unsigned long long)parsec_context->stats_frames, (unsigned long long)last_frame_age_ms,
         (unsigned long long)parsec_context->stats_idle_waits,
@@ -177,7 +184,6 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
 
     parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;
     parsec_context->stats_loops = 0;
-    parsec_context->stats_sdl_events = 0;
     parsec_context->stats_parsec_events = 0;
     parsec_context->stats_frames = 0;
     parsec_context->stats_presents = 0;
@@ -188,7 +194,7 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
 /* signal worker threads and wait until they stop using shared runtime resources. */
 static void
 vdi_stream_client__stop_threads(
-    struct parsec_context_s *parsec_context, SDL_Thread **audio_thread,
+    struct parsec_context_s *parsec_context, SDL_Thread **input_thread, SDL_Thread **audio_thread,
     SDL_Thread *network_thread[USB_MAX], Uint32 usb_count
 )
 {
@@ -214,6 +220,12 @@ vdi_stream_client__stop_threads(
             SDL_WaitThread(network_thread[count], NULL);
             network_thread[count] = NULL;
         }
+    }
+
+    if (*input_thread != NULL) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Stop Input Thread\n");
+        SDL_WaitThread(*input_thread, NULL);
+        *input_thread = NULL;
     }
 
     if (*audio_thread != NULL) {
@@ -243,6 +255,17 @@ vdi_stream_client__cursor_set_grab(
     parsec_context->cursor_grab = false;
 }
 
+static void
+vdi_stream_client__set_relative_mouse_mode(
+    struct parsec_context_s *parsec_context, bool relative_mouse
+)
+{
+    SDL_SetWindowRelativeMouseMode(parsec_context->window, relative_mouse);
+    vdi_stream_client__context_set_input_relative_mouse(
+        parsec_context, SDL_GetWindowRelativeMouseMode(parsec_context->window)
+    );
+}
+
 /* parsec cursor event. */
 static void
 vdi_stream_client__cursor(
@@ -250,9 +273,10 @@ vdi_stream_client__cursor(
     bool grab_forced
 )
 {
-    bool need_cursor_grab = cursor->relative || (cursor->hidden && parsec_context->pressed);
+    bool pressed = vdi_stream_client__context_input_pressed(parsec_context);
+    bool need_cursor_grab = cursor->relative || (cursor->hidden && pressed);
 
-    if (cursor->hidden && !cursor->relative && parsec_context->pressed) {
+    if (cursor->hidden && !cursor->relative && pressed) {
         parsec_context->hidden_drag = true;
     } else if (!cursor->hidden || cursor->relative) {
         parsec_context->hidden_drag = false;
@@ -290,25 +314,25 @@ vdi_stream_client__cursor(
         vdi_stream_client__cursor_set_grab(parsec_context, true, grab, grab_forced);
     }
 
-    if (cursor->hidden && (!parsec_context->hidden_drag || parsec_context->pressed)) {
+    if (cursor->hidden && (!parsec_context->hidden_drag || pressed)) {
         SDL_HideCursor();
     } else {
         SDL_ShowCursor();
     }
 
     if (!SDL_GetWindowRelativeMouseMode(parsec_context->window) && cursor->relative) {
-        SDL_SetWindowRelativeMouseMode(parsec_context->window, true);
-        if (!parsec_context->pressed && !grab_forced) {
+        vdi_stream_client__set_relative_mouse_mode(parsec_context, true);
+        if (!pressed && !grab_forced) {
             SDL_SetWindowTitle(
                 parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)"
             );
         }
     } else if (SDL_GetWindowRelativeMouseMode(parsec_context->window) && !cursor->relative) {
-        SDL_SetWindowRelativeMouseMode(parsec_context->window, false);
+        vdi_stream_client__set_relative_mouse_mode(parsec_context, false);
         if (!cursor->hidden) {
             SDL_ShowCursor();
         }
-        if (!parsec_context->pressed && !grab_forced && !grab) {
+        if (!pressed && !grab_forced && !grab) {
             SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
         }
     }
@@ -319,6 +343,7 @@ vdi_stream_client__cursor(
 
     parsec_context->hidden = cursor->hidden;
     parsec_context->relative = cursor->relative;
+    vdi_stream_client__context_set_input_relative(parsec_context, cursor->relative);
 }
 
 /* render text. */
@@ -363,7 +388,7 @@ static void
 vdi_stream_client__release_grab(struct parsec_context_s *parsec_context)
 {
     if (SDL_GetWindowRelativeMouseMode(parsec_context->window)) {
-        SDL_SetWindowRelativeMouseMode(parsec_context->window, false);
+        vdi_stream_client__set_relative_mouse_mode(parsec_context, false);
         SDL_ShowCursor();
     }
 
@@ -372,65 +397,6 @@ vdi_stream_client__release_grab(struct parsec_context_s *parsec_context)
     }
     parsec_context->cursor_grab = false;
     SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
-}
-
-static bool
-vdi_stream_client__handle_release_grab_hotkey(
-    struct parsec_context_s *parsec_context, SDL_Event *msg, bool grab_forced
-)
-{
-    SDL_MouseButtonFlags mouse_buttons;
-
-    if ((msg->key.mod & SDL_KMOD_LCTRL) == 0 || (msg->key.mod & SDL_KMOD_LALT) == 0 ||
-        grab_forced) {
-        return false;
-    }
-
-    mouse_buttons = SDL_GetMouseState(NULL, NULL);
-    if ((mouse_buttons & SDL_BUTTON_LMASK) != 0 || (mouse_buttons & SDL_BUTTON_MMASK) != 0 ||
-        (mouse_buttons & SDL_BUTTON_RMASK) != 0) {
-        return false;
-    }
-
-    vdi_stream_client__release_grab(parsec_context);
-    return true;
-}
-
-static bool
-vdi_stream_client__handle_forced_grab_hotkey(
-    struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config, SDL_Event *msg,
-    bool *grab_forced
-)
-{
-    if ((msg->key.mod & SDL_KMOD_LSHIFT) == 0 || msg->key.key != SDLK_F12) {
-        return false;
-    }
-
-    if (*grab_forced) {
-        if (vdi_config->screensaver == 1) {
-            SDL_EnableScreenSaver();
-        }
-        vdi_stream_client__release_grab(parsec_context);
-        *grab_forced = false;
-        return true;
-    }
-
-    if (vdi_config->screensaver == 1) {
-        SDL_DisableScreenSaver();
-    }
-
-    if (parsec_context->relative && !SDL_GetWindowRelativeMouseMode(parsec_context->window)) {
-        SDL_HideCursor();
-        vdi_stream_client__cursor_set_grab(parsec_context, true, vdi_config->grab, *grab_forced);
-        SDL_SetWindowRelativeMouseMode(parsec_context->window, true);
-    }
-
-    SDL_SetWindowMouseGrab(parsec_context->window, true);
-    SDL_SetWindowTitle(
-        parsec_context->window, "VDI Stream Client (Press Shift+F12 to release forced grab)"
-    );
-    *grab_forced = true;
-    return true;
 }
 
 static void
@@ -452,7 +418,7 @@ vdi_stream_client__handle_mouse_button_down(
     if (parsec_context->relative && !SDL_GetWindowRelativeMouseMode(parsec_context->window)) {
         SDL_HideCursor();
         vdi_stream_client__cursor_set_grab(parsec_context, true, vdi_config->grab, grab_forced);
-        SDL_SetWindowRelativeMouseMode(parsec_context->window, true);
+        vdi_stream_client__set_relative_mouse_mode(parsec_context, true);
         SDL_SetWindowTitle(
             parsec_context->window, "VDI Stream Client (Press Ctrl+Alt to release grab)"
         );
@@ -478,105 +444,105 @@ vdi_stream_client__handle_mouse_button_up(
 }
 
 static void
-vdi_stream_client__handle_sdl_event(
-    struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config, SDL_Event *msg,
-    bool *grab_forced, bool *force_redraw
+vdi_stream_client__handle_force_grab_enable(
+    struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config
 )
 {
-    ParsecMessage pmsg = { 0 };
-
-    /* Only the overlay needs a forced redraw for arbitrary SDL events. The
-     * connected video path presents on new frames instead. */
-    if (!vdi_stream_client__context_connected(parsec_context)) {
-        *force_redraw = true;
+    if (vdi_config->screensaver == 1) {
+        SDL_DisableScreenSaver();
     }
 
-    switch (msg->type) {
-    case SDL_EVENT_QUIT:
+    if (parsec_context->relative && !SDL_GetWindowRelativeMouseMode(parsec_context->window)) {
+        SDL_HideCursor();
+        vdi_stream_client__cursor_set_grab(parsec_context, true, vdi_config->grab, true);
+        vdi_stream_client__set_relative_mouse_mode(parsec_context, true);
+    }
+
+    SDL_SetWindowMouseGrab(parsec_context->window, true);
+    SDL_SetWindowTitle(
+        parsec_context->window, "VDI Stream Client (Press Shift+F12 to release forced grab)"
+    );
+}
+
+static void
+vdi_stream_client__handle_clipboard_update(struct parsec_context_s *parsec_context)
+{
+    char *clipboard;
+
+    if (!vdi_stream_client__context_connected(parsec_context)) {
+        return;
+    }
+
+    clipboard = SDL_GetClipboardText();
+    if (clipboard != NULL) {
+        ParsecClientSendUserData(parsec_context->parsec, PARSEC_CLIPBOARD_MSG, clipboard);
+        SDL_free(clipboard);
+    }
+}
+
+static void
+vdi_stream_client__handle_input_command(
+    struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
+    const vdi_stream_client__input_command_s *command, bool *force_redraw
+)
+{
+    switch (command->type) {
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_QUIT:
         vdi_stream_client__context_set_done(parsec_context, true);
         vdi_stream_client__render_text(parsec_context, "Closing...");
         *force_redraw = true;
         break;
-    case SDL_EVENT_KEY_UP:
-        pmsg.type = MESSAGE_KEYBOARD;
-        pmsg.keyboard.code = (ParsecKeycode)msg->key.scancode;
-        pmsg.keyboard.mod = msg->key.mod;
-        pmsg.keyboard.pressed = false;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_RELEASE_GRAB:
+        vdi_stream_client__release_grab(parsec_context);
         break;
-    case SDL_EVENT_KEY_DOWN:
-        if (vdi_config->grab == 1 &&
-            vdi_stream_client__handle_release_grab_hotkey(parsec_context, msg, *grab_forced)) {
-            break;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_FORCE_GRAB_ENABLE:
+        vdi_stream_client__handle_force_grab_enable(parsec_context, vdi_config);
+        break;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_FORCE_GRAB_DISABLE:
+        if (vdi_config->screensaver == 1) {
+            SDL_EnableScreenSaver();
         }
-
-        if (vdi_config->grab == 0 && vdi_stream_client__handle_forced_grab_hotkey(
-                                         parsec_context, vdi_config, msg, grab_forced
-                                     )) {
-            break;
-        }
-
-        pmsg.type = MESSAGE_KEYBOARD;
-        pmsg.keyboard.code = (ParsecKeycode)msg->key.scancode;
-        pmsg.keyboard.mod = msg->key.mod;
-        pmsg.keyboard.pressed = true;
+        vdi_stream_client__release_grab(parsec_context);
         break;
-    case SDL_EVENT_MOUSE_MOTION:
-    {
-        bool relative_mouse = SDL_GetWindowRelativeMouseMode(parsec_context->window);
-
-        if (parsec_context->relative && !relative_mouse) {
-            break;
-        }
-
-        pmsg.type = MESSAGE_MOUSE_MOTION;
-        pmsg.mouseMotion.relative = relative_mouse;
-        pmsg.mouseMotion.x = relative_mouse ? (Sint32)msg->motion.xrel : (Sint32)msg->motion.x + 1;
-        pmsg.mouseMotion.y = relative_mouse ? (Sint32)msg->motion.yrel : (Sint32)msg->motion.y + 1;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_DOWN:
+        vdi_stream_client__handle_mouse_button_down(
+            parsec_context, vdi_config, command->grab_forced
+        );
         break;
-    }
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-        parsec_context->pressed = false;
-        vdi_stream_client__handle_mouse_button_up(parsec_context, vdi_config, *grab_forced);
-        pmsg.type = MESSAGE_MOUSE_BUTTON;
-        pmsg.mouseButton.button = msg->button.button;
-        pmsg.mouseButton.pressed = false;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_UP:
+        vdi_stream_client__handle_mouse_button_up(parsec_context, vdi_config, command->grab_forced);
         break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        vdi_stream_client__handle_mouse_button_down(parsec_context, vdi_config, *grab_forced);
-        parsec_context->pressed = true;
-        pmsg.type = MESSAGE_MOUSE_BUTTON;
-        pmsg.mouseButton.button = msg->button.button;
-        pmsg.mouseButton.pressed = true;
-        break;
-    case SDL_EVENT_MOUSE_WHEEL:
-        pmsg.type = MESSAGE_MOUSE_WHEEL;
-        pmsg.mouseWheel.x = msg->wheel.x * vdi_config->speed;
-        pmsg.mouseWheel.y = msg->wheel.y * vdi_config->speed;
-        break;
-    case SDL_EVENT_CLIPBOARD_UPDATE:
-        if (vdi_config->clipboard == 1 && vdi_stream_client__context_connected(parsec_context)) {
-            char *clipboard = SDL_GetClipboardText();
-
-            if (clipboard != NULL) {
-                ParsecClientSendUserData(parsec_context->parsec, PARSEC_CLIPBOARD_MSG, clipboard);
-                SDL_free(clipboard);
-            }
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_CLIPBOARD_UPDATE:
+        if (vdi_config->clipboard == 1) {
+            vdi_stream_client__handle_clipboard_update(parsec_context);
         }
         break;
-    case SDL_EVENT_WINDOW_MOUSE_ENTER:
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_ENTER:
         SDL_SetEventEnabled(SDL_EVENT_KEY_DOWN, true);
         SDL_SetEventEnabled(SDL_EVENT_KEY_UP, true);
         SDL_SetWindowKeyboardGrab(parsec_context->window, true);
         break;
-    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_LEAVE:
         SDL_SetEventEnabled(SDL_EVENT_KEY_DOWN, false);
         SDL_SetEventEnabled(SDL_EVENT_KEY_UP, false);
         SDL_SetWindowKeyboardGrab(parsec_context->window, false);
         break;
+    default:
+        break;
     }
+}
 
-    if (pmsg.type != 0 && vdi_stream_client__context_connected(parsec_context)) {
-        ParsecClientSendMessage(parsec_context->parsec, &pmsg);
+static void
+vdi_stream_client__handle_input_commands(
+    vdi_stream_client__input_context_s *input_context, bool *force_redraw
+)
+{
+    vdi_stream_client__input_command_s command;
+
+    while (vdi_stream_client__input_next_command(input_context, &command)) {
+        vdi_stream_client__handle_input_command(
+            input_context->parsec_context, input_context->vdi_config, &command, force_redraw
+        );
     }
 }
 
@@ -653,8 +619,8 @@ Sint32
 vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 {
     struct parsec_context_s parsec_context = { 0 };
+    vdi_stream_client__input_context_s input_context = { 0 };
     struct redirect_context_s redirect_context[USB_MAX] = { 0 };
-    bool grab_forced = false;
     Uint32 wait_time = 0;
     Uint64 last_time = 0;
     bool force_redraw = false;
@@ -666,6 +632,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
     Uint32 device;
+    SDL_Thread *input_thread = NULL;
     SDL_Thread *audio_thread = NULL;
     SDL_Thread *network_thread[USB_MAX] = { 0 };
     SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
@@ -1009,6 +976,21 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
+    /* sdl input thread. SDL events are pumped on the main thread and handled
+     * by this worker without running main-thread-only window APIs there. */
+    if (!vdi_stream_client__input_init(&input_context, &parsec_context, vdi_config)) {
+        goto error;
+    }
+    input_thread = SDL_CreateThread(
+        vdi_stream_client__input_thread, "vdi_stream_client__input_thread", &input_context
+    );
+    if (input_thread == NULL) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Input thread creation failed: %s\n", SDL_GetError()
+        );
+        goto error;
+    }
+
     /* event loop. */
     while (!vdi_stream_client__context_done(&parsec_context)) {
         Uint64 loop_sdl_events = 0;
@@ -1019,24 +1001,20 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         bool local_interaction = false;
         bool rendered = false;
 
-        force_redraw = false;
+        force_redraw = vdi_stream_client__context_input_force_redraw(&parsec_context);
         if (parsec_context.stats_enabled) {
-            loop_sdl_events = parsec_context.stats_sdl_events;
+            loop_sdl_events = (Uint64)atomic_load_explicit(
+                &parsec_context.stats_sdl_events, memory_order_relaxed
+            );
             loop_parsec_events = parsec_context.stats_parsec_events;
             loop_frames = parsec_context.stats_frames;
             loop_presents = parsec_context.stats_presents;
             parsec_context.stats_loops++;
         }
 
-        for (SDL_Event msg; SDL_PollEvent(&msg);) {
-            if (parsec_context.stats_enabled) {
-                parsec_context.stats_sdl_events++;
-            }
-            local_interaction = true;
-            vdi_stream_client__handle_sdl_event(
-                &parsec_context, vdi_config, &msg, &grab_forced, &force_redraw
-            );
-        }
+        SDL_PumpEvents();
+        local_interaction = vdi_stream_client__context_input_local_interaction(&parsec_context);
+        vdi_stream_client__handle_input_commands(&input_context, &force_redraw);
 
         /* prioritize SDL responsiveness after local interaction without forcing
          * redundant presents of the last video frame. */
@@ -1056,7 +1034,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             case CLIENT_EVENT_CURSOR:
                 vdi_stream_client__cursor(
                     &parsec_context, &event.cursor.cursor, event.cursor.key, vdi_config->grab,
-                    grab_forced
+                    vdi_stream_client__context_input_grab_forced(&parsec_context)
                 );
                 break;
             case CLIENT_EVENT_USER_DATA:
@@ -1111,7 +1089,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             SDL_Delay(parsec_context.render_timeout);
         }
 
-        if (parsec_context.stats_enabled && parsec_context.stats_sdl_events == loop_sdl_events &&
+        if (parsec_context.stats_enabled &&
+            (Uint64)atomic_load_explicit(&parsec_context.stats_sdl_events, memory_order_relaxed) ==
+                loop_sdl_events &&
             parsec_context.stats_parsec_events == loop_parsec_events &&
             parsec_context.stats_frames == loop_frames &&
             parsec_context.stats_presents == loop_presents && !rendered) {
@@ -1127,8 +1107,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 
     vdi_stream_client__stop_threads(
-        &parsec_context, &audio_thread, network_thread, vdi_config->usb_count
+        &parsec_context, &input_thread, &audio_thread, network_thread, vdi_config->usb_count
     );
+    vdi_stream_client__input_destroy(&input_context);
 
     /* destroy video resources before releasing the parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
@@ -1154,8 +1135,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 error:
 
     vdi_stream_client__stop_threads(
-        &parsec_context, &audio_thread, network_thread, vdi_config->usb_count
+        &parsec_context, &input_thread, &audio_thread, network_thread, vdi_config->usb_count
     );
+    vdi_stream_client__input_destroy(&input_context);
 
     /* destroy video resources before releasing the parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
