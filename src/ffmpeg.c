@@ -85,7 +85,16 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     Uint32 frame_slot;
 };
 
+static atomic_bool vdi_stream_client__parsec_ffmpeg_stats_enabled;
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_video_packet_bytes;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_send_packet_calls;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_send_packet_ns;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_receive_frame_calls;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_receive_frame_ns;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_calls;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls;
+static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns;
 
 static const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *
 vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, const void *image)
@@ -266,11 +275,44 @@ vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const v
     vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
 }
 
-Uint64
-vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes(void)
+void
+vdi_stream_client__parsec_ffmpeg_drain_stats(struct vdi_stream_client__parsec_ffmpeg_stats_s *stats)
 {
-    return (Uint64)atomic_exchange_explicit(
+    if (stats == NULL) {
+        return;
+    }
+
+    stats->video_packet_bytes = (Uint64)atomic_exchange_explicit(
         &vdi_stream_client__parsec_ffmpeg_video_packet_bytes, (uint_fast64_t)0, memory_order_relaxed
+    );
+    stats->send_packet_calls = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_send_packet_calls, (uint_fast64_t)0, memory_order_relaxed
+    );
+    stats->send_packet_ns = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_send_packet_ns, (uint_fast64_t)0, memory_order_relaxed
+    );
+    stats->receive_frame_calls = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_receive_frame_calls, (uint_fast64_t)0,
+        memory_order_relaxed
+    );
+    stats->receive_frame_ns = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_receive_frame_ns, (uint_fast64_t)0, memory_order_relaxed
+    );
+    stats->hwframe_transfer_calls = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_calls, (uint_fast64_t)0,
+        memory_order_relaxed
+    );
+    stats->hwframe_transfer_ns = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns, (uint_fast64_t)0,
+        memory_order_relaxed
+    );
+    stats->descriptor_fallback_calls = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls, (uint_fast64_t)0,
+        memory_order_relaxed
+    );
+    stats->descriptor_fallback_ns = (Uint64)atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns, (uint_fast64_t)0,
+        memory_order_relaxed
     );
 }
 
@@ -877,6 +919,8 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
 {
     AVFrame *source;
     Sint32 err;
+    Uint64 stage_start_ns;
+    bool stats_enabled;
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
 
     if (ffmpeg == NULL || ffmpeg->frame == NULL || ffmpeg->sw_frame == NULL || frame_data == NULL) {
@@ -884,9 +928,22 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
     }
 
     source = ffmpeg->frame;
+    stats_enabled =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed);
     if (ffmpeg->hwaccel && ffmpeg->frame->format == ffmpeg->hw_pix_fmt) {
         av_frame_unref(ffmpeg->sw_frame);
+        stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
         err = av_hwframe_transfer_data(ffmpeg->sw_frame, ffmpeg->frame, 0);
+        if (stats_enabled) {
+            atomic_fetch_add_explicit(
+                &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_calls, (uint_fast64_t)1,
+                memory_order_relaxed
+            );
+            atomic_fetch_add_explicit(
+                &vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns,
+                (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
+            );
+        }
         if (err < 0) {
             SDL_LogWarn(
                 SDL_LOG_CATEGORY_APPLICATION, "FFmpeg hardware frame transfer failed: %s\n",
@@ -908,9 +965,11 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
         if (err == PARSEC_OK) {
             return PARSEC_OK;
         }
-        return vdi_stream_client__parsec_ffmpeg_write_i420(
+        stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
+        err = vdi_stream_client__parsec_ffmpeg_write_i420(
             source, (ParsecFrame *)frame_data, frame_size
         );
+        break;
     case AV_PIX_FMT_NV12:
         err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
             ffmpeg, source, (ParsecFrame *)frame_data, frame_size
@@ -918,15 +977,71 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
         if (err == PARSEC_OK) {
             return PARSEC_OK;
         }
-        return vdi_stream_client__parsec_ffmpeg_write_nv12(
+        stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
+        err = vdi_stream_client__parsec_ffmpeg_write_nv12(
             source, (ParsecFrame *)frame_data, frame_size
         );
+        break;
     default:
         SDL_LogWarn(
             SDL_LOG_CATEGORY_APPLICATION, "Unsupported FFmpeg pixel format %d\n", source->format
         );
         return DECODE_ERR_PIXEL_FORMAT;
     }
+
+    if (stats_enabled) {
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls, (uint_fast64_t)1,
+            memory_order_relaxed
+        );
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns,
+            (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
+        );
+    }
+    return err;
+}
+
+static Sint32
+vdi_stream_client__parsec_ffmpeg_send_packet(AVCodecContext *codec, const AVPacket *packet)
+{
+    bool stats_enabled =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed);
+    Uint64 stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
+    Sint32 err = avcodec_send_packet(codec, packet);
+
+    if (stats_enabled) {
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_send_packet_calls, (uint_fast64_t)1,
+            memory_order_relaxed
+        );
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_send_packet_ns,
+            (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
+        );
+    }
+    return err;
+}
+
+static Sint32
+vdi_stream_client__parsec_ffmpeg_receive_frame(AVCodecContext *codec, AVFrame *frame)
+{
+    bool stats_enabled =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed);
+    Uint64 stage_start_ns = stats_enabled ? SDL_GetTicksNS() : 0;
+    Sint32 err = avcodec_receive_frame(codec, frame);
+
+    if (stats_enabled) {
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_receive_frame_calls, (uint_fast64_t)1,
+            memory_order_relaxed
+        );
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_receive_frame_ns,
+            (uint_fast64_t)(SDL_GetTicksNS() - stage_start_ns), memory_order_relaxed
+        );
+    }
+    return err;
 }
 
 static Sint32
@@ -945,18 +1060,22 @@ vdi_stream_client__parsec_ffmpeg_decode(
     if (packet_data == NULL || packet_size == 0) {
         return DECODE_WRN_ACCEPTED;
     }
-    atomic_fetch_add_explicit(
-        &vdi_stream_client__parsec_ffmpeg_video_packet_bytes, (uint_fast64_t)packet_size,
-        memory_order_relaxed
-    );
+    if (atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_stats_enabled, memory_order_relaxed
+        )) {
+        atomic_fetch_add_explicit(
+            &vdi_stream_client__parsec_ffmpeg_video_packet_bytes, (uint_fast64_t)packet_size,
+            memory_order_relaxed
+        );
+    }
 
     av_packet_unref(ffmpeg->packet);
     ffmpeg->packet->data = (Uint8 *)packet_data;
     ffmpeg->packet->size = (int)packet_size;
 
-    err = avcodec_send_packet(ffmpeg->codec, ffmpeg->packet);
+    err = vdi_stream_client__parsec_ffmpeg_send_packet(ffmpeg->codec, ffmpeg->packet);
     if (err == AVERROR(EAGAIN)) {
-        err = avcodec_receive_frame(ffmpeg->codec, ffmpeg->frame);
+        err = vdi_stream_client__parsec_ffmpeg_receive_frame(ffmpeg->codec, ffmpeg->frame);
         if (err == 0) {
             if (frame_data == NULL) {
                 return DECODE_WRN_ACCEPTED;
@@ -973,7 +1092,7 @@ vdi_stream_client__parsec_ffmpeg_decode(
         return DECODE_ERR_DECODE;
     }
 
-    err = avcodec_receive_frame(ffmpeg->codec, ffmpeg->frame);
+    err = vdi_stream_client__parsec_ffmpeg_receive_frame(ffmpeg->codec, ffmpeg->frame);
     if (err == AVERROR(EAGAIN) || err == AVERROR_EOF) {
         return DECODE_WRN_ACCEPTED;
     }
@@ -998,6 +1117,11 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
 {
     Uint8 *table;
     Uint8 *entry;
+
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_stats_enabled, parsec_context->stats_enabled != 0,
+        memory_order_relaxed
+    );
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
     if (table == NULL) {

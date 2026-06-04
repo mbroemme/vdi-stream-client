@@ -44,10 +44,13 @@ Print the currently installed version on the standard output.
 Debug options:
 .TP 8
 .B  \-\-stats <\fIseconds\fP>
-Show render statistics and video stream bandwidth every \fIseconds\fP
-seconds. It is disabled by default. Video bandwidth is calculated from
-compressed video packets delivered to the FFmpeg decoder during the current
-stats period. See
+Show render statistics, pipeline stage timings and video stream bandwidth
+every \fIseconds\fP seconds. It is disabled by default. Stage timings report
+calls, total time and average time for FFmpeg packet submission and frame
+receipt, hardware frame transfers, descriptor fallbacks, SDL uploads, renders
+and presents during the current stats period.
+Video bandwidth is calculated from compressed video packets delivered to the
+FFmpeg decoder during the current stats period. See
 .BR "PERFORMANCE TIPS"
 for guidance on interpreting idle frame delivery and Parsec host-side
 FPS settings.

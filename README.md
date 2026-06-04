@@ -151,8 +151,9 @@ chroma subsampling for sharp and crystal clear text.
   currently only supported if using KVM, Xen or Virtuozzo Hybrid Server with
   QEMU. Other virtualization solutions may use standard Linux USB/IP server and
   native [Windows client driver](https://github.com/cezanne/usbip-win).
-* Show render statistics and video stream bandwidth with `--stats <seconds>`
-  to identify bottlenecks in SDL, Parsec or event loop.
+* Show render statistics, pipeline stage timings and video stream bandwidth
+  with `--stats <seconds>` to identify bottlenecks in FFmpeg, SDL, Parsec or
+  event loop.
 
 # FFmpeg Decoder
 

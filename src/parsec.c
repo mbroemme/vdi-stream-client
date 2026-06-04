@@ -75,6 +75,39 @@ vdi_stream_client__stats_mbps(Uint64 bytes, Uint64 elapsed_ms)
     return (double)bytes * 8.0 / ((double)elapsed_ms * 1000.0);
 }
 
+static double
+vdi_stream_client__stats_ms(Uint64 ns)
+{
+    return (double)ns / 1000000.0;
+}
+
+static double
+vdi_stream_client__stats_avg_ms(Uint64 ns, Uint64 calls)
+{
+    if (calls == 0) {
+        return 0.0;
+    }
+
+    return vdi_stream_client__stats_ms(ns) / (double)calls;
+}
+
+static void
+vdi_stream_client__render_stats_reset(struct parsec_context_s *parsec_context)
+{
+    parsec_context->stats_loops = 0;
+    parsec_context->stats_parsec_events = 0;
+    parsec_context->stats_frames = 0;
+    parsec_context->stats_presents = 0;
+    parsec_context->stats_uploads = 0;
+    parsec_context->stats_upload_ns = 0;
+    parsec_context->stats_renders = 0;
+    parsec_context->stats_render_ns = 0;
+    parsec_context->stats_present_calls = 0;
+    parsec_context->stats_present_ns = 0;
+    parsec_context->stats_idle_waits = 0;
+    parsec_context->stats_idle_wait_ms = 0;
+}
+
 static ParsecStatus
 vdi_stream_client__parsec_reconnect(
     struct parsec_context_s *parsec_context, ParsecClientConfig *cfg,
@@ -125,8 +158,8 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     Uint64 now;
     Uint64 period_start_ms;
     Uint64 elapsed_ms;
-    Uint64 video_packet_bytes;
     Uint64 sdl_events;
+    struct vdi_stream_client__parsec_ffmpeg_stats_s ffmpeg_stats = { 0 };
     double video_mbps;
 
     if (!parsec_context->stats_enabled) {
@@ -139,6 +172,11 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
                                    : now - parsec_context->stats_last_frame_tick;
 
     if (parsec_context->stats_next_tick == 0) {
+        vdi_stream_client__parsec_ffmpeg_drain_stats(&ffmpeg_stats);
+        (void)atomic_exchange_explicit(
+            &parsec_context->stats_sdl_events, (uint_fast64_t)0, memory_order_relaxed
+        );
+        vdi_stream_client__render_stats_reset(parsec_context);
         parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;
         return;
     }
@@ -151,8 +189,8 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
                           ? parsec_context->stats_next_tick - parsec_context->stats_period_ms
                           : now;
     elapsed_ms = now > period_start_ms ? now - period_start_ms : parsec_context->stats_period_ms;
-    video_packet_bytes = vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes();
-    video_mbps = vdi_stream_client__stats_mbps(video_packet_bytes, elapsed_ms);
+    vdi_stream_client__parsec_ffmpeg_drain_stats(&ffmpeg_stats);
+    video_mbps = vdi_stream_client__stats_mbps(ffmpeg_stats.video_packet_bytes, elapsed_ms);
     sdl_events = (Uint64)atomic_exchange_explicit(
         &parsec_context->stats_sdl_events, (uint_fast64_t)0, memory_order_relaxed
     );
@@ -164,22 +202,60 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
         "  events: sdl=%llu, parsec=%llu\n"
         "  frames: frames=%llu, age=%llums\n"
         "  idle: waits=%llu, ms=%llu\n"
-        "  bandwidth: video=%.3fMbps\n",
+        "  bandwidth: video=%.3fMbps\n"
+        "  stages:\n"
+        "    avcodec_send_packet: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    avcodec_receive_frame: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    av_hwframe_transfer_data: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    descriptor_fallback: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    sdl_upload: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    render: calls=%llu, total=%.3fms, avg=%.3fms\n"
+        "    present: calls=%llu, total=%.3fms, avg=%.3fms\n",
         (unsigned long long)parsec_context->stats_loops,
         (unsigned long long)parsec_context->stats_presents, (unsigned long long)sdl_events,
         (unsigned long long)parsec_context->stats_parsec_events,
         (unsigned long long)parsec_context->stats_frames, (unsigned long long)last_frame_age_ms,
         (unsigned long long)parsec_context->stats_idle_waits,
-        (unsigned long long)parsec_context->stats_idle_wait_ms, video_mbps
+        (unsigned long long)parsec_context->stats_idle_wait_ms, video_mbps,
+        (unsigned long long)ffmpeg_stats.send_packet_calls,
+        vdi_stream_client__stats_ms(ffmpeg_stats.send_packet_ns),
+        vdi_stream_client__stats_avg_ms(
+            ffmpeg_stats.send_packet_ns, ffmpeg_stats.send_packet_calls
+        ),
+        (unsigned long long)ffmpeg_stats.receive_frame_calls,
+        vdi_stream_client__stats_ms(ffmpeg_stats.receive_frame_ns),
+        vdi_stream_client__stats_avg_ms(
+            ffmpeg_stats.receive_frame_ns, ffmpeg_stats.receive_frame_calls
+        ),
+        (unsigned long long)ffmpeg_stats.hwframe_transfer_calls,
+        vdi_stream_client__stats_ms(ffmpeg_stats.hwframe_transfer_ns),
+        vdi_stream_client__stats_avg_ms(
+            ffmpeg_stats.hwframe_transfer_ns, ffmpeg_stats.hwframe_transfer_calls
+        ),
+        (unsigned long long)ffmpeg_stats.descriptor_fallback_calls,
+        vdi_stream_client__stats_ms(ffmpeg_stats.descriptor_fallback_ns),
+        vdi_stream_client__stats_avg_ms(
+            ffmpeg_stats.descriptor_fallback_ns, ffmpeg_stats.descriptor_fallback_calls
+        ),
+        (unsigned long long)parsec_context->stats_uploads,
+        vdi_stream_client__stats_ms(parsec_context->stats_upload_ns),
+        vdi_stream_client__stats_avg_ms(
+            parsec_context->stats_upload_ns, parsec_context->stats_uploads
+        ),
+        (unsigned long long)parsec_context->stats_renders,
+        vdi_stream_client__stats_ms(parsec_context->stats_render_ns),
+        vdi_stream_client__stats_avg_ms(
+            parsec_context->stats_render_ns, parsec_context->stats_renders
+        ),
+        (unsigned long long)parsec_context->stats_present_calls,
+        vdi_stream_client__stats_ms(parsec_context->stats_present_ns),
+        vdi_stream_client__stats_avg_ms(
+            parsec_context->stats_present_ns, parsec_context->stats_present_calls
+        )
     );
 
     parsec_context->stats_next_tick = now + parsec_context->stats_period_ms;
-    parsec_context->stats_loops = 0;
-    parsec_context->stats_parsec_events = 0;
-    parsec_context->stats_frames = 0;
-    parsec_context->stats_presents = 0;
-    parsec_context->stats_idle_waits = 0;
-    parsec_context->stats_idle_wait_ms = 0;
+    vdi_stream_client__render_stats_reset(parsec_context);
 }
 
 /* signal worker threads and wait until they stop using shared runtime resources. */
@@ -624,6 +700,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_Thread *network_thread[USB_MAX] = { 0 };
     SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
     const char *video_driver;
+    const char *renderer_name;
 
     /* default values. */
     parsec_context.timeout = 100;
@@ -873,6 +950,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         );
         goto error;
     }
+    renderer_name = SDL_GetRendererName(parsec_context.renderer);
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
+        renderer_name != NULL ? renderer_name : "unknown"
+    );
 
     vdi_stream_client__video_init(&parsec_context);
 

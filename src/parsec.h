@@ -99,7 +99,7 @@ struct parsec_context_s
     SDL_Texture *texture_ttf;
     SDL_Texture *texture_video;
     bool frame_video_updated;
-    ParsecColorFormat format_video;
+    SDL_PixelFormat pixel_format_video;
     Sint32 texture_width;
     Sint32 texture_height;
     TTF_Font *font;
@@ -126,6 +126,12 @@ struct parsec_context_s
     Uint64 stats_parsec_events;
     Uint64 stats_frames;
     Uint64 stats_presents;
+    Uint64 stats_uploads;
+    Uint64 stats_upload_ns;
+    Uint64 stats_renders;
+    Uint64 stats_render_ns;
+    Uint64 stats_present_calls;
+    Uint64 stats_present_ns;
     Uint64 stats_idle_waits;
     Uint64 stats_idle_wait_ms;
 };
