@@ -128,7 +128,6 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     Uint64 video_packet_bytes;
     Uint64 sdl_events;
     double video_mbps;
-    bool ffmpeg_decoder;
 
     if (!parsec_context->stats_enabled) {
         return;
@@ -153,15 +152,7 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
                           : now;
     elapsed_ms = now > period_start_ms ? now - period_start_ms : parsec_context->stats_period_ms;
     video_packet_bytes = vdi_stream_client__parsec_ffmpeg_drain_video_packet_bytes();
-    ffmpeg_decoder =
-        SDL_strncmp(
-            parsec_context->client_status.decoder[DEFAULT_STREAM].name, "FFMPEG", DECODER_NAME_LEN
-        ) == 0;
-    if (ffmpeg_decoder) {
-        video_mbps = vdi_stream_client__stats_mbps(video_packet_bytes, elapsed_ms);
-    } else {
-        video_mbps = parsec_context->client_status.self.metrics[DEFAULT_STREAM].bitrate;
-    }
+    video_mbps = vdi_stream_client__stats_mbps(video_packet_bytes, elapsed_ms);
     sdl_events = (Uint64)atomic_exchange_explicit(
         &parsec_context->stats_sdl_events, (uint_fast64_t)0, memory_order_relaxed
     );
@@ -557,8 +548,7 @@ vdi_stream_client__show_connection_overlay(
 
 static void
 vdi_stream_client__use_h264_fallback(
-    ParsecClientConfig *cfg, Uint32 fallback_decoder_index, bool *hevc_attempt_active,
-    bool *h264_fallback_done
+    ParsecClientConfig *cfg, bool *hevc_attempt_active, bool *h264_fallback_done
 )
 {
     if (!*hevc_attempt_active || *h264_fallback_done) {
@@ -567,7 +557,6 @@ vdi_stream_client__use_h264_fallback(
 
     cfg->video[DEFAULT_STREAM].decoderH265 = 0;
     cfg->video[DEFAULT_STREAM].decoderCompatibility = 0;
-    cfg->video[DEFAULT_STREAM].decoderIndex = fallback_decoder_index;
     *hevc_attempt_active = false;
     *h264_fallback_done = true;
 }
@@ -575,8 +564,8 @@ vdi_stream_client__use_h264_fallback(
 static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
-    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw, Uint32 fallback_decoder_index,
-    bool *hevc_attempt_active, bool *h264_fallback_done
+    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw, bool *hevc_attempt_active,
+    bool *h264_fallback_done
 )
 {
     ParsecStatus e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
@@ -589,9 +578,7 @@ vdi_stream_client__handle_connection_status(
     if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
         SDL_GetTicks() > *last_time + vdi_config->timeout) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
-        vdi_stream_client__use_h264_fallback(
-            cfg, fallback_decoder_index, hevc_attempt_active, h264_fallback_done
-        );
+        vdi_stream_client__use_h264_fallback(cfg, hevc_attempt_active, h264_fallback_done);
         e = vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
         *last_time = SDL_GetTicks();
     }
@@ -628,7 +615,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     ParsecStatus e;
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
-    Uint32 fallback_decoder_index = 1;
+    Uint32 ffmpeg_decoder_index = UINT32_MAX;
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
     Uint32 device;
@@ -723,38 +710,24 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     }
 
     /* configure client decoding acceleration. */
-    if (vdi_config->acceleration == 1) {
-        cfg.video[DEFAULT_STREAM].decoderIndex = 1;
-    }
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
-        cfg.video[DEFAULT_STREAM].decoderIndex = 0;
     }
-    fallback_decoder_index = cfg.video[DEFAULT_STREAM].decoderIndex;
-
-    /* Configure client-side FFmpeg for H.265. The public Linux SDK exposes a
-     * hidden FFmpeg decoder entry; replace that entry with the client decoder so
-     * HEVC can be decoded through FFmpeg VAAPI or software. */
-    if (vdi_config->hevc == 1) {
-        Uint32 ffmpeg_decoder_index = UINT32_MAX;
-
-        if (vdi_stream_client__parsec_ffmpeg_decoder_enable(
-                &parsec_context, &ffmpeg_decoder_index, vdi_config->acceleration == 1
-            )) {
-            cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
-            cfg.video[DEFAULT_STREAM].decoderH265 = 1;
-            hevc_attempt_active = true;
-            SDL_LogInfo(
-                SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg Video Decoder for H.265 (HEVC)\n"
-            );
-        } else {
-            cfg.video[DEFAULT_STREAM].decoderH265 = 0;
-            SDL_LogWarn(
-                SDL_LOG_CATEGORY_APPLICATION,
-                "FFmpeg H.265 decoder unavailable, use H.264 (AVC) fallback\n"
-            );
-        }
+    /* Configure client-side FFmpeg for H.264 and H.265. The public Linux SDK
+     * exposes a hidden FFmpeg decoder entry; replace that entry with the client
+     * decoder so both codecs use the same owned VAAPI or software path. */
+    if (!vdi_stream_client__parsec_ffmpeg_decoder_enable(
+            &parsec_context, &ffmpeg_decoder_index, vdi_config->acceleration == 1
+        )) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg decoder injection failed\n");
+        goto error;
     }
+    cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
+    hevc_attempt_active = vdi_config->hevc == 1;
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg Video Decoder for %s\n",
+        vdi_config->hevc == 1 ? "H.265 (HEVC)" : "H.264 (AVC)"
+    );
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
@@ -826,12 +799,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 if (parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
                     parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
                     SDL_LogInfo(
-                        SDL_LOG_CATEGORY_APPLICATION, "Use %s decoder\n",
-                        parsec_context.client_status.decoder[DEFAULT_STREAM].name[0] != '\0'
-                            ? parsec_context.client_status.decoder[DEFAULT_STREAM].name
-                            : "unknown"
-                    );
-                    SDL_LogInfo(
                         SDL_LOG_CATEGORY_APPLICATION, "Use %s codec\n",
                         parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)"
                                                                                   : "H.264 (AVC)"
@@ -868,12 +835,10 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             e != PARSEC_OK && !parsec_context.decoder) {
             SDL_LogWarn(
                 SDL_LOG_CATEGORY_APPLICATION,
-                "FFmpeg H.265 decoder failed, retry H.264 (AVC) fallback\n"
+                "FFmpeg H.265 decoder failed, retry FFmpeg H.264 (AVC) fallback\n"
             );
             ParsecClientDisconnect(parsec_context.parsec);
-            vdi_stream_client__use_h264_fallback(
-                &cfg, fallback_decoder_index, &hevc_attempt_active, &h264_fallback_done
-            );
+            vdi_stream_client__use_h264_fallback(&cfg, &hevc_attempt_active, &h264_fallback_done);
             continue;
         }
 
@@ -1021,8 +986,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
         vdi_stream_client__handle_connection_status(
-            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw, fallback_decoder_index,
-            &hevc_attempt_active, &h264_fallback_done
+            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw, &hevc_attempt_active,
+            &h264_fallback_done
         );
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {

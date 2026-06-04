@@ -45,10 +45,9 @@ Debug options:
 .TP 8
 .B  \-\-stats <\fIseconds\fP>
 Show render statistics and video stream bandwidth every \fIseconds\fP
-seconds. It is disabled by default. With the FFmpeg H.265 decoder, video
-bandwidth is calculated from compressed video packets delivered during the
-current stats period. With SDK-owned decoders, the value is the SDK video
-stream bitrate average. See
+seconds. It is disabled by default. Video bandwidth is calculated from
+compressed video packets delivered to the FFmpeg decoder during the current
+stats period. See
 .BR "PERFORMANCE TIPS"
 for guidance on interpreting idle frame delivery and Parsec host-side
 FPS settings.
@@ -96,10 +95,10 @@ Client options:
 .TP 8
 .B  \-\-no\-acceleration
 Disable hardware accelerated client decoding. If disabled, client will
-decode frames in software on CPU. If enabled, client will decode frames
-acclerated with the help of GPU. Frames are rendered with the SDL
-renderer. With software implementation it is almost impossible to reach
-smooth client rendering. It is enabled by default.
+decode frames with FFmpeg in software on CPU. If enabled, client will
+use FFmpeg VA-API hardware decoding when available. Frames are rendered
+with the SDL renderer. With software implementation it is almost
+impossible to reach smooth client rendering. It is enabled by default.
 .TP 8
 .B  \-\-no\-upnp
 Disable UPnP NAT traversal support. If disabled, client may not be
@@ -158,7 +157,8 @@ default.
 .TP 8
 .B  \-\-no\-hevc
 Disable H.265 (HEVC) video codec. If disabled, client will use H.264
-(AVC) video codec. If enabled, client will use H.265 (HEVC) video codec.
+(AVC) through the custom FFmpeg decoder. If enabled, client will use H.265
+(HEVC) through the custom FFmpeg decoder.
 There is a trade-off between CPU performance and network latency and
 bandwidth consumption. When using H.265 (HEVC) - even in case of GPU
 decoding - CPU load and network latency is higher while network

@@ -99,15 +99,16 @@ USB Redirection         | Yes               | No
 
 VDI Stream Client currently targets Linux on x86_64. The client renders frames
 through the SDL renderer and uses the Parsec SDK for transport, audio, input and
-session handling. H.265 (HEVC) video is decoded through [FFmpeg](https://ffmpeg.org/)
-by replacing the public Linux SDK's hidden FFmpeg decoder entry with a
-vdi-stream-client owned decoder implementation.
+session handling. H.264 (AVC) and H.265 (HEVC) video are decoded through
+[FFmpeg](https://ffmpeg.org/) by replacing the public Linux SDK's hidden FFmpeg
+decoder entry with a mandatory vdi-stream-client owned decoder implementation.
+The original SDK software and hardware decoder entries are disabled so all video
+decoding remains in the injected FFmpeg decoder.
 
 Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
-support can be used for FFmpeg H.265 hardware decoding. If VA-API setup is not
+support can be used for FFmpeg hardware decoding. If VA-API setup is not
 available, FFmpeg falls back to software decoding. The `--no-acceleration`
-option disables both the normal Parsec hardware decoder and FFmpeg VA-API, so
-H.265 uses FFmpeg software decoding only.
+option disables FFmpeg VA-API, so both codecs use FFmpeg software decoding.
 
 Nothing exist without drawbacks and that one for Parsec is that it is mandatory
 to have an [account](https://parsec.app/signup) which is completely free.
@@ -129,8 +130,8 @@ chroma subsampling for sharp and crystal clear text.
 * SDL window is created without `SDL_WINDOW_RESIZABLE` flag set, so window
   cannot be resized by window manager and always uses native host resolution
   (no more blurry desktop).
-* H.265 (HEVC) decoding through FFmpeg with VA-API hardware acceleration when
-  available and automatic fallback to FFmpeg software decoding.
+* H.264 (AVC) and H.265 (HEVC) decoding through FFmpeg with VA-API hardware
+  acceleration when available and automatic fallback to FFmpeg software decoding.
 * Host to client resolution sync with automatic window resize. User can change
   resolution in Windows control panel and client polls for the changes and
   adjust client window size.
@@ -153,25 +154,26 @@ chroma subsampling for sharp and crystal clear text.
 * Show render statistics and video stream bandwidth with `--stats <seconds>`
   to identify bottlenecks in SDL, Parsec or event loop.
 
-# H.265 / FFmpeg Decoder
+# FFmpeg Decoder
 
 H.265 (HEVC) is enabled by default. The public Linux Parsec SDK exposes a hidden
 FFmpeg decoder entry, but its Linux implementation does not reliably initialize
 HEVC. VDI Stream Client therefore installs its own FFmpeg decoder callbacks into
-that SDK decoder entry at startup. The SDK still handles networking, transport
-and frame delivery, while FFmpeg decodes the encoded video packet and returns a
-regular `ParsecFrame` buffer to the existing SDL renderer.
+that SDK decoder entry at startup and uses it for both H.264 and H.265. The SDK
+still handles networking, transport and frame delivery, while FFmpeg decodes the
+encoded video packet and returns a regular `ParsecFrame` buffer to the existing
+SDL renderer.
 
 The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. The
 decoded VA-API frame is transferred back to system-memory NV12 so the current
 SDL rendering path can be reused. If VA-API is unavailable or initialization
 fails, the decoder falls back to FFmpeg software decoding. If the complete H.265
 startup attempt fails, the client reconnects once with H.265 disabled and uses
-the original H.264 fallback decoder.
+the FFmpeg H.264 decoder.
 
-Use `--no-hevc` to disable H.265 entirely and keep the normal H.264 decoder
-path. Use `--no-acceleration` to disable hardware decoding; with H.265 still
-enabled this uses FFmpeg software decoding.
+Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
+`--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
+for either codec.
 
 # Parsec Warp
 
@@ -186,8 +188,8 @@ enabled this uses FFmpeg software decoding.
   `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
   available after Parsec was acquired by Unity. The SDK files referenced by this
   project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
-  The FFmpeg H.265 decoder currently outputs I420 or NV12 frames for the SDL
-  renderer and does not add 4:4:4 support. In the official
+  The FFmpeg decoder currently outputs I420 or NV12 frames for the SDL renderer
+  and does not add 4:4:4 support. In the official
   [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
   internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
@@ -218,8 +220,8 @@ and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
 instead. It also requires `libavcodec` and `libavutil`; FFmpeg is a mandatory
-dependency because the H.265 decoder is implemented in VDI Stream Client with
-those libraries. The build system will search the SDK first in the build
+dependency because video decoding is implemented in VDI Stream Client with those
+libraries. The build system will search the SDK first in the build
 directory and use DSO loading for `libparsec.so`. If not found, it will search
 in system-wide include and library directories and link against the system
 `libparsec.so`.

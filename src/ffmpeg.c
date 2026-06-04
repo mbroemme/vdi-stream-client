@@ -41,6 +41,8 @@
 #define VDI_STREAM_CLIENT_PARSEC_DECODER_CLEANUP_OFFSET 0x10u
 #define VDI_STREAM_CLIENT_PARSEC_DECODER_QUERY_OFFSET 0x18u
 #define VDI_STREAM_CLIENT_PARSEC_DECODER_HIDDEN_OFFSET 0x20u
+#define VDI_STREAM_CLIENT_PARSEC_SOFTWARE_DECODER_INDEX 0u
+#define VDI_STREAM_CLIENT_PARSEC_HARDWARE_DECODER_INDEX 1u
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_DECODER_INDEX 2u
 #define VDI_STREAM_CLIENT_PARSEC_MAX_FRAME_BUFFER 0x1fa4000u
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_MAGIC 0x56444646u
@@ -289,6 +291,27 @@ vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
     return mprotect((void *)start, (size_t)(end - start), prot) == 0;
 }
 
+static bool
+vdi_stream_client__parsec_decoder_set_hidden(Uint8 *entry, bool hidden)
+{
+    Uint8 *value;
+
+    if (entry == NULL) {
+        return false;
+    }
+
+    value = entry + VDI_STREAM_CLIENT_PARSEC_DECODER_HIDDEN_OFFSET;
+    if (*value == (Uint8)hidden) {
+        return true;
+    }
+    if (!vdi_stream_client__parsec_make_writable(value, sizeof(*value), PROT_READ | PROT_WRITE)) {
+        return false;
+    }
+    *value = (Uint8)hidden;
+    (void)vdi_stream_client__parsec_make_writable(value, sizeof(*value), PROT_READ);
+    return true;
+}
+
 static Uint8 *
 vdi_stream_client__parsec_decoder_table(struct parsec_context_s *parsec_context)
 {
@@ -323,7 +346,7 @@ vdi_stream_client__parsec_decoder_table(struct parsec_context_s *parsec_context)
 
 static bool
 vdi_stream_client__parsec_decoder_lookup(
-    struct parsec_context_s *parsec_context, const char *name, bool h265, Uint32 *decoder_index
+    struct parsec_context_s *parsec_context, const char *name, Uint32 *decoder_index
 )
 {
     ParsecDecoder decoders[8] = { 0 };
@@ -340,9 +363,6 @@ vdi_stream_client__parsec_decoder_lookup(
 
     for (i = 0; i < count; i++) {
         if (name != NULL && SDL_strncmp(decoders[i].name, name, sizeof(decoders[i].name)) != 0) {
-            continue;
-        }
-        if (h265 && !decoders[i].h265) {
             continue;
         }
         if (decoder_index != NULL) {
@@ -978,7 +998,6 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
 {
     Uint8 *table;
     Uint8 *entry;
-    Uint8 *hidden;
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
     if (table == NULL) {
@@ -987,19 +1006,18 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
 
     entry = table + VDI_STREAM_CLIENT_PARSEC_FFMPEG_DECODER_INDEX *
                         VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE;
-    hidden = entry + VDI_STREAM_CLIENT_PARSEC_DECODER_HIDDEN_OFFSET;
-
-    if (*hidden != 0) {
-        if (*hidden != 1) {
-            return false;
-        }
-        if (!vdi_stream_client__parsec_make_writable(
-                hidden, sizeof(*hidden), PROT_READ | PROT_WRITE
-            )) {
-            return false;
-        }
-        *hidden = 0;
-        (void)vdi_stream_client__parsec_make_writable(hidden, sizeof(*hidden), PROT_READ);
+    if (!vdi_stream_client__parsec_decoder_set_hidden(
+            table + VDI_STREAM_CLIENT_PARSEC_SOFTWARE_DECODER_INDEX *
+                        VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE,
+            true
+        ) ||
+        !vdi_stream_client__parsec_decoder_set_hidden(
+            table + VDI_STREAM_CLIENT_PARSEC_HARDWARE_DECODER_INDEX *
+                        VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE,
+            true
+        ) ||
+        !vdi_stream_client__parsec_decoder_set_hidden(entry, false)) {
+        return false;
     }
 
     if (!vdi_stream_client__parsec_make_writable(
@@ -1021,5 +1039,5 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
         entry, VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE, PROT_READ
     );
 
-    return vdi_stream_client__parsec_decoder_lookup(parsec_context, "FFMPEG", true, decoder_index);
+    return vdi_stream_client__parsec_decoder_lookup(parsec_context, "FFMPEG", decoder_index);
 }
