@@ -39,6 +39,7 @@ typedef enum vdi_stream_client__input_command_e
     VDI_STREAM_CLIENT_INPUT_COMMAND_CLIPBOARD_UPDATE,
     VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_ENTER,
     VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_LEAVE,
+    VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED,
 } vdi_stream_client__input_command_e;
 
 typedef struct vdi_stream_client__input_command_s

@@ -557,6 +557,8 @@ vdi_stream_client__handle_clipboard_update(struct parsec_context_s *parsec_conte
     }
 }
 
+static void vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 height);
+
 static void
 vdi_stream_client__handle_input_command(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
@@ -603,6 +605,12 @@ vdi_stream_client__handle_input_command(
         SDL_SetEventEnabled(SDL_EVENT_KEY_DOWN, false);
         SDL_SetEventEnabled(SDL_EVENT_KEY_UP, false);
         SDL_SetWindowKeyboardGrab(parsec_context->window, false);
+        break;
+    case VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED:
+        vdi_stream_client__window_enforce_size(
+            parsec_context->window, parsec_context->window_width, parsec_context->window_height
+        );
+        *force_redraw = true;
         break;
     default:
         break;
@@ -687,6 +695,82 @@ vdi_stream_client__handle_connection_status(
     }
 }
 
+static void
+vdi_stream_client__window_lock_size(SDL_Window *window, Sint32 width, Sint32 height)
+{
+    if (!SDL_SetWindowResizable(window, false)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Disabling window resize failed: %s\n", SDL_GetError()
+        );
+    }
+    if (!SDL_SetWindowMinimumSize(window, width, height)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Setting minimum window size failed: %s\n", SDL_GetError()
+        );
+    }
+    if (!SDL_SetWindowMaximumSize(window, width, height)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Setting maximum window size failed: %s\n", SDL_GetError()
+        );
+    }
+}
+
+static void
+vdi_stream_client__window_unlock_size(SDL_Window *window)
+{
+    if (!SDL_SetWindowMinimumSize(window, 0, 0)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Clearing minimum window size failed: %s\n",
+            SDL_GetError()
+        );
+    }
+    if (!SDL_SetWindowMaximumSize(window, 0, 0)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Clearing maximum window size failed: %s\n",
+            SDL_GetError()
+        );
+    }
+}
+
+static void
+vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 height)
+{
+    int current_width = 0;
+    int current_height = 0;
+    bool maximized = (SDL_GetWindowFlags(window) & SDL_WINDOW_MAXIMIZED) != 0;
+
+    if (!SDL_GetWindowSize(window, &current_width, &current_height)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Reading window size failed: %s\n", SDL_GetError()
+        );
+    }
+    if (maximized) {
+        if (!SDL_RestoreWindow(window)) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "Restoring window failed: %s\n", SDL_GetError()
+            );
+        }
+        if (!SDL_SyncWindow(window)) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "Window restore synchronization failed: %s\n",
+                SDL_GetError()
+            );
+        }
+    }
+    if (maximized || current_width != width || current_height != height) {
+        if (!SDL_SetWindowSize(window, width, height)) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Window resize failed: %s\n", SDL_GetError());
+        }
+        if (!SDL_SyncWindow(window)) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "Window resize synchronization failed: %s\n",
+                SDL_GetError()
+            );
+        }
+    }
+    vdi_stream_client__window_lock_size(window, width, height);
+}
+
 static bool
 vdi_stream_client__video_setup(
     struct parsec_context_s *parsec_context, SDL_WindowFlags window_flags, bool acceleration
@@ -701,6 +785,9 @@ vdi_stream_client__video_setup(
         return false;
     }
     if (vdi_stream_client__video_init(parsec_context, acceleration)) {
+        vdi_stream_client__window_lock_size(
+            parsec_context->window, parsec_context->window_width, parsec_context->window_height
+        );
         return true;
     }
 
@@ -1141,11 +1228,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 parsec_context.client_status.decoder[DEFAULT_STREAM].width,
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height
             );
-            SDL_SetWindowSize(
+            vdi_stream_client__window_unlock_size(parsec_context.window);
+            vdi_stream_client__window_enforce_size(
                 parsec_context.window, parsec_context.client_status.decoder[DEFAULT_STREAM].width,
                 parsec_context.client_status.decoder[DEFAULT_STREAM].height
             );
-            SDL_SyncWindow(parsec_context.window);
             parsec_context.window_width =
                 parsec_context.client_status.decoder[DEFAULT_STREAM].width;
             parsec_context.window_height =

@@ -268,6 +268,12 @@ vdi_stream_client__input_handle_event(
             input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_LEAVE, false
         );
         break;
+    case SDL_EVENT_WINDOW_MAXIMIZED:
+    case SDL_EVENT_WINDOW_RESIZED:
+        vdi_stream_client__input_queue_command(
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED, false
+        );
+        break;
     default:
         break;
     }
