@@ -169,13 +169,16 @@ descriptor for the main-thread renderer.
 
 The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. It
 retains the decoded `AV_PIX_FMT_VAAPI` frame through the Parsec frame descriptor.
-libplacebo maps the frame to DRM PRIME, imports its modifier-aware DMA-BUF planes
-into Vulkan and renders YUV directly with a shader. If Vulkan setup, DMA-BUF
-import or device matching fails at runtime, the client transfers that frame to
-system-memory NV12 and uses the existing SDL upload path. If VA-API is
-unavailable or initialization fails, the decoder falls back to FFmpeg software
-decoding. If the complete H.265 startup attempt fails, the client reconnects
-once with H.265 disabled and uses the FFmpeg H.264 decoder.
+The renderer maps that frame to DRM PRIME and derives each Vulkan plane format
+from the VA-API software layout before importing the modifier-aware DMA-BUF
+objects through libplacebo. This accommodates drivers such as
+`nvidia-vaapi-driver` whose exported per-plane DRM fourcc does not match Vulkan's
+preferred component mapping. If Vulkan setup, DMA-BUF import or device matching
+fails at runtime, the client transfers that frame to system-memory NV12 and uses
+the existing SDL upload path. If VA-API is unavailable or initialization fails,
+the decoder falls back to FFmpeg software decoding. If the complete H.265
+startup attempt fails, the client reconnects once with H.265 disabled and uses
+the FFmpeg H.264 decoder.
 
 Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
 `--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
