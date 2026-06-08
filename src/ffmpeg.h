@@ -48,6 +48,7 @@ void vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, co
 void vdi_stream_client__parsec_ffmpeg_drain_stats(
     struct vdi_stream_client__parsec_ffmpeg_stats_s *stats
 );
+bool vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void);
 
 bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
     struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration

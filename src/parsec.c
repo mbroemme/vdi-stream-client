@@ -814,6 +814,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     Uint32 ffmpeg_decoder_index = UINT32_MAX;
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
+    bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
     SDL_Thread *audio_thread = NULL;
@@ -1054,10 +1055,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    window_flags |= vdi_stream_client__video_window_flags();
-    if (!vdi_stream_client__video_setup(
-            &parsec_context, window_flags, vdi_config->acceleration == 1
-        )) {
+    hardware_decoding = vdi_stream_client__parsec_ffmpeg_decoder_is_hardware();
+    window_flags |= vdi_stream_client__video_window_flags(hardware_decoding);
+    if (!vdi_stream_client__video_setup(&parsec_context, window_flags, hardware_decoding)) {
         if ((window_flags & SDL_WINDOW_VULKAN) == 0) {
             goto error;
         }

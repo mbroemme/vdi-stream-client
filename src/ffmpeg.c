@@ -78,6 +78,7 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     enum AVCodecID codec_id;
     enum AVPixelFormat hw_pix_fmt;
     bool hwaccel;
+    bool mode_published;
     SDL_Mutex *frame_lock;
     struct vdi_stream_client__parsec_ffmpeg_frame_slot_s
         frame_slots[VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS];
@@ -95,6 +96,7 @@ static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ca
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns;
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls;
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_hardware_active;
 
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 
@@ -413,6 +415,14 @@ vdi_stream_client__parsec_ffmpeg_drain_stats(struct vdi_stream_client__parsec_ff
     );
 }
 
+bool
+vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void)
+{
+    return atomic_load_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hardware_active, memory_order_acquire
+    );
+}
+
 static bool
 vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
 {
@@ -661,6 +671,12 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
         return;
     }
 
+    if (ffmpeg->mode_published) {
+        atomic_store_explicit(
+            &vdi_stream_client__parsec_ffmpeg_hardware_active, false, memory_order_release
+        );
+    }
+
     if (ffmpeg->frame_lock != NULL) {
         SDL_LockMutex(ffmpeg->frame_lock);
     }
@@ -773,6 +789,10 @@ vdi_stream_client__parsec_ffmpeg_init_common(
     }
 
     vdi_stream_client__parsec_ffmpeg_log_decoder_mode(ffmpeg);
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hardware_active, ffmpeg->hwaccel, memory_order_release
+    );
+    ffmpeg->mode_published = true;
     return PARSEC_OK;
 }
 
@@ -1214,6 +1234,9 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_stats_enabled, parsec_context->stats_enabled != 0,
         memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hardware_active, false, memory_order_release
     );
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);

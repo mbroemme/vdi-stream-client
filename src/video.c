@@ -314,9 +314,9 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
 }
 
 SDL_WindowFlags
-vdi_stream_client__video_window_flags(void)
+vdi_stream_client__video_window_flags(bool acceleration)
 {
-    return SDL_WINDOW_VULKAN;
+    return acceleration ? SDL_WINDOW_VULKAN : 0;
 }
 
 /* initialize video rendering on the main thread. */
