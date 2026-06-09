@@ -102,10 +102,12 @@ decode frames with FFmpeg in software on CPU. If enabled, client will
 use FFmpeg VA-API hardware decoding when available. VA-API frames are
 mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
 through libplacebo into Vulkan without copying frame pixels through CPU
-memory. If direct import fails, the client transfers frames to system
-memory and uses the SDL upload path. With software implementation it is
-almost impossible to reach smooth client rendering. It is enabled by
-default.
+memory. Older RADV devices without DRM modifier support use a validated
+multi-planar linear external-memory import path. If direct import fails after
+Vulkan setup, the client transfers frames to system memory and uploads them
+through libplacebo. Vulkan setup failure falls back to the default SDL
+renderer. With software implementation it is almost impossible to reach
+smooth client rendering. It is enabled by default.
 .TP 8
 .B  \-\-no\-upnp
 Disable UPnP NAT traversal support. If disabled, client may not be

@@ -116,7 +116,7 @@ vdi_stream_client__parsec_ffmpeg_frame_software_format(const AVFrame *frame)
     return frames_context != NULL ? frames_context->sw_format : AV_PIX_FMT_NONE;
 }
 
-static Sint32
+Sint32
 vdi_stream_client__parsec_ffmpeg_hwframe_transfer(AVFrame *destination, const AVFrame *source)
 {
     bool stats_enabled =

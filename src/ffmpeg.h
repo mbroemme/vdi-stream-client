@@ -38,6 +38,9 @@ bool
 vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, const void *image);
 struct AVFrame *
 vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void *image);
+Sint32 vdi_stream_client__parsec_ffmpeg_hwframe_transfer(
+    struct AVFrame *destination, const struct AVFrame *source
+);
 bool vdi_stream_client__parsec_ffmpeg_frame_texture_format(
     const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
 );

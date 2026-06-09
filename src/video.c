@@ -154,10 +154,14 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
     Uint64 upload_elapsed_ns = 0;
     Uint64 upload_start_ns = 0;
     bool upload_attempted = false;
+    bool placebo_handled = false;
     bool updated = false;
 
-    if (vdi_stream_client__placebo_render(parsec_context, frame, image)) {
+    if (vdi_stream_client__placebo_render(parsec_context, frame, image, &placebo_handled)) {
         updated = true;
+        goto done;
+    }
+    if (placebo_handled) {
         goto done;
     }
 
@@ -329,8 +333,9 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
         if (!vdi_stream_client__placebo_init(parsec_context)) {
             SDL_LogWarn(
                 SDL_LOG_CATEGORY_APPLICATION,
-                "VA-API zero-copy renderer initialization failed; use SDL upload fallback\n"
+                "VA-API zero-copy renderer initialization failed: %s\n", SDL_GetError()
             );
+            return false;
         }
     }
     if (parsec_context->renderer == NULL) {

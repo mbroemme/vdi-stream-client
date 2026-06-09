@@ -170,15 +170,20 @@ descriptor for the main-thread renderer.
 The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. It
 retains the decoded `AV_PIX_FMT_VAAPI` frame through the Parsec frame descriptor.
 The renderer maps that frame to DRM PRIME and derives each Vulkan plane format
-from the VA-API software layout before importing the modifier-aware DMA-BUF
-objects through libplacebo. This accommodates drivers such as
-`nvidia-vaapi-driver` whose exported per-plane DRM fourcc does not match Vulkan's
-preferred component mapping. If Vulkan setup, DMA-BUF import or device matching
-fails at runtime, the client transfers that frame to system-memory NV12 and uses
-the existing SDL upload path. If VA-API is unavailable or initialization fails,
-the decoder falls back to FFmpeg software decoding. If the complete H.265
-startup attempt fails, the client reconnects once with H.265 disabled and uses
-the FFmpeg H.264 decoder.
+from the VA-API software layout before importing its DMA-BUF objects through
+libplacebo. This accommodates drivers such as `nvidia-vaapi-driver` whose
+exported per-plane DRM fourcc does not match Vulkan's preferred component
+mapping. On pre-GFX9 RADV devices without DRM modifier support, the renderer
+instead imports RadeonSI's contiguous linear NV12 surface as one multi-planar
+Vulkan image using Mesa's macroblock-aligned allocation dimensions through
+opaque external memory after validating both planes' pitches, offsets and
+allocation bounds. If direct DMA-BUF import fails after Vulkan setup, the
+client transfers the frame to system memory and uploads it through libplacebo,
+avoiding SDL planar texture creation on the active Vulkan renderer. If Vulkan
+setup fails, the client recreates the window with the default SDL renderer. If
+VA-API is unavailable or initialization fails, the decoder falls back to
+FFmpeg software decoding. If the complete H.265 startup attempt fails, the
+client reconnects once with H.265 disabled and uses the FFmpeg H.264 decoder.
 
 Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
 `--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
