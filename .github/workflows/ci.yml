@@ -69,6 +69,7 @@ jobs:
             libavcodec-dev \
             libavformat-dev \
             libavutil-dev \
+            libdrm-dev \
             libplacebo-dev \
             libsdl3-dev \
             libsdl3-ttf-dev \
@@ -205,6 +206,7 @@ jobs:
             libavcodec-dev \
             libavformat-dev \
             libavutil-dev \
+            libdrm-dev \
             libplacebo-dev \
             libvulkan-dev \
             libx11-dev \
