@@ -814,6 +814,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     Uint32 ffmpeg_decoder_index = UINT32_MAX;
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
+    bool h264_acceleration = false;
+    bool hevc_acceleration = false;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -910,14 +912,13 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
-    if (vdi_config->acceleration == 1 && cfg.video[DEFAULT_STREAM].decoderH265 == 1) {
-        bool h264 = false;
-        bool hevc = false;
-
-        if (vdi_stream_client__parsec_ffmpeg_vaapi_codecs(&h264, &hevc) && h264 && !hevc) {
-            SDL_LogInfo(
-                SDL_LOG_CATEGORY_APPLICATION,
-                "VA-API H.265 decoding unsupported, use H.264 (AVC) hardware fallback\n"
+    if (vdi_config->acceleration == 1) {
+        (void)vdi_stream_client__parsec_ffmpeg_vaapi_codecs(&h264_acceleration, &hevc_acceleration);
+        if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && !hevc_acceleration) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VA-API H.265 decoding unavailable\n");
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "Use H.264 (AVC) %s fallback\n",
+                h264_acceleration ? "hardware" : "software"
             );
             cfg.video[DEFAULT_STREAM].decoderH265 = 0;
         }
@@ -927,7 +928,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
      * exposes a hidden FFmpeg decoder entry; replace that entry with the client
      * decoder so both codecs use the same owned VAAPI or software path. */
     if (!vdi_stream_client__parsec_ffmpeg_decoder_enable(
-            &parsec_context, &ffmpeg_decoder_index, vdi_config->acceleration == 1
+            &parsec_context, &ffmpeg_decoder_index, h264_acceleration, hevc_acceleration
         )) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg decoder injection failed\n");
         goto error;

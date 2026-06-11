@@ -98,8 +98,12 @@ Client options:
 .TP 8
 .B  \-\-no\-acceleration
 Disable hardware accelerated client decoding. If disabled, client will
-decode frames with FFmpeg in software on CPU. If enabled, client will
-use FFmpeg VA-API hardware decoding when available. VA-API frames are
+decode H.265 frames with FFmpeg in software on CPU, or H.264 when combined
+with
+.BR \-\-no\-hevc .
+If enabled, the client queries libva profile and decode-entrypoint metadata
+without processing a test frame. It uses VA-API H.265 when available, then
+VA-API H.264, then FFmpeg software H.264. VA-API frames are
 mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
 through libplacebo into Vulkan without copying frame pixels through CPU
 memory. Older RADV devices without DRM modifier support use a validated
