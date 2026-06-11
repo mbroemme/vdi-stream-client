@@ -31,6 +31,7 @@
 /* system includes. */
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 /* parsec includes. */
 #ifdef HAVE_LIBPARSEC
@@ -48,6 +49,7 @@
 
 /* forward declarations. */
 struct vdi_config_s;
+struct vdi_stream_client__placebo_s;
 
 /* define audio defaults. */
 #define PARSEC_AUDIO_CHANNELS 2
@@ -64,13 +66,19 @@ struct parsec_context_s
     /* parsec. */
     atomic_bool done;
     atomic_bool connection;
+    atomic_bool input_polling;
+    atomic_bool input_local_interaction;
+    atomic_bool input_force_redraw;
+    atomic_bool input_relative;
+    atomic_bool input_relative_mouse;
+    atomic_bool input_pressed;
+    atomic_bool input_grab_forced;
     bool decoder;
     bool focus;
     bool hidden;
     bool hidden_drag;
     bool relative;
     bool cursor_grab;
-    bool pressed;
 #ifdef HAVE_LIBPARSEC
     Parsec *parsec;
 #else
@@ -91,8 +99,10 @@ struct parsec_context_s
     SDL_Surface *surface_ttf;
     SDL_Texture *texture_ttf;
     SDL_Texture *texture_video;
+    SDL_Texture *frame_video_texture;
+    struct vdi_stream_client__placebo_s *placebo;
     bool frame_video_updated;
-    ParsecColorFormat format_video;
+    SDL_PixelFormat pixel_format_video;
     Sint32 texture_width;
     Sint32 texture_height;
     TTF_Font *font;
@@ -115,10 +125,19 @@ struct parsec_context_s
     Uint64 stats_next_tick;
     Uint64 stats_last_frame_tick;
     Uint64 stats_loops;
-    Uint64 stats_sdl_events;
+    atomic_uint_fast64_t stats_sdl_events;
     Uint64 stats_parsec_events;
     Uint64 stats_frames;
     Uint64 stats_presents;
+    Uint64 stats_uploads;
+    Uint64 stats_upload_ns;
+    Uint64 stats_renders;
+    Uint64 stats_render_ns;
+    Uint64 stats_present_calls;
+    Uint64 stats_present_ns;
+    Uint64 stats_zero_copy_calls;
+    Uint64 stats_zero_copy_ns;
+    Uint64 stats_zero_copy_fallbacks;
     Uint64 stats_idle_waits;
     Uint64 stats_idle_wait_ms;
 };
@@ -171,6 +190,104 @@ vdi_stream_client__context_set_audio_polling(
 )
 {
     atomic_store_explicit(&parsec_context->audio_polling, audio_polling, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_polling(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->input_polling, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_input_polling(
+    struct parsec_context_s *parsec_context, bool input_polling
+)
+{
+    atomic_store_explicit(&parsec_context->input_polling, input_polling, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_local_interaction(struct parsec_context_s *parsec_context)
+{
+    return atomic_exchange_explicit(
+        &parsec_context->input_local_interaction, false, memory_order_acq_rel
+    );
+}
+
+static inline void
+vdi_stream_client__context_set_input_local_interaction(struct parsec_context_s *parsec_context)
+{
+    atomic_store_explicit(&parsec_context->input_local_interaction, true, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_force_redraw(struct parsec_context_s *parsec_context)
+{
+    return atomic_exchange_explicit(
+        &parsec_context->input_force_redraw, false, memory_order_acq_rel
+    );
+}
+
+static inline void
+vdi_stream_client__context_set_input_force_redraw(struct parsec_context_s *parsec_context)
+{
+    atomic_store_explicit(&parsec_context->input_force_redraw, true, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_relative(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->input_relative, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_input_relative(
+    struct parsec_context_s *parsec_context, bool relative
+)
+{
+    atomic_store_explicit(&parsec_context->input_relative, relative, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_relative_mouse(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->input_relative_mouse, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_input_relative_mouse(
+    struct parsec_context_s *parsec_context, bool relative_mouse
+)
+{
+    atomic_store_explicit(
+        &parsec_context->input_relative_mouse, relative_mouse, memory_order_release
+    );
+}
+
+static inline bool
+vdi_stream_client__context_input_pressed(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->input_pressed, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_input_pressed(struct parsec_context_s *parsec_context, bool pressed)
+{
+    atomic_store_explicit(&parsec_context->input_pressed, pressed, memory_order_release);
+}
+
+static inline bool
+vdi_stream_client__context_input_grab_forced(struct parsec_context_s *parsec_context)
+{
+    return atomic_load_explicit(&parsec_context->input_grab_forced, memory_order_acquire);
+}
+
+static inline void
+vdi_stream_client__context_set_input_grab_forced(
+    struct parsec_context_s *parsec_context, bool grab_forced
+)
+{
+    atomic_store_explicit(&parsec_context->input_grab_forced, grab_forced, memory_order_release);
 }
 
 /* usb redirect. */

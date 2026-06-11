@@ -97,17 +97,29 @@ USB Redirection         | Yes               | No
 
 # Requirements
 
+VDI Stream Client currently targets Linux on x86_64. The client renders frames
+through the SDL renderer and uses the Parsec SDK for transport, audio, input and
+session handling. H.264 (AVC) and H.265 (HEVC) video are decoded through
+[FFmpeg](https://ffmpeg.org/) by replacing the public Linux SDK's hidden FFmpeg
+decoder entry with a mandatory vdi-stream-client owned decoder implementation.
+The original SDK software and hardware decoder entries are disabled so all video
+decoding remains in the injected FFmpeg decoder.
+
 Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
-support will work. Frames are rendered through the SDL renderer. When it comes
-to 4:4:4 color mode, part of the decoding work is made with [FFmpeg](https://ffmpeg.org/)
-(see notes below regarding 4:4:4 status). Nothing exist without drawbacks and
-that one for Parsec is that it is mandatory to have an [account](https://parsec.app/signup)
-which is completely free. However communication between client and host is
-always made directly. Also the SDK is only available as pre-compiled library,
-so for those who fully rely on an open-source system, stop reading here. Some
-features are only available with a commercial subscription under [Parsec Warp](https://parsec.app/warp).
-It applies to 4:4:4 color mode which is required to encode images and streams
-without chroma subsampling for sharp and crystal clear text.
+support can be used for FFmpeg hardware decoding. If VA-API setup is not
+available, FFmpeg falls back to software decoding. The `--no-acceleration`
+option disables FFmpeg VA-API, so both codecs use FFmpeg software decoding.
+With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
+DMA-BUFs and rendered without copying frame pixels through CPU memory.
+
+Nothing exist without drawbacks and that one for Parsec is that it is mandatory
+to have an [account](https://parsec.app/signup) which is completely free.
+However communication between client and host is always made directly. Also the
+SDK is only available as pre-compiled library, so for those who fully rely on an
+open-source system, stop reading here. Some features are only available with a
+commercial subscription under [Parsec Warp](https://parsec.app/warp). It applies
+to 4:4:4 color mode which is required to encode images and streams without
+chroma subsampling for sharp and crystal clear text.
 
 # Features
 
@@ -120,6 +132,8 @@ without chroma subsampling for sharp and crystal clear text.
 * SDL window is created without `SDL_WINDOW_RESIZABLE` flag set, so window
   cannot be resized by window manager and always uses native host resolution
   (no more blurry desktop).
+* H.264 (AVC) and H.265 (HEVC) decoding through FFmpeg with VA-API hardware
+  acceleration when available and automatic fallback to FFmpeg software decoding.
 * Host to client resolution sync with automatic window resize. User can change
   resolution in Windows control panel and client polls for the changes and
   adjust client window size.
@@ -139,8 +153,41 @@ without chroma subsampling for sharp and crystal clear text.
   currently only supported if using KVM, Xen or Virtuozzo Hybrid Server with
   QEMU. Other virtualization solutions may use standard Linux USB/IP server and
   native [Windows client driver](https://github.com/cezanne/usbip-win).
-* Show render statistics with `--stats <seconds>` to identify bottlenecks in
-  SDL, Parsec or event loop.
+* Show render statistics, pipeline stage timings and video stream bandwidth
+  with `--stats <seconds>` to identify bottlenecks in FFmpeg, SDL, Parsec or
+  event loop.
+
+# FFmpeg Decoder
+
+H.265 (HEVC) is enabled by default. The public Linux Parsec SDK exposes a hidden
+FFmpeg decoder entry, but its Linux implementation does not reliably initialize
+HEVC. VDI Stream Client therefore installs its own FFmpeg decoder callbacks into
+that SDK decoder entry at startup and uses it for both H.264 and H.265. The SDK
+still handles networking, transport and frame delivery, while FFmpeg decodes the
+encoded video packet and retains the decoded frame behind a `ParsecFrame`
+descriptor for the main-thread renderer.
+
+The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. It
+retains the decoded `AV_PIX_FMT_VAAPI` frame through the Parsec frame descriptor.
+The renderer maps that frame to DRM PRIME and derives each Vulkan plane format
+from the VA-API software layout before importing its DMA-BUF objects through
+libplacebo. This accommodates drivers such as `nvidia-vaapi-driver` whose
+exported per-plane DRM fourcc does not match Vulkan's preferred component
+mapping. On pre-GFX9 RADV devices without DRM modifier support, the renderer
+instead imports RadeonSI's contiguous linear NV12 surface as one multi-planar
+Vulkan image using Mesa's macroblock-aligned allocation dimensions through
+opaque external memory after validating both planes' pitches, offsets and
+allocation bounds. If direct DMA-BUF import fails after Vulkan setup, the
+client transfers the frame to system memory and uploads it through libplacebo,
+avoiding SDL planar texture creation on the active Vulkan renderer. If Vulkan
+setup fails, the client recreates the window with the default SDL renderer. If
+VA-API is unavailable or initialization fails, the decoder falls back to
+FFmpeg software decoding. If the complete H.265 startup attempt fails, the
+client reconnects once with H.265 disabled and uses the FFmpeg H.264 decoder.
+
+Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
+`--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
+for either codec.
 
 # Parsec Warp
 
@@ -150,13 +197,15 @@ without chroma subsampling for sharp and crystal clear text.
 
 # Known Issues
 
-* Color mode 4:4:4 is not yet supported by the SDK. This limitation was
-  previously tracked in the original `parsec-cloud/parsec-sdk` issue tracker,
-  but that repository is no longer available after Parsec was acquired by
-  Unity. The SDK files referenced by this project are mirrored at
-  [Parsec SDK](https://github.com/mbroemme/parsec-sdk). In the official
-  [Parsec](https://parsec.app/downloads) client it works already with some
-  internal callbacks in the SDK.
+* Color mode 4:4:4 is not yet supported by the public SDK path used by this
+  client. This limitation was previously tracked in the original
+  `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
+  available after Parsec was acquired by Unity. The SDK files referenced by this
+  project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
+  The FFmpeg decoder currently supports I420 or NV12 frame content and does not
+  add 4:4:4 support. In the official
+  [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
+  internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -180,11 +229,15 @@ applicable Parsec SDK terms allow you to do so.
 # Building
 
 VDI Stream Client uses GNU Build System to configure, build and install the
-application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`
-and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
+`libavcodec`, `libavutil`, `libavformat`, `libdrm`, `libplacebo`, Vulkan and the
+[Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
-instead. The build system will search the SDK first in the build directory
+instead. FFmpeg is a mandatory dependency because video decoding is implemented
+in VDI Stream Client with those libraries. libdrm, libplacebo, Vulkan and
+libavformat are mandatory build dependencies for VA-API DRM PRIME zero-copy
+rendering. The build system will search the SDK first in the build directory
 and use DSO loading for `libparsec.so`. If not found, it will search in
 system-wide include and library directories and link against the system
 `libparsec.so`.
@@ -192,9 +245,27 @@ system-wide include and library directories and link against the system
 The GPLv3 additional permission in [COPYING.EXCEPTION](COPYING.EXCEPTION) covers
 both build modes from the VDI Stream Client side. It does not grant permission
 to redistribute `libparsec.so`; check and follow the Parsec SDK license before
-shipping the Parsec SDK library or headers with source or binary packages. For
-build and install use the commands below and if `--prefix=/usr` is used, the
-`make install` command must be run as root user.
+shipping the Parsec SDK library or headers with source or binary packages.
+
+On Debian or Ubuntu, install the build dependencies with:
+
+```
+sudo apt install build-essential autoconf automake pkg-config \
+  libsdl3-dev libsdl3-ttf-dev libusb-1.0-0-dev \
+  libusbredirhost-dev libusbredirparser-dev \
+  libavcodec-dev libavformat-dev libavutil-dev libdrm-dev \
+  libplacebo-dev libvulkan-dev
+```
+
+On Arch Linux, install the build dependencies with:
+
+```
+sudo pacman -S base-devel autoconf automake pkgconf \
+  sdl3 sdl3_ttf libusb usbredir ffmpeg libdrm libplacebo vulkan-headers
+```
+
+For build and install use the commands below and if `--prefix=/usr` is used,
+the `make install` command must be run as root user.
 
 ```
 git clone https://github.com/mbroemme/parsec-sdk

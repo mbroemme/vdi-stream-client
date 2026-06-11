@@ -33,10 +33,8 @@
 #include "parsec.h"
 
 /* system includes. */
-#include <errno.h>
 #include <getopt.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 
 /* this function show the usage. */
@@ -208,7 +206,7 @@ main(int argc, char **argv)
     opterr = 0;
 
     /* allocate memory defaults. */
-    if ((vdi_config = calloc(1, sizeof(vdi_config_s))) == NULL) {
+    if ((vdi_config = SDL_calloc(1, sizeof(vdi_config_s))) == NULL) {
         goto error;
     }
 
@@ -233,8 +231,8 @@ main(int argc, char **argv)
     vdi_config->stats_period = 0;
 
     program_name = argv[0];
-    if (program_name && strrchr(program_name, '/')) {
-        program_name = strrchr(program_name, '/') + 1;
+    if (program_name && SDL_strrchr(program_name, '/')) {
+        program_name = SDL_strrchr(program_name, '/') + 1;
     }
 
     if (argc <= 1) {
@@ -265,23 +263,22 @@ main(int argc, char **argv)
 
         /* parsec options. */
         case OPTION_SESSION:
-            free(vdi_config->session);
-            vdi_config->session = strdup(optarg);
+            SDL_free(vdi_config->session);
+            vdi_config->session = SDL_strdup(optarg);
             if (vdi_config->session == NULL) {
                 goto error;
             }
             continue;
         case OPTION_PEER:
-            free(vdi_config->peer);
-            vdi_config->peer = strdup(optarg);
+            SDL_free(vdi_config->peer);
+            vdi_config->peer = SDL_strdup(optarg);
             if (vdi_config->peer == NULL) {
                 goto error;
             }
             continue;
         case OPTION_TIMEOUT:
-            errno = 0;
-            timeout = strtoll(optarg, &endptr, 10);
-            if (endptr == optarg || *endptr != '\0' || errno == ERANGE || timeout <= 0 ||
+            timeout = SDL_strtoll(optarg, &endptr, 10);
+            if (endptr == optarg || *endptr != '\0' || timeout <= 0 ||
                 timeout > UINT32_MAX / 1000) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid timeout: %s\n", program_name, optarg
@@ -295,7 +292,7 @@ main(int argc, char **argv)
             vdi_config->timeout = timeout * 1000;
             continue;
         case OPTION_SPEED:
-            speed = strtol(optarg, &endptr, 10);
+            speed = SDL_strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0') {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid speed: %s\n", program_name, optarg
@@ -315,7 +312,7 @@ main(int argc, char **argv)
             vdi_config->speed = speed;
             continue;
         case OPTION_WIDTH:
-            width = strtol(optarg, &endptr, 10);
+            width = SDL_strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0' || width < 0 || width > UINT16_MAX) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid width: %s\n", program_name, optarg
@@ -329,7 +326,7 @@ main(int argc, char **argv)
             vdi_config->width = width;
             continue;
         case OPTION_HEIGHT:
-            height = strtol(optarg, &endptr, 10);
+            height = SDL_strtol(optarg, &endptr, 10);
             if (endptr == optarg || *endptr != '\0' || height < 0 || height > UINT16_MAX) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid height: %s\n", program_name, optarg
@@ -377,7 +374,7 @@ main(int argc, char **argv)
             vdi_config->hevc = 0;
             continue;
         case OPTION_STATS:
-            stats_period = strtol(optarg, &endptr, 10);
+            stats_period = SDL_strtol(optarg, &endptr, 10);
             if (*endptr != '\0' || stats_period <= 0) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "%s: invalid stats period: %s\n", program_name,
@@ -438,7 +435,7 @@ main(int argc, char **argv)
                     if (type == 0) {
 
                         /* check if usb vendor is out of range. */
-                        vdi_config->usb_devices[device].vendor = strtol(item, &endptr, 16);
+                        vdi_config->usb_devices[device].vendor = SDL_strtol(item, &endptr, 16);
                         if (vdi_config->usb_devices[device].vendor <= 0 ||
                             vdi_config->usb_devices[device].vendor > 0xffff) {
                             SDL_LogError(
@@ -454,8 +451,8 @@ main(int argc, char **argv)
                         }
 
                         /* check if usb product is given. */
-                        delim = strchr(item, ':');
-                        if (*endptr != ':' || delim == NULL || strlen(delim) == 1) {
+                        delim = SDL_strchr(item, ':');
+                        if (*endptr != ':' || delim == NULL || SDL_strlen(delim) == 1) {
                             SDL_LogError(
                                 SDL_LOG_CATEGORY_APPLICATION,
                                 "%s: no product identifier in usb device\n", program_name
@@ -468,7 +465,8 @@ main(int argc, char **argv)
                         }
 
                         /* check if usb product is out of range. (product id 0000 is valid) */
-                        vdi_config->usb_devices[device].product = strtol(delim + 1, &endptr, 16);
+                        vdi_config->usb_devices[device].product =
+                            SDL_strtol(delim + 1, &endptr, 16);
                         if (*endptr != '\0' || vdi_config->usb_devices[device].product < 0 ||
                             vdi_config->usb_devices[device].product > 0xffff) {
                             SDL_LogError(
@@ -546,7 +544,7 @@ main(int argc, char **argv)
                         }
 
                         /* convert port string to integer. */
-                        port = strtol(item, &endptr, 10);
+                        port = SDL_strtol(item, &endptr, 10);
 
                         /* check if port is out of range. */
                         if (endptr == item || *endptr != '\0' || port <= 0 || port >= 65536) {
@@ -646,7 +644,7 @@ main(int argc, char **argv)
 
     /* mandatory arguments not given. */
     if (vdi_config->session == NULL || vdi_config->peer == NULL ||
-        strlen(vdi_config->session) == 0 || strlen(vdi_config->peer) == 0) {
+        SDL_strlen(vdi_config->session) == 0 || SDL_strlen(vdi_config->peer) == 0) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "%s: mandatory arguments missing\n", program_name
         );
@@ -692,9 +690,9 @@ error:
 
     /* free allocated memory and quit application with error code. */
     if (vdi_config != NULL) {
-        free(vdi_config->session);
-        free(vdi_config->peer);
-        free(vdi_config);
+        SDL_free(vdi_config->session);
+        SDL_free(vdi_config->peer);
+        SDL_free(vdi_config);
     }
     return VDI_STREAM_CLIENT_ERROR;
 
@@ -702,9 +700,9 @@ done:
 
     /* free allocated memory and quit application. */
     if (vdi_config != NULL) {
-        free(vdi_config->session);
-        free(vdi_config->peer);
-        free(vdi_config);
+        SDL_free(vdi_config->session);
+        SDL_free(vdi_config->peer);
+        SDL_free(vdi_config);
     }
     return VDI_STREAM_CLIENT_SUCCESS;
 }

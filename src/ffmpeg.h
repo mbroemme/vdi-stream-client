@@ -1,0 +1,60 @@
+/*
+ *  ffmpeg.h -- FFmpeg decoder integration for Parsec SDK
+ *
+ *  Copyright (c) 2020-2026 Maik Broemme <mbroemme@libmpq.org>
+ *
+ *  This program is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  Additional permission under GNU GPL version 3 section 7 is described in
+ *  COPYING.EXCEPTION, allowing this program to link with the Parsec SDK.
+ */
+
+#ifndef _FFMPEG_H
+#define _FFMPEG_H
+
+#include "parsec.h"
+
+struct AVFrame;
+
+struct vdi_stream_client__parsec_ffmpeg_stats_s
+{
+    Uint64 video_packet_bytes;
+    Uint64 send_packet_calls;
+    Uint64 send_packet_ns;
+    Uint64 receive_frame_calls;
+    Uint64 receive_frame_ns;
+    Uint64 hwframe_transfer_calls;
+    Uint64 hwframe_transfer_ns;
+    Uint64 descriptor_fallback_calls;
+    Uint64 descriptor_fallback_ns;
+};
+
+bool
+vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, const void *image);
+bool
+vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, const void *image);
+struct AVFrame *
+vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void *image);
+Sint32 vdi_stream_client__parsec_ffmpeg_hwframe_transfer(
+    struct AVFrame *destination, const struct AVFrame *source
+);
+bool vdi_stream_client__parsec_ffmpeg_frame_texture_format(
+    const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
+);
+bool vdi_stream_client__parsec_ffmpeg_frame_update(
+    SDL_Texture *texture, const ParsecFrame *frame, const void *image, Uint64 *upload_ns
+);
+void vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image);
+void vdi_stream_client__parsec_ffmpeg_drain_stats(
+    struct vdi_stream_client__parsec_ffmpeg_stats_s *stats
+);
+bool vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void);
+
+bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
+    struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration
+);
+
+#endif /* _FFMPEG_H */
