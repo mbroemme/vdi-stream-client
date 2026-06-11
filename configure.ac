@@ -1,5 +1,5 @@
 # the autoconf initilization.
-AC_INIT(vdi-stream-client, 0.4.0, [mbroemme@libmpq.org], [vdi-stream-client])
+AC_INIT(vdi-stream-client, 0.4.1, [mbroemme@libmpq.org], [vdi-stream-client])
 
 # detect the canonical target environment.
 AC_CANONICAL_TARGET
