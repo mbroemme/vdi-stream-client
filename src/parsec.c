@@ -910,6 +910,19 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
+    if (vdi_config->acceleration == 1 && cfg.video[DEFAULT_STREAM].decoderH265 == 1) {
+        bool h264 = false;
+        bool hevc = false;
+
+        if (vdi_stream_client__parsec_ffmpeg_vaapi_codecs(&h264, &hevc) && h264 && !hevc) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "VA-API H.265 decoding unsupported, use H.264 (AVC) hardware fallback\n"
+            );
+            cfg.video[DEFAULT_STREAM].decoderH265 = 0;
+        }
+    }
+
     /* Configure client-side FFmpeg for H.264 and H.265. The public Linux SDK
      * exposes a hidden FFmpeg decoder entry; replace that entry with the client
      * decoder so both codecs use the same owned VAAPI or software path. */
@@ -920,7 +933,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
     cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
-    hevc_attempt_active = vdi_config->hevc == 1;
+    hevc_attempt_active = cfg.video[DEFAULT_STREAM].decoderH265 == 1;
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {

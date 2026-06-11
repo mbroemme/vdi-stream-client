@@ -19,6 +19,7 @@
 #include <libavutil/avutil.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/pixfmt.h>
 #include <limits.h>
 #include <stdatomic.h>
@@ -26,6 +27,10 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+/* va-api includes. */
+#include <va/va.h>
+#include <va/va_str.h>
 
 #if !defined(__linux__)
 #error "The FFmpeg Parsec decoder integration currently supports Linux only."
@@ -421,6 +426,98 @@ vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void)
     return atomic_load_explicit(
         &vdi_stream_client__parsec_ffmpeg_hardware_active, memory_order_acquire
     );
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
+    VADisplay display, VAProfile profile, VAEntrypoint *entrypoints, Sint32 max_entrypoints
+)
+{
+    Sint32 entrypoint_count = max_entrypoints;
+
+    if (vaQueryConfigEntrypoints(display, profile, entrypoints, &entrypoint_count) !=
+        VA_STATUS_SUCCESS) {
+        return false;
+    }
+    for (Sint32 i = 0; i < entrypoint_count; i++) {
+        if (entrypoints[i] == VAEntrypointVLD) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
+{
+    AVBufferRef *device_ref = NULL;
+    AVHWDeviceContext *device_context;
+    AVVAAPIDeviceContext *vaapi_context;
+    VAEntrypoint *entrypoints = NULL;
+    VAProfile *profiles = NULL;
+    VADisplay display;
+    Sint32 max_entrypoints;
+    Sint32 max_profiles;
+    Sint32 profile_count;
+    bool available = false;
+
+    if (h264 == NULL || hevc == NULL) {
+        return false;
+    }
+    *h264 = false;
+    *hevc = false;
+
+    if (av_hwdevice_ctx_create(&device_ref, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0) < 0 ||
+        device_ref == NULL) {
+        goto cleanup;
+    }
+    device_context = (AVHWDeviceContext *)device_ref->data;
+    vaapi_context = device_context != NULL ? device_context->hwctx : NULL;
+    display = vaapi_context != NULL ? vaapi_context->display : NULL;
+    if (display == NULL) {
+        goto cleanup;
+    }
+
+    max_profiles = vaMaxNumProfiles(display);
+    max_entrypoints = vaMaxNumEntrypoints(display);
+    if (max_profiles <= 0 || max_entrypoints <= 0) {
+        goto cleanup;
+    }
+    profiles = SDL_malloc((size_t)max_profiles * sizeof(*profiles));
+    entrypoints = SDL_malloc((size_t)max_entrypoints * sizeof(*entrypoints));
+    if (profiles == NULL || entrypoints == NULL) {
+        goto cleanup;
+    }
+
+    profile_count = max_profiles;
+    if (vaQueryConfigProfiles(display, profiles, &profile_count) != VA_STATUS_SUCCESS) {
+        goto cleanup;
+    }
+    available = true;
+    for (Sint32 i = 0; i < profile_count; i++) {
+        const char *name;
+
+        if (!vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
+                display, profiles[i], entrypoints, max_entrypoints
+            )) {
+            continue;
+        }
+        name = vaProfileStr(profiles[i]);
+        if (name == NULL) {
+            continue;
+        }
+        if (SDL_strncmp(name, "VAProfileH264", sizeof("VAProfileH264") - 1) == 0) {
+            *h264 = true;
+        } else if (SDL_strncmp(name, "VAProfileHEVC", sizeof("VAProfileHEVC") - 1) == 0) {
+            *hevc = true;
+        }
+    }
+
+cleanup:
+    SDL_free(entrypoints);
+    SDL_free(profiles);
+    av_buffer_unref(&device_ref);
+    return available;
 }
 
 static bool
