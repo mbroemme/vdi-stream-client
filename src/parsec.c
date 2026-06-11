@@ -921,10 +921,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     }
     cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
     hevc_attempt_active = vdi_config->hevc == 1;
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg Video Decoder for %s\n",
-        vdi_config->hevc == 1 ? "H.265 (HEVC)" : "H.264 (AVC)"
-    );
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
