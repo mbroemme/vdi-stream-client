@@ -26,6 +26,12 @@
 /* sdl includes. */
 #include <SDL3/SDL.h>
 
+struct parsec_context_s;
+
+/* audio device. */
+bool vdi_stream_client__audio_init(struct parsec_context_s *parsec_context, bool enabled);
+void vdi_stream_client__audio_destroy(struct parsec_context_s *parsec_context);
+
 /* audio thread. */
 Sint32 vdi_stream_client__audio_thread(void *opaque);
 

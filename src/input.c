@@ -65,6 +65,7 @@ vdi_stream_client__input_init(
         return false;
     }
 
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Input\n");
     SDL_memset(input_context, 0, sizeof(*input_context));
     input_context->parsec_context = parsec_context;
     input_context->vdi_config = vdi_config;

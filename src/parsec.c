@@ -807,9 +807,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     Uint32 wait_time = 0;
     Uint64 last_time = 0;
     bool force_redraw = false;
-    SDL_AudioSpec want = { 0 };
-    SDL_AudioDeviceID *audio_devices = NULL;
-    Sint32 audio_device_count = 0;
     ParsecStatus e;
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
@@ -872,6 +869,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed with code: %d\n", e);
         goto error;
     }
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video\n");
 
     /* use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
@@ -938,6 +937,14 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
     hevc_attempt_active = cfg.video[DEFAULT_STREAM].decoderH265 == 1;
 
+    if (!vdi_stream_client__audio_init(&parsec_context, vdi_config->audio == 1)) {
+        goto error;
+    }
+
+    if (!vdi_stream_client__input_init(&input_context, &parsec_context, vdi_config)) {
+        goto error;
+    }
+
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable automatic reconnect\n");
@@ -966,11 +973,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* check if clipboard should be disabled. */
     if (vdi_config->clipboard == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable clipboard sharing\n");
-    }
-
-    /* check if audio should be streamed. */
-    if (vdi_config->audio == 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable audio streaming\n");
     }
 
     for (;;) {
@@ -1084,52 +1086,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* check if audio should be streamed. */
-    if (vdi_config->audio == 1) {
-        audio_devices = SDL_GetAudioPlaybackDevices(&audio_device_count);
-        if (audio_devices == NULL) {
+    /* start polling audio only after the connection and video output are ready. */
+    if (parsec_context.audio != NULL) {
+        audio_thread = SDL_CreateThread(
+            vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context
+        );
+        if (audio_thread == NULL) {
             SDL_LogError(
-                SDL_LOG_CATEGORY_APPLICATION, "Failed to query audio devices: %s\n", SDL_GetError()
+                SDL_LOG_CATEGORY_APPLICATION, "Audio thread creation failed: %s\n", SDL_GetError()
             );
             goto error;
-        }
-        SDL_free(audio_devices);
-        audio_devices = NULL;
-
-        if (audio_device_count == 0) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio device available\n");
-        } else {
-            want.freq = PARSEC_AUDIO_SAMPLE_RATE;
-            want.format = SDL_AUDIO_S16;
-            want.channels = PARSEC_AUDIO_CHANNELS;
-
-            /* the number of audio packets (960 frames) to buffer before we begin playing. */
-            parsec_context.min_buffer = 1;
-
-            /* the number of audio packets (960 frames) to buffer before overflow and clear. */
-            parsec_context.max_buffer = 6;
-
-            /* sdl audio device. */
-            parsec_context.audio =
-                SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, NULL, NULL);
-            if (parsec_context.audio == NULL) {
-                SDL_LogError(
-                    SDL_LOG_CATEGORY_APPLICATION, "Failed to open audio: %s\n", SDL_GetError()
-                );
-                goto error;
-            }
-
-            /* sdl audio thread. */
-            audio_thread = SDL_CreateThread(
-                vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context
-            );
-            if (audio_thread == NULL) {
-                SDL_LogError(
-                    SDL_LOG_CATEGORY_APPLICATION, "Audio thread creation failed: %s\n",
-                    SDL_GetError()
-                );
-                goto error;
-            }
         }
     }
 
@@ -1164,11 +1130,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* sdl input thread. SDL events are pumped on the main thread and handled
-     * by this worker without running main-thread-only window APIs there. */
-    if (!vdi_stream_client__input_init(&input_context, &parsec_context, vdi_config)) {
-        goto error;
-    }
+    /* SDL events are pumped on the main thread and handled by this worker
+     * without running main-thread-only window APIs there. */
     input_thread = SDL_CreateThread(
         vdi_stream_client__input_thread, "vdi_stream_client__input_thread", &input_context
     );
@@ -1310,9 +1273,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     TTF_Quit();
 
     /* sdl destroy. */
-    if (parsec_context.audio != NULL) {
-        SDL_DestroyAudioStream(parsec_context.audio);
-    }
+    vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();
@@ -1338,9 +1299,7 @@ error:
     TTF_Quit();
 
     /* sdl destroy. */
-    if (parsec_context.audio != NULL) {
-        SDL_DestroyAudioStream(parsec_context.audio);
-    }
+    vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();

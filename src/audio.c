@@ -35,6 +35,59 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+bool
+vdi_stream_client__audio_init(struct parsec_context_s *parsec_context, bool enabled)
+{
+    SDL_AudioSpec want = { 0 };
+    SDL_AudioDeviceID *devices;
+    int device_count = 0;
+
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Audio\n");
+    if (!enabled) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable audio streaming\n");
+        return true;
+    }
+
+    devices = SDL_GetAudioPlaybackDevices(&device_count);
+    if (devices == NULL) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Failed to query audio devices: %s\n", SDL_GetError()
+        );
+        return false;
+    }
+    SDL_free(devices);
+
+    if (device_count == 0) {
+        SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "No audio device available\n");
+        return true;
+    }
+
+    want.freq = PARSEC_AUDIO_SAMPLE_RATE;
+    want.format = SDL_AUDIO_S16;
+    want.channels = PARSEC_AUDIO_CHANNELS;
+
+    /* The number of audio packets to buffer before playback and overflow. */
+    parsec_context->min_buffer = 1;
+    parsec_context->max_buffer = 6;
+    parsec_context->audio =
+        SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, NULL, NULL);
+    if (parsec_context->audio == NULL) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to open audio: %s\n", SDL_GetError());
+        return false;
+    }
+
+    return true;
+}
+
+void
+vdi_stream_client__audio_destroy(struct parsec_context_s *parsec_context)
+{
+    if (parsec_context->audio != NULL) {
+        SDL_DestroyAudioStream(parsec_context->audio);
+        parsec_context->audio = NULL;
+    }
+}
+
 /* parsec audio event. */
 static void
 vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
