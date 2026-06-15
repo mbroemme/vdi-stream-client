@@ -127,6 +127,7 @@ vdi_stream_client__placebo_release_target(struct vdi_stream_client__placebo_s *p
     }
 
     if (placebo->vulkan != NULL && placebo->target != NULL) {
+
         /* SDL_RenderPresent submitted the previous sample on this same
          * main-thread graphics queue, so the next libplacebo submission is
          * ordered after it. The hold path uses a timeline semaphore before
@@ -153,6 +154,7 @@ vdi_stream_client__placebo_target_destroy(
 
     vdi_stream_client__placebo_release_target(placebo);
     if (placebo->vulkan != NULL) {
+
         /* SDL and libplacebo submit to the same Vulkan graphics queue on the
          * main thread. This waits for prior SDL sampling before destruction. */
         pl_gpu_finish(placebo->vulkan->gpu);
@@ -246,6 +248,7 @@ vdi_stream_client__placebo_source_import_linear(
     const VkFormat vulkan_format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
     const Uint32 allocation_width = (Uint32)FFALIGN(av_frame->width, 16);
     const Uint32 allocation_height = (Uint32)FFALIGN(av_frame->height, 16);
+
     /* RADV advertises linear external images through opaque FD handles. */
     const VkExternalMemoryHandleTypeFlagBits handle_type =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
@@ -400,6 +403,7 @@ vdi_stream_client__placebo_source_import_linear(
         );
         return false;
     }
+
     /* A two-plane image deliberately bypasses RADV's single-plane RadeonSI
      * metadata compatibility hook. Matching Mesa's 16-pixel video allocation
      * dimensions makes RADV calculate the same contiguous legacy NV12 layout
@@ -910,6 +914,7 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
         goto error;
     }
     if ((placebo->vulkan->gpu->import_caps.tex & PL_HANDLE_DMA_BUF) == 0) {
+
         /* Pre-GFX9 RADV exports linear RadeonSI video surfaces but does not
          * expose VK_EXT_image_drm_format_modifier. RADV accepts those BOs
          * through its opaque-FD external-memory compatibility path. */

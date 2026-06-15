@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if (($# == 0)); then
+	printf 'Usage: %s <source>...\n' "${0##*/}" >&2
+	exit 2
+fi
+
+status=0
+for source in "$@"; do
+	if ! awk '
+		FNR == 1 {
+			previous = ""
+		}
+		FNR != 1 && /^[[:space:]]*\/(\*|\/)/ && previous !~ /^[[:space:]]*$/ {
+			printf "%s:%d: standalone comment requires a preceding empty line\n", FILENAME, FNR
+			failed = 1
+		}
+		{
+			previous = $0
+		}
+		END {
+			exit failed
+		}
+	' "${source}"; then
+		status=1
+	fi
+done
+
+exit "${status}"

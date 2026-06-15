@@ -109,8 +109,8 @@ jobs:
         run: |
           set -euxo pipefail
           sh -n autogen.sh
-          bash -n tools/parsec-login
-          shellcheck -S error autogen.sh tools/parsec-login
+          bash -n scripts/check-comment-spacing tools/parsec-login
+          shellcheck -S error autogen.sh scripts/check-comment-spacing tools/parsec-login
 
       - name: Check tracked text whitespace
         run: |
@@ -128,6 +128,7 @@ jobs:
             echo 'No C sources found.' >&2
             exit 1
           fi
+          scripts/check-comment-spacing "${sources[@]}"
           clang-format-22 --dry-run --Werror "${sources[@]}"
 
       - name: Generate build system
