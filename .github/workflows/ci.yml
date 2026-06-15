@@ -80,8 +80,6 @@ jobs:
             libvulkan-dev \
             libx11-dev \
             pkg-config \
-            python3 \
-            python3-yaml \
             shellcheck \
             tar
 
@@ -93,43 +91,10 @@ jobs:
           set -euxo pipefail
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Check workflow syntax
-        run: |
-          set -euxo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          for path in sorted(Path('.github/workflows').glob('*.yml')):
-              with path.open('r', encoding='utf-8') as stream:
-                  yaml.safe_load(stream)
-          PY
-
-      - name: Check shell scripts
-        run: |
-          set -euxo pipefail
-          sh -n autogen.sh
-          bash -n scripts/check-comment-spacing tools/parsec-login
-          shellcheck -S error autogen.sh scripts/check-comment-spacing tools/parsec-login
-
-      - name: Check tracked text whitespace
-        run: |
-          set -euxo pipefail
-          if git grep -nI '[[:blank:]]$' -- .; then
-            echo 'Trailing whitespace found.' >&2
-            exit 1
-          fi
-
-      - name: Check C formatting
-        run: |
-          set -euxo pipefail
-          mapfile -t sources < <(git ls-files 'src/*.c' 'src/*.h' 'include/*.h')
-          if ((${#sources[@]} == 0)); then
-            echo 'No C sources found.' >&2
-            exit 1
-          fi
-          scripts/check-comment-spacing "${sources[@]}"
-          clang-format-22 --dry-run --Werror "${sources[@]}"
+      - name: Run source checks
+        env:
+          CLANG_FORMAT: clang-format-22
+        run: scripts/check
 
       - name: Generate build system
         run: |
