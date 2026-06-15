@@ -106,9 +106,11 @@ The original SDK software and hardware decoder entries are disabled so all video
 decoding remains in the injected FFmpeg decoder.
 
 Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
-support can be used for FFmpeg hardware decoding. If VA-API setup is not
-available, FFmpeg falls back to software decoding. The `--no-acceleration`
-option disables FFmpeg VA-API, so both codecs use FFmpeg software decoding.
+support can be used for FFmpeg hardware decoding. The client queries libva
+profile and decode-entrypoint metadata without encoding or decoding a test
+frame. It uses hardware H.265 when available, otherwise hardware H.264, and
+otherwise software H.264. The `--no-acceleration` option skips that query and
+uses software H.265, or software H.264 together with `--no-hevc`.
 With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
 DMA-BUFs and rendered without copying frame pixels through CPU memory.
 
@@ -169,6 +171,11 @@ descriptor for the main-thread renderer.
 
 The FFmpeg decoder tries VA-API first when hardware acceleration is enabled. It
 retains the decoded `AV_PIX_FMT_VAAPI` frame through the Parsec frame descriptor.
+Before connecting, the client queries the VA-API profiles and decode entrypoints
+on the same device FFmpeg will use. This is a metadata-only query and does not
+encode or decode a test frame. If no H.265 VLD profile is available, the client
+requests H.264 from the host immediately. H.264 uses VA-API when its VLD profile
+is available and FFmpeg software decoding otherwise.
 The renderer maps that frame to DRM PRIME and derives each Vulkan plane format
 from the VA-API software layout before importing its DMA-BUF objects through
 libplacebo. This accommodates drivers such as `nvidia-vaapi-driver` whose
@@ -181,9 +188,10 @@ allocation bounds. If direct DMA-BUF import fails after Vulkan setup, the
 client transfers the frame to system memory and uploads it through libplacebo,
 avoiding SDL planar texture creation on the active Vulkan renderer. If Vulkan
 setup fails, the client recreates the window with the default SDL renderer. If
-VA-API is unavailable or initialization fails, the decoder falls back to
-FFmpeg software decoding. If the complete H.265 startup attempt fails, the
-client reconnects once with H.265 disabled and uses the FFmpeg H.264 decoder.
+VA-API initialization fails despite an advertised profile, that codec falls
+back to FFmpeg software decoding. If the complete H.265 startup attempt fails,
+the client reconnects once with H.265 disabled and uses the selected hardware
+or software FFmpeg H.264 decoder.
 
 Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
 `--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
@@ -230,7 +238,8 @@ applicable Parsec SDK terms allow you to do so.
 
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
-`libavcodec`, `libavutil`, `libavformat`, `libdrm`, `libplacebo`, Vulkan and the
+`libavcodec`, `libavutil`, `libavformat`, `libva`, `libdrm`, `libplacebo`,
+Vulkan and the
 [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
@@ -253,7 +262,7 @@ On Debian or Ubuntu, install the build dependencies with:
 sudo apt install build-essential autoconf automake pkg-config \
   libsdl3-dev libsdl3-ttf-dev libusb-1.0-0-dev \
   libusbredirhost-dev libusbredirparser-dev \
-  libavcodec-dev libavformat-dev libavutil-dev libdrm-dev \
+  libavcodec-dev libavformat-dev libavutil-dev libva-dev libdrm-dev \
   libplacebo-dev libvulkan-dev
 ```
 
@@ -261,7 +270,7 @@ On Arch Linux, install the build dependencies with:
 
 ```
 sudo pacman -S base-devel autoconf automake pkgconf \
-  sdl3 sdl3_ttf libusb usbredir ffmpeg libdrm libplacebo vulkan-headers
+  sdl3 sdl3_ttf libusb usbredir ffmpeg libva libdrm libplacebo vulkan-headers
 ```
 
 For build and install use the commands below and if `--prefix=/usr` is used,

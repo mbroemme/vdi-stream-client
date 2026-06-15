@@ -52,9 +52,11 @@ void vdi_stream_client__parsec_ffmpeg_drain_stats(
     struct vdi_stream_client__parsec_ffmpeg_stats_s *stats
 );
 bool vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void);
+bool vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc);
 
 bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
-    struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration
+    struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool h264_acceleration,
+    bool hevc_acceleration
 );
 
 #endif /* _FFMPEG_H */

@@ -19,6 +19,7 @@
 #include <libavutil/avutil.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/pixfmt.h>
 #include <limits.h>
 #include <stdatomic.h>
@@ -26,6 +27,10 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <unistd.h>
+
+/* va-api includes. */
+#include <va/va.h>
+#include <va/va_str.h>
 
 #if !defined(__linux__)
 #error "The FFmpeg Parsec decoder integration currently supports Linux only."
@@ -97,6 +102,8 @@ static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_hwframe_transfer_ns
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_calls;
 static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback_ns;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hardware_active;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_h264_acceleration;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_hevc_acceleration;
 
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 
@@ -424,6 +431,99 @@ vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void)
 }
 
 static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
+    VADisplay display, VAProfile profile, VAEntrypoint *entrypoints, Sint32 max_entrypoints
+)
+{
+    Sint32 entrypoint_count = max_entrypoints;
+
+    if (vaQueryConfigEntrypoints(display, profile, entrypoints, &entrypoint_count) !=
+        VA_STATUS_SUCCESS) {
+        return false;
+    }
+    for (Sint32 i = 0; i < entrypoint_count; i++) {
+        if (entrypoints[i] == VAEntrypointVLD) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
+{
+    AVBufferRef *device_ref = NULL;
+    AVHWDeviceContext *device_context;
+    AVVAAPIDeviceContext *vaapi_context;
+    VAEntrypoint *entrypoints = NULL;
+    VAProfile *profiles = NULL;
+    VADisplay display;
+    Sint32 max_entrypoints;
+    Sint32 max_profiles;
+    Sint32 profile_count;
+    bool available = false;
+
+    if (h264 == NULL || hevc == NULL) {
+        return false;
+    }
+    *h264 = false;
+    *hevc = false;
+
+    /* Query profile metadata only. No VA config, context, surface or frame is created. */
+    if (av_hwdevice_ctx_create(&device_ref, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0) < 0 ||
+        device_ref == NULL) {
+        goto cleanup;
+    }
+    device_context = (AVHWDeviceContext *)device_ref->data;
+    vaapi_context = device_context != NULL ? device_context->hwctx : NULL;
+    display = vaapi_context != NULL ? vaapi_context->display : NULL;
+    if (display == NULL) {
+        goto cleanup;
+    }
+
+    max_profiles = vaMaxNumProfiles(display);
+    max_entrypoints = vaMaxNumEntrypoints(display);
+    if (max_profiles <= 0 || max_entrypoints <= 0) {
+        goto cleanup;
+    }
+    profiles = SDL_malloc((size_t)max_profiles * sizeof(*profiles));
+    entrypoints = SDL_malloc((size_t)max_entrypoints * sizeof(*entrypoints));
+    if (profiles == NULL || entrypoints == NULL) {
+        goto cleanup;
+    }
+
+    profile_count = max_profiles;
+    if (vaQueryConfigProfiles(display, profiles, &profile_count) != VA_STATUS_SUCCESS) {
+        goto cleanup;
+    }
+    available = true;
+    for (Sint32 i = 0; i < profile_count; i++) {
+        const char *name;
+
+        if (!vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
+                display, profiles[i], entrypoints, max_entrypoints
+            )) {
+            continue;
+        }
+        name = vaProfileStr(profiles[i]);
+        if (name == NULL) {
+            continue;
+        }
+        if (SDL_strncmp(name, "VAProfileH264", sizeof("VAProfileH264") - 1) == 0) {
+            *h264 = true;
+        } else if (SDL_strncmp(name, "VAProfileHEVC", sizeof("VAProfileHEVC") - 1) == 0) {
+            *hevc = true;
+        }
+    }
+
+cleanup:
+    SDL_free(entrypoints);
+    SDL_free(profiles);
+    av_buffer_unref(&device_ref);
+    return available;
+}
+
+static bool
 vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
 {
     long page_size;
@@ -699,13 +799,13 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
 
 static Sint32
 vdi_stream_client__parsec_ffmpeg_init_common(
-    void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags,
-    bool acceleration
+    void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags
 )
 {
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg;
     const AVCodec *codec;
     Uint8 selector;
+    bool acceleration;
     Sint32 err;
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
 
@@ -735,6 +835,11 @@ vdi_stream_client__parsec_ffmpeg_init_common(
 
     selector = codec_selector != NULL ? ((const Uint8 *)codec_selector)[0] : 2;
     ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+    acceleration = atomic_load_explicit(
+        ffmpeg->codec_id == AV_CODEC_ID_HEVC ? &vdi_stream_client__parsec_ffmpeg_hevc_acceleration
+                                             : &vdi_stream_client__parsec_ffmpeg_h264_acceleration,
+        memory_order_relaxed
+    );
 
     codec = avcodec_find_decoder(ffmpeg->codec_id);
     if (codec == NULL) {
@@ -802,17 +907,7 @@ vdi_stream_client__parsec_ffmpeg_init(
 )
 {
     return vdi_stream_client__parsec_ffmpeg_init_common(
-        decoder, stream, stream_id, codec_selector, flags, true
-    );
-}
-
-static Sint32
-vdi_stream_client__parsec_ffmpeg_init_no_acceleration(
-    void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags
-)
-{
-    return vdi_stream_client__parsec_ffmpeg_init_common(
-        decoder, stream, stream_id, codec_selector, flags, false
+        decoder, stream, stream_id, codec_selector, flags
     );
 }
 
@@ -1225,7 +1320,8 @@ vdi_stream_client__parsec_ffmpeg_decode(
 
 bool
 vdi_stream_client__parsec_ffmpeg_decoder_enable(
-    struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool acceleration
+    struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool h264_acceleration,
+    bool hevc_acceleration
 )
 {
     Uint8 *table;
@@ -1237,6 +1333,12 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     );
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_hardware_active, false, memory_order_release
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_h264_acceleration, h264_acceleration, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_hevc_acceleration, hevc_acceleration, memory_order_relaxed
     );
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
@@ -1267,8 +1369,7 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     }
 
     ((uintptr_t *)(void *)(entry + VDI_STREAM_CLIENT_PARSEC_DECODER_INIT_OFFSET))[0] =
-        acceleration ? (uintptr_t)(void *)vdi_stream_client__parsec_ffmpeg_init
-                     : (uintptr_t)(void *)vdi_stream_client__parsec_ffmpeg_init_no_acceleration;
+        (uintptr_t)(void *)vdi_stream_client__parsec_ffmpeg_init;
     ((uintptr_t *)(void *)(entry + VDI_STREAM_CLIENT_PARSEC_DECODER_DECODE_OFFSET))[0] =
         (uintptr_t)(void *)vdi_stream_client__parsec_ffmpeg_decode;
     ((uintptr_t *)(void *)(entry + VDI_STREAM_CLIENT_PARSEC_DECODER_CLEANUP_OFFSET))[0] =

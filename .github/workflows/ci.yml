@@ -76,6 +76,7 @@ jobs:
             libusb-1.0-0-dev \
             libusbredirhost-dev \
             libusbredirparser-dev \
+            libva-dev \
             libvulkan-dev \
             libx11-dev \
             pkg-config \
@@ -208,6 +209,7 @@ jobs:
             libavutil-dev \
             libdrm-dev \
             libplacebo-dev \
+            libva-dev \
             libvulkan-dev \
             libx11-dev \
             pkg-config \

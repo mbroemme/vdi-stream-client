@@ -3,8 +3,8 @@ bin_PROGRAMS			= vdi-stream-client
 
 # sources for vdi-stream-client program.
 vdi_stream_client_SOURCES	= client.c parsec.c ffmpeg.c placebo.c redirect.c audio.c video.c input.c
-vdi_stream_client_CFLAGS	= $(USB_CFLAGS) $(USBREDIRHOST_CFLAGS) $(USBREDIRPARSER_CFLAGS) $(SDL3_CFLAGS) $(SDL3_TTF_CFLAGS) $(FFMPEG_CFLAGS) $(DRM_CFLAGS) $(PLACEBO_CFLAGS)
-vdi_stream_client_LDADD		= $(USB_LIBS) $(USBREDIRHOST_LIBS) $(USBREDIRPARSER_LIBS) $(SDL3_LIBS) $(SDL3_TTF_LIBS) $(FFMPEG_LIBS) $(PLACEBO_LIBS)
+vdi_stream_client_CFLAGS	= $(USB_CFLAGS) $(USBREDIRHOST_CFLAGS) $(USBREDIRPARSER_CFLAGS) $(SDL3_CFLAGS) $(SDL3_TTF_CFLAGS) $(FFMPEG_CFLAGS) $(VAAPI_CFLAGS) $(DRM_CFLAGS) $(PLACEBO_CFLAGS)
+vdi_stream_client_LDADD		= $(USB_LIBS) $(USBREDIRHOST_LIBS) $(USBREDIRPARSER_LIBS) $(SDL3_LIBS) $(SDL3_TTF_LIBS) $(FFMPEG_LIBS) $(VAAPI_LIBS) $(PLACEBO_LIBS)
 
 # install libparsec for dso loading. Redistribution requires Parsec SDK license permission.
 if INTERNAL_PARSEC_SDK

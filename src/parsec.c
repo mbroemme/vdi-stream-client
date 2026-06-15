@@ -807,13 +807,14 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     Uint32 wait_time = 0;
     Uint64 last_time = 0;
     bool force_redraw = false;
-    SDL_AudioSpec want = { 0 };
     ParsecStatus e;
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
     Uint32 ffmpeg_decoder_index = UINT32_MAX;
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
+    bool h264_acceleration = false;
+    bool hevc_acceleration = false;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -869,6 +870,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
+    SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video\n");
+
     /* use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
         SDL_LogInfo(
@@ -910,21 +913,37 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
+    if (vdi_config->acceleration == 1) {
+        (void)vdi_stream_client__parsec_ffmpeg_vaapi_codecs(&h264_acceleration, &hevc_acceleration);
+        if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && !hevc_acceleration) {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VA-API H.265 decoding unavailable\n");
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION, "Use H.264 (AVC) %s fallback\n",
+                h264_acceleration ? "hardware" : "software"
+            );
+            cfg.video[DEFAULT_STREAM].decoderH265 = 0;
+        }
+    }
+
     /* Configure client-side FFmpeg for H.264 and H.265. The public Linux SDK
      * exposes a hidden FFmpeg decoder entry; replace that entry with the client
      * decoder so both codecs use the same owned VAAPI or software path. */
     if (!vdi_stream_client__parsec_ffmpeg_decoder_enable(
-            &parsec_context, &ffmpeg_decoder_index, vdi_config->acceleration == 1
+            &parsec_context, &ffmpeg_decoder_index, h264_acceleration, hevc_acceleration
         )) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg decoder injection failed\n");
         goto error;
     }
     cfg.video[DEFAULT_STREAM].decoderIndex = ffmpeg_decoder_index;
-    hevc_attempt_active = vdi_config->hevc == 1;
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use FFmpeg Video Decoder for %s\n",
-        vdi_config->hevc == 1 ? "H.265 (HEVC)" : "H.264 (AVC)"
-    );
+    hevc_attempt_active = cfg.video[DEFAULT_STREAM].decoderH265 == 1;
+
+    if (!vdi_stream_client__audio_init(&parsec_context, vdi_config->audio == 1)) {
+        goto error;
+    }
+
+    if (!vdi_stream_client__input_init(&input_context, &parsec_context, vdi_config)) {
+        goto error;
+    }
 
     /* check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
@@ -954,11 +973,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* check if clipboard should be disabled. */
     if (vdi_config->clipboard == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable clipboard sharing\n");
-    }
-
-    /* check if audio should be streamed. */
-    if (vdi_config->audio == 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable audio streaming\n");
     }
 
     for (;;) {
@@ -1072,29 +1086,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* check if audio should be streamed. */
-    if (vdi_config->audio == 1) {
-        want.freq = PARSEC_AUDIO_SAMPLE_RATE;
-        want.format = SDL_AUDIO_S16;
-        want.channels = PARSEC_AUDIO_CHANNELS;
-
-        /* the number of audio packets (960 frames) to buffer before we begin playing. */
-        parsec_context.min_buffer = 1;
-
-        /* the number of audio packets (960 frames) to buffer before overflow and clear. */
-        parsec_context.max_buffer = 6;
-
-        /* sdl audio device. */
-        parsec_context.audio =
-            SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &want, NULL, NULL);
-        if (parsec_context.audio == NULL) {
-            SDL_LogError(
-                SDL_LOG_CATEGORY_APPLICATION, "Failed to open audio: %s\n", SDL_GetError()
-            );
-            goto error;
-        }
-
-        /* sdl audio thread. */
+    /* start polling audio only after the connection and video output are ready. */
+    if (parsec_context.audio != NULL) {
         audio_thread = SDL_CreateThread(
             vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context
         );
@@ -1137,11 +1130,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* sdl input thread. SDL events are pumped on the main thread and handled
-     * by this worker without running main-thread-only window APIs there. */
-    if (!vdi_stream_client__input_init(&input_context, &parsec_context, vdi_config)) {
-        goto error;
-    }
+    /* SDL events are pumped on the main thread and handled by this worker
+     * without running main-thread-only window APIs there. */
     input_thread = SDL_CreateThread(
         vdi_stream_client__input_thread, "vdi_stream_client__input_thread", &input_context
     );
@@ -1283,9 +1273,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     TTF_Quit();
 
     /* sdl destroy. */
-    if (vdi_config->audio == 1) {
-        SDL_DestroyAudioStream(parsec_context.audio);
-    }
+    vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();
@@ -1311,9 +1299,7 @@ error:
     TTF_Quit();
 
     /* sdl destroy. */
-    if (vdi_config->audio == 1) {
-        SDL_DestroyAudioStream(parsec_context.audio);
-    }
+    vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();
