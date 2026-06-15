@@ -644,6 +644,7 @@ vdi_stream_client__parsec_ffmpeg_query(void *h264, void *h265)
     vdi_stream_client__parsec_ffmpeg_query_enable(h264);
     vdi_stream_client__parsec_ffmpeg_query_enable(h265);
 }
+
 static const char *
 vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len)
 {

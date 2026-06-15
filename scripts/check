@@ -31,6 +31,7 @@ printf 'Checking shell scripts...\n'
 shell_scripts=(
 	scripts/check
 	scripts/check-comment-spacing
+	scripts/check-function-spacing
 	tools/parsec-login
 )
 sh -n autogen.sh
@@ -50,6 +51,7 @@ if ((${#sources[@]} == 0)); then
 	exit 1
 fi
 scripts/check-comment-spacing "${sources[@]}"
+scripts/check-function-spacing "${sources[@]}"
 "${clang_format}" --dry-run --Werror "${sources[@]}"
 
 printf 'All source checks passed.\n'
