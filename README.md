@@ -93,7 +93,7 @@ System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
-[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK limitation](https://github.com/mbroemme/parsec-sdk)                  | Yes
+[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | Yes               | Yes
 
 # Requirements
 
@@ -111,8 +111,11 @@ profile and decode-entrypoint metadata without encoding or decoding a test
 frame. It uses hardware H.265 when available, otherwise hardware H.264, and
 otherwise software H.264. The `--no-acceleration` option skips that query and
 uses software H.265, or software H.264 together with `--no-hevc`.
-With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
-DMA-BUFs and rendered without copying frame pixels through CPU memory.
+When `--no-subsampling` is requested, the client enables H.265 4:4:4 only when
+the VA-API device exposes a `VAProfileHEVC*444` VLD profile with a matching
+YUV444 render-target format. With libplacebo and Vulkan, retained VA-API frames
+are imported as DRM PRIME DMA-BUFs and rendered without copying frame pixels
+through CPU memory.
 
 Nothing exist without drawbacks and that one for Parsec is that it is mandatory
 to have an [account](https://parsec.app/signup) which is completely free.
@@ -195,25 +198,14 @@ or software FFmpeg H.264 decoder.
 
 Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
 `--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
-for either codec.
+for either codec. H.265 4:4:4 requires hardware decoding and a compatible
+VA-API profile.
 
 # Parsec Warp
 
 * Support for disabling chroma subsampling to support color mode 4:4:4 with
   sharp and crisp text and better colors. Available for Nvidia Hosts running
   GTX 900 or better.
-
-# Known Issues
-
-* Color mode 4:4:4 is not yet supported by the public SDK path used by this
-  client. This limitation was previously tracked in the original
-  `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
-  available after Parsec was acquired by Unity. The SDK files referenced by this
-  project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
-  The FFmpeg decoder currently supports I420 or NV12 frame content and does not
-  add 4:4:4 support. In the official
-  [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
-  internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -239,8 +231,7 @@ applicable Parsec SDK terms allow you to do so.
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
 `libavcodec`, `libavutil`, `libavformat`, `libva`, `libdrm`, `libplacebo`,
-Vulkan and the
-[Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+Vulkan and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
 instead. FFmpeg is a mandatory dependency because video decoding is implemented

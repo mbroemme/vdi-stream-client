@@ -92,7 +92,9 @@ Request 4:4:4 color mode without chroma subsampling. By default, the host
 compresses the video stream and applies chroma subsampling with mode 4:2:0
 to reduce data transfers. With this option, no chroma subsampling is
 applied and the client receives a sharp and crisp stream with mode 4:4:4.
-This option is only available under the commercial Parsec Warp subscription.
+This requires H.265 hardware decoding through a VA-API device exposing a
+VAProfileHEVC 4:4:4 decode profile. This option is only available under the
+commercial Parsec Warp subscription.
 .PP
 Client options:
 .TP 8

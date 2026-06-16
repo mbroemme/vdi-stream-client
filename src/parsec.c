@@ -650,6 +650,7 @@ vdi_stream_client__use_h264_fallback(
     }
 
     cfg->video[DEFAULT_STREAM].decoderH265 = 0;
+    cfg->video[DEFAULT_STREAM].decoder444 = 0;
     cfg->video[DEFAULT_STREAM].decoderCompatibility = 0;
     *hevc_attempt_active = false;
     *h264_fallback_done = true;
@@ -815,6 +816,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     bool h264_fallback_done = false;
     bool h264_acceleration = false;
     bool hevc_acceleration = false;
+    bool hevc444_acceleration = false;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -891,30 +893,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         cfg.video[DEFAULT_STREAM].decoderH265 = 0;
     }
 
-    /* configure host color mode. */
-    if (vdi_config->subsampling == 1) {
-        cfg.video[DEFAULT_STREAM].decoder444 = 0;
-    }
-    if (vdi_config->subsampling == 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Chroma Subsampling\n");
-        cfg.video[DEFAULT_STREAM].decoder444 = 1;
-
-        /* TODO: parsec sdk bug. */
-        SDL_LogWarn(
-            SDL_LOG_CATEGORY_APPLICATION,
-            "Parsec SDK bug and color mode 4:4:4 not working yet, details at:\n"
-        );
-        SDL_LogWarn(
-            SDL_LOG_CATEGORY_APPLICATION, "https://github.com/parsec-cloud/parsec-sdk/issues/36\n"
-        );
-    }
+    cfg.video[DEFAULT_STREAM].decoder444 = 0;
 
     /* configure client decoding acceleration. */
     if (vdi_config->acceleration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
     if (vdi_config->acceleration == 1) {
-        (void)vdi_stream_client__parsec_ffmpeg_vaapi_codecs(&h264_acceleration, &hevc_acceleration);
+        (void)vdi_stream_client__parsec_ffmpeg_vaapi_codecs(
+            &h264_acceleration, &hevc_acceleration, &hevc444_acceleration
+        );
         if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && !hevc_acceleration) {
             SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VA-API H.265 decoding unavailable\n");
             SDL_LogWarn(
@@ -925,11 +913,24 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
+    /* H.265 4:4:4 is advertised only when the selected VA-API device exposes
+     * a VAProfileHEVC*444 VLD profile with a YUV444 render-target format. */
+    if (vdi_config->subsampling == 0) {
+        if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && hevc444_acceleration) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Chroma Subsampling\n");
+            cfg.video[DEFAULT_STREAM].decoder444 = 1;
+        } else {
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "VA-API H.265 4:4:4 decoding unavailable\n");
+            SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Use 4:2:0 color fallback\n");
+        }
+    }
+
     /* Configure client-side FFmpeg for H.264 and H.265. The public Linux SDK
      * exposes a hidden FFmpeg decoder entry; replace that entry with the client
      * decoder so both codecs use the same owned VAAPI or software path. */
     if (!vdi_stream_client__parsec_ffmpeg_decoder_enable(
-            &parsec_context, &ffmpeg_decoder_index, h264_acceleration, hevc_acceleration
+            &parsec_context, &ffmpeg_decoder_index, h264_acceleration, hevc_acceleration,
+            cfg.video[DEFAULT_STREAM].decoder444 == 1
         )) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "FFmpeg decoder injection failed\n");
         goto error;
@@ -1013,6 +1014,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                         SDL_LOG_CATEGORY_APPLICATION, "Use %s codec\n",
                         parsec_context.client_status.decoder[DEFAULT_STREAM].h265 ? "H.265 (HEVC)"
                                                                                   : "H.264 (AVC)"
+                    );
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION, "Use %s color\n",
+                        parsec_context.client_status.decoder[DEFAULT_STREAM].color444 ? "4:4:4"
+                                                                                      : "4:2:0"
                     );
                     SDL_LogInfo(
                         SDL_LOG_CATEGORY_APPLICATION, "Use resolution %dx%d\n",

@@ -20,6 +20,7 @@
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vaapi.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <limits.h>
 #include <stdatomic.h>
@@ -104,6 +105,7 @@ static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hardware_active;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_h264_acceleration;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hevc_acceleration;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_color444;
 
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 
@@ -162,6 +164,8 @@ vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
     enum AVPixelFormat format, ParsecColorFormat *parsec_format, SDL_PixelFormat *sdl_format
 )
 {
+    const AVPixFmtDescriptor *descriptor;
+
     switch (format) {
     case AV_PIX_FMT_YUV420P:
 #if LIBAVUTIL_VERSION_MAJOR < 59
@@ -183,8 +187,19 @@ vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
         }
         return true;
     default:
+        break;
+    }
+
+    descriptor = av_pix_fmt_desc_get(format);
+    if (descriptor == NULL || (descriptor->flags & AV_PIX_FMT_FLAG_RGB) != 0 ||
+        descriptor->nb_components < 3 || descriptor->log2_chroma_w != 0 ||
+        descriptor->log2_chroma_h != 0) {
         return false;
     }
+    if (parsec_format != NULL) {
+        *parsec_format = FORMAT_I444;
+    }
+    return sdl_format == NULL;
 }
 
 static AVFrame *
@@ -449,8 +464,36 @@ vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
     return false;
 }
 
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_hevc444(VAProfile profile)
+{
+    switch (profile) {
+    case VAProfileHEVCMain444:
+    case VAProfileHEVCMain444_10:
+    case VAProfileHEVCMain444_12:
+    case VAProfileHEVCSccMain444:
+    case VAProfileHEVCSccMain444_10:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_yuv444(VADisplay display, VAProfile profile)
+{
+    VAConfigAttrib attribute = {
+        .type = VAConfigAttribRTFormat,
+    };
+    const Uint32 formats = VA_RT_FORMAT_YUV444 | VA_RT_FORMAT_YUV444_10 | VA_RT_FORMAT_YUV444_12;
+
+    return vaGetConfigAttributes(display, profile, VAEntrypointVLD, &attribute, 1) ==
+               VA_STATUS_SUCCESS &&
+           attribute.value != VA_ATTRIB_NOT_SUPPORTED && (attribute.value & formats) != 0;
+}
+
 bool
-vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
+vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc, bool *hevc444)
 {
     AVBufferRef *device_ref = NULL;
     AVHWDeviceContext *device_context;
@@ -463,11 +506,12 @@ vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
     Sint32 profile_count;
     bool available = false;
 
-    if (h264 == NULL || hevc == NULL) {
+    if (h264 == NULL || hevc == NULL || hevc444 == NULL) {
         return false;
     }
     *h264 = false;
     *hevc = false;
+    *hevc444 = false;
 
     /* Query profile metadata only. No VA config, context, surface or frame is created. */
     if (av_hwdevice_ctx_create(&device_ref, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0) < 0 ||
@@ -513,6 +557,10 @@ vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
             *h264 = true;
         } else if (SDL_strncmp(name, "VAProfileHEVC", sizeof("VAProfileHEVC") - 1) == 0) {
             *hevc = true;
+            if (vdi_stream_client__parsec_ffmpeg_vaapi_profile_hevc444(profiles[i]) &&
+                vdi_stream_client__parsec_ffmpeg_vaapi_profile_yuv444(display, profiles[i])) {
+                *hevc444 = true;
+            }
         }
     }
 
@@ -538,6 +586,75 @@ vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
     start = (uintptr_t)address & ~((uintptr_t)page_size - 1u);
     end = ((uintptr_t)address + len + (uintptr_t)page_size - 1u) & ~((uintptr_t)page_size - 1u);
     return mprotect((void *)start, (size_t)(end - start), prot) == 0;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(struct parsec_context_s *parsec_context)
+{
+    static bool patched;
+    const Uint8 pattern[] = {
+        0x84, 0xc0,                   /* test al, al */
+        0x41, 0x58,                   /* pop r8 */
+        0x4c, 0x8b, 0x5c, 0x24, 0x18, /* mov r11, [rsp+0x18] */
+        0x0f, 0x85,                   /* jne rel32 */
+    };
+    Uint8 replacement[6];
+    Uint8 *branch;
+    Uint8 *func;
+    Uint8 *scan;
+    int32_t old_relative;
+    int32_t new_relative;
+    uintptr_t target;
+    Uint32 offset;
+
+    if (patched) {
+        return true;
+    }
+
+#ifdef HAVE_LIBPARSEC
+    (void)parsec_context;
+    func = (Uint8 *)(void *)ParsecClientConnect;
+#else
+    if (parsec_context->parsec == NULL || parsec_context->parsec->api.ParsecClientConnect == NULL) {
+        return false;
+    }
+    func = (Uint8 *)(void *)parsec_context->parsec->api.ParsecClientConnect;
+#endif
+
+    /* Parsec SDK 6.0 checks its bundled FFmpeg dependency before enabling
+     * decoder444. The injected decoder replaces that implementation, so bypass
+     * only the result branch of that dependency check. */
+    scan = (Uint8 *)((uintptr_t)func - 0x10000u);
+    for (offset = 0; offset + sizeof(pattern) + sizeof(old_relative) <= 0x14000u; offset++) {
+        if (SDL_memcmp(scan + offset, pattern, sizeof(pattern)) != 0) {
+            continue;
+        }
+
+        branch = scan + offset + 9u;
+        SDL_memcpy(&old_relative, branch + 2u, sizeof(old_relative));
+        target = (uintptr_t)(branch + 6u + old_relative);
+        new_relative = (int32_t)(target - (uintptr_t)(branch + 5u));
+        replacement[0] = 0xe9;
+        SDL_memcpy(replacement + 1u, &new_relative, sizeof(new_relative));
+        replacement[5] = 0x90;
+
+        if (!vdi_stream_client__parsec_make_writable(
+                branch, sizeof(replacement), PROT_READ | PROT_WRITE
+            )) {
+            return false;
+        }
+        SDL_memcpy(branch, replacement, sizeof(replacement));
+        __builtin___clear_cache((char *)branch, (char *)branch + sizeof(replacement));
+        if (!vdi_stream_client__parsec_make_writable(
+                branch, sizeof(replacement), PROT_READ | PROT_EXEC
+            )) {
+            return false;
+        }
+        patched = true;
+        return true;
+    }
+
+    return false;
 }
 
 static bool
@@ -624,7 +741,7 @@ vdi_stream_client__parsec_decoder_lookup(
 }
 
 static void
-vdi_stream_client__parsec_ffmpeg_query_enable(void *query)
+vdi_stream_client__parsec_ffmpeg_query_enable(void *query, bool color444)
 {
     Uint8 *bytes = query;
 
@@ -636,13 +753,17 @@ vdi_stream_client__parsec_ffmpeg_query_enable(void *query)
         bytes[i] = 0;
     }
     bytes[0] = 1;
+    bytes[1] = color444;
 }
 
 static void
 vdi_stream_client__parsec_ffmpeg_query(void *h264, void *h265)
 {
-    vdi_stream_client__parsec_ffmpeg_query_enable(h264);
-    vdi_stream_client__parsec_ffmpeg_query_enable(h265);
+    bool color444 =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_color444, memory_order_relaxed);
+
+    vdi_stream_client__parsec_ffmpeg_query_enable(h264, false);
+    vdi_stream_client__parsec_ffmpeg_query_enable(h265, color444);
 }
 
 static const char *
@@ -1192,6 +1313,16 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
         );
         break;
     default:
+        if (vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
+                (enum AVPixelFormat)source->format, NULL, NULL
+            )) {
+            err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+                ffmpeg, source, (ParsecFrame *)frame_data, frame_size
+            );
+            if (err == PARSEC_OK) {
+                return PARSEC_OK;
+            }
+        }
         SDL_LogWarn(
             SDL_LOG_CATEGORY_APPLICATION, "Unsupported FFmpeg pixel format %d\n", source->format
         );
@@ -1322,7 +1453,7 @@ vdi_stream_client__parsec_ffmpeg_decode(
 bool
 vdi_stream_client__parsec_ffmpeg_decoder_enable(
     struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool h264_acceleration,
-    bool hevc_acceleration
+    bool hevc_acceleration, bool color444
 )
 {
     Uint8 *table;
@@ -1340,6 +1471,9 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     );
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_hevc_acceleration, hevc_acceleration, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_color444, color444, memory_order_relaxed
     );
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
@@ -1380,6 +1514,16 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     (void)vdi_stream_client__parsec_make_writable(
         entry, VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE, PROT_READ
     );
+
+    if (color444 && !vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(parsec_context)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "Parsec SDK 4:4:4 negotiation gate patch failed; use 4:2:0 color\n"
+        );
+        atomic_store_explicit(
+            &vdi_stream_client__parsec_ffmpeg_color444, false, memory_order_relaxed
+        );
+    }
 
     return vdi_stream_client__parsec_decoder_lookup(parsec_context, "FFMPEG", decoder_index);
 }

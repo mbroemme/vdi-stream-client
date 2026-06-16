@@ -51,7 +51,7 @@ PKG_CHECK_MODULES([USBREDIRPARSER], [libusbredirparser-0.5 >= 0.7.1])
 PKG_CHECK_MODULES([FFMPEG], [libavcodec >= 58 libavutil >= 56], [], [AC_MSG_ERROR([*** libavcodec >= 58 and libavutil >= 56 are required])])
 
 # checking for VA-API decoder capability support.
-PKG_CHECK_MODULES([VAAPI], [libva >= 1.7.0], [], [AC_MSG_ERROR([*** libva >= 1.7.0 is required])])
+PKG_CHECK_MODULES([VAAPI], [libva >= 1.8.0], [], [AC_MSG_ERROR([*** libva >= 1.8.0 is required])])
 
 # checking for libdrm format definitions.
 PKG_CHECK_MODULES([DRM], [libdrm], [], [AC_MSG_ERROR([*** libdrm is required])])
