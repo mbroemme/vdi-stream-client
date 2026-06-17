@@ -656,6 +656,53 @@ vdi_stream_client__use_h264_fallback(
     *h264_fallback_done = true;
 }
 
+struct vdi_stream_client__video_decoder_policy_s
+{
+    bool hevc;
+    bool color444;
+    bool acceleration;
+};
+
+static bool
+vdi_stream_client__video_decoder_policy(
+    vdi_video_decoder_e video_decoder, struct vdi_stream_client__video_decoder_policy_s *policy
+)
+{
+    if (policy == NULL) {
+        return false;
+    }
+
+    switch (video_decoder) {
+    case VDI_VIDEO_DECODER_HW_HEVC_444:
+        *policy = (struct vdi_stream_client__video_decoder_policy_s){
+            .hevc = true,
+            .color444 = true,
+            .acceleration = true,
+        };
+        return true;
+    case VDI_VIDEO_DECODER_HW_HEVC_420:
+        *policy = (struct vdi_stream_client__video_decoder_policy_s){
+            .hevc = true,
+            .acceleration = true,
+        };
+        return true;
+    case VDI_VIDEO_DECODER_HW_H264_420:
+        *policy = (struct vdi_stream_client__video_decoder_policy_s){
+            .acceleration = true,
+        };
+        return true;
+    case VDI_VIDEO_DECODER_SW_HEVC_420:
+        *policy = (struct vdi_stream_client__video_decoder_policy_s){
+            .hevc = true,
+        };
+        return true;
+    case VDI_VIDEO_DECODER_SW_H264_420:
+        *policy = (struct vdi_stream_client__video_decoder_policy_s){ 0 };
+        return true;
+    }
+    return false;
+}
+
 static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
@@ -811,6 +858,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     ParsecStatus e;
     ParsecConfig network_cfg = PARSEC_DEFAULTS;
     ParsecClientConfig cfg = PARSEC_CLIENT_DEFAULTS;
+    struct vdi_stream_client__video_decoder_policy_s decoder_policy;
     Uint32 ffmpeg_decoder_index = UINT32_MAX;
     bool hevc_attempt_active = false;
     bool h264_fallback_done = false;
@@ -874,6 +922,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Video\n");
 
+    if (!vdi_stream_client__video_decoder_policy(vdi_config->video_decoder, &decoder_policy)) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Invalid video decoder policy\n");
+        goto error;
+    }
+
     /* use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
         SDL_LogInfo(
@@ -884,22 +937,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
     }
 
-    /* configure host video codec. */
-    if (vdi_config->hevc == 1) {
-        cfg.video[DEFAULT_STREAM].decoderH265 = 1;
-    }
-    if (vdi_config->hevc == 0) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable H.265 (HEVC) Video Codec\n");
-        cfg.video[DEFAULT_STREAM].decoderH265 = 0;
-    }
-
+    cfg.video[DEFAULT_STREAM].decoderH265 = decoder_policy.hevc;
     cfg.video[DEFAULT_STREAM].decoder444 = 0;
+    if (!decoder_policy.hevc) {
+        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable H.265 (HEVC) Video Codec\n");
+    }
 
     /* configure client decoding acceleration. */
-    if (vdi_config->acceleration == 0) {
+    if (!decoder_policy.acceleration) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
-    if (vdi_config->acceleration == 1) {
+    if (decoder_policy.acceleration) {
         (void)vdi_stream_client__parsec_ffmpeg_vaapi_codecs(
             &h264_acceleration, &hevc_acceleration, &hevc444_acceleration
         );
@@ -913,9 +961,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* H.265 4:4:4 is advertised only when the selected VA-API device exposes
-     * a VAProfileHEVC*444 VLD profile with a YUV444 render-target format. */
-    if (vdi_config->subsampling == 0) {
+    if (decoder_policy.color444) {
         if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && hevc444_acceleration) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Chroma Subsampling\n");
             cfg.video[DEFAULT_STREAM].decoder444 = 1;

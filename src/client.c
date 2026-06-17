@@ -63,11 +63,12 @@ vdi_stream_client__usage(char *program_name)
         "      --width <width>      horizontal resolution (default: host resolution)\n"
         "      --height <height>    vertical resolution (default: host resolution)\n"
         "\n"
-        "Parsec Warp Options:\n"
-        "      --no-subsampling     request 4:4:4 video without chroma subsampling\n"
-        "\n"
         "Client Options:\n"
-        "      --no-acceleration    disable hardware accelerated decoding\n"
+        "      --video-decoder <mode>\n"
+        "                           select video decoder mode (default: hw-hevc-444)\n"
+        "                           hw-hevc-444, hw-hevc-420,\n"
+        "                           hw-h264-420, sw-hevc-420,\n"
+        "                           sw-h264-420\n"
         "      --no-upnp            disable upnp nat traversal\n"
         "      --no-reconnect       disable automatic reconnect in case of failures\n"
         "      --no-grab            disable exclusive mouse grab\n"
@@ -75,7 +76,6 @@ vdi_stream_client__usage(char *program_name)
         "      --no-screensaver     disable screen saver and lockers\n"
         "      --no-clipboard       disable clipboard sharing\n"
         "      --no-audio           disable audio streaming\n"
-        "      --no-hevc            disable H.265/HEVC video codec\n"
         "\n"
         "USB Options:\n"
         "      --redirect <vendorID>:<productID>@<address>#<port>,[...]\n"
@@ -88,6 +88,33 @@ vdi_stream_client__usage(char *program_name)
 
     /* if no error was found, return zero. */
     return VDI_STREAM_CLIENT_SUCCESS;
+}
+
+static bool
+vdi_stream_client__video_decoder_parse(const char *value, vdi_video_decoder_e *video_decoder)
+{
+    static const struct
+    {
+        const char *name;
+        vdi_video_decoder_e value;
+    } modes[] = {
+        { "hw-hevc-444", VDI_VIDEO_DECODER_HW_HEVC_444 },
+        { "hw-hevc-420", VDI_VIDEO_DECODER_HW_HEVC_420 },
+        { "hw-h264-420", VDI_VIDEO_DECODER_HW_H264_420 },
+        { "sw-hevc-420", VDI_VIDEO_DECODER_SW_HEVC_420 },
+        { "sw-h264-420", VDI_VIDEO_DECODER_SW_H264_420 },
+    };
+
+    if (value == NULL || video_decoder == NULL) {
+        return false;
+    }
+    for (size_t i = 0; i < SDL_arraysize(modes); i++) {
+        if (SDL_strcmp(value, modes[i].name) == 0) {
+            *video_decoder = modes[i].value;
+            return true;
+        }
+    }
+    return false;
 }
 
 /* this function shows the version information. */
@@ -149,18 +176,16 @@ main(int argc, char **argv)
         OPTION_SPEED = 6,
         OPTION_WIDTH = 7,
         OPTION_HEIGHT = 8,
-        OPTION_NO_SUBSAMPLING = 9,
-        OPTION_NO_ACCELERATION = 10,
-        OPTION_NO_UPNP = 11,
-        OPTION_NO_RECONNECT = 12,
-        OPTION_NO_GRAB = 13,
-        OPTION_NO_SCREENSAVER = 14,
-        OPTION_NO_CLIPBOARD = 15,
-        OPTION_NO_AUDIO = 16,
-        OPTION_NO_HEVC = 17,
-        OPTION_REDIRECT = 18,
-        OPTION_STATS = 19,
-        OPTION_NO_DECORATION = 20,
+        OPTION_VIDEO_DECODER = 9,
+        OPTION_NO_UPNP = 10,
+        OPTION_NO_RECONNECT = 11,
+        OPTION_NO_GRAB = 12,
+        OPTION_NO_SCREENSAVER = 13,
+        OPTION_NO_CLIPBOARD = 14,
+        OPTION_NO_AUDIO = 15,
+        OPTION_REDIRECT = 16,
+        OPTION_STATS = 17,
+        OPTION_NO_DECORATION = 18,
     };
 
     struct option long_options[] = {
@@ -180,11 +205,8 @@ main(int argc, char **argv)
         { "width", required_argument, NULL, OPTION_WIDTH },
         { "height", required_argument, NULL, OPTION_HEIGHT },
 
-        /* parsec warp options. */
-        { "no-subsampling", no_argument, NULL, OPTION_NO_SUBSAMPLING },
-
         /* client options. */
-        { "no-acceleration", no_argument, NULL, OPTION_NO_ACCELERATION },
+        { "video-decoder", required_argument, NULL, OPTION_VIDEO_DECODER },
         { "no-upnp", no_argument, NULL, OPTION_NO_UPNP },
         { "no-reconnect", no_argument, NULL, OPTION_NO_RECONNECT },
         { "no-grab", no_argument, NULL, OPTION_NO_GRAB },
@@ -192,7 +214,6 @@ main(int argc, char **argv)
         { "no-screensaver", no_argument, NULL, OPTION_NO_SCREENSAVER },
         { "no-clipboard", no_argument, NULL, OPTION_NO_CLIPBOARD },
         { "no-audio", no_argument, NULL, OPTION_NO_AUDIO },
-        { "no-hevc", no_argument, NULL, OPTION_NO_HEVC },
 
         /* usb options. */
         { "redirect", required_argument, NULL, OPTION_REDIRECT },
@@ -214,11 +235,8 @@ main(int argc, char **argv)
     vdi_config->timeout = 5000;
     vdi_config->speed = 100;
 
-    /* parsec warp defaults. */
-    vdi_config->subsampling = 1;
-
     /* client defaults. */
-    vdi_config->acceleration = 1;
+    vdi_config->video_decoder = VDI_VIDEO_DECODER_HW_HEVC_444;
     vdi_config->upnp = 1;
     vdi_config->reconnect = 1;
     vdi_config->grab = 1;
@@ -226,7 +244,6 @@ main(int argc, char **argv)
     vdi_config->screensaver = 1;
     vdi_config->clipboard = 1;
     vdi_config->audio = 1;
-    vdi_config->hevc = 1;
     vdi_config->stats = 0;
     vdi_config->stats_period = 0;
 
@@ -340,14 +357,23 @@ main(int argc, char **argv)
             vdi_config->height = height;
             continue;
 
-        /* parsec warp options. */
-        case OPTION_NO_SUBSAMPLING:
-            vdi_config->subsampling = 0;
-            continue;
-
         /* client options. */
-        case OPTION_NO_ACCELERATION:
-            vdi_config->acceleration = 0;
+        case OPTION_VIDEO_DECODER:
+            if (!vdi_stream_client__video_decoder_parse(optarg, &vdi_config->video_decoder)) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid video decoder: %s\n", program_name,
+                    optarg
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Valid video decoders: hw-hevc-444, hw-hevc-420, "
+                                                  "hw-h264-420, sw-hevc-420, sw-h264-420\n"
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
+                goto error;
+            }
             continue;
         case OPTION_NO_UPNP:
             vdi_config->upnp = 0;
@@ -369,9 +395,6 @@ main(int argc, char **argv)
             continue;
         case OPTION_NO_AUDIO:
             vdi_config->audio = 0;
-            continue;
-        case OPTION_NO_HEVC:
-            vdi_config->hevc = 0;
             continue;
         case OPTION_STATS:
             stats_period = SDL_strtol(optarg, &endptr, 10);

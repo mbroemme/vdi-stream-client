@@ -108,14 +108,13 @@ decoding remains in the injected FFmpeg decoder.
 Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
 support can be used for FFmpeg hardware decoding. The client queries libva
 profile and decode-entrypoint metadata without encoding or decoding a test
-frame. It uses hardware H.265 when available, otherwise hardware H.264, and
-otherwise software H.264. The `--no-acceleration` option skips that query and
-uses software H.265, or software H.264 together with `--no-hevc`.
-When `--no-subsampling` is requested, the client enables H.265 4:4:4 only when
-the VA-API device exposes a `VAProfileHEVC*444` VLD profile with a matching
-YUV444 render-target format. With libplacebo and Vulkan, retained VA-API frames
-are imported as DRM PRIME DMA-BUFs and rendered without copying frame pixels
-through CPU memory.
+frame. The `--video-decoder` option selects the codec, color mode, acceleration
+policy and ordered fallbacks. Its default `hw-hevc-444` mode tries hardware H.265
+4:4:4, hardware H.265 4:2:0, hardware H.264 4:2:0 and software H.264 4:2:0 in
+that order. H.265 4:4:4 is enabled only when the VA-API device exposes a
+`VAProfileHEVC*444` VLD profile with a matching YUV444 render-target format.
+With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
+DMA-BUFs and rendered without copying frame pixels through CPU memory.
 
 Nothing exist without drawbacks and that one for Parsec is that it is mandatory
 to have an [account](https://parsec.app/signup) which is completely free.
@@ -194,12 +193,16 @@ setup fails, the client recreates the window with the default SDL renderer. If
 VA-API initialization fails despite an advertised profile, that codec falls
 back to FFmpeg software decoding. If the complete H.265 startup attempt fails,
 the client reconnects once with H.265 disabled and uses the selected hardware
-or software FFmpeg H.264 decoder.
+or software FFmpeg H.264 decoder. Use `--video-decoder <mode>` to select one
+of these policies:
 
-Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
-`--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
-for either codec. H.265 4:4:4 requires hardware decoding and a compatible
-VA-API profile.
+| Mode                    | Behavior                                                             |
+|-------------------------|----------------------------------------------------------------------|
+| `hw-hevc-444` (default) | HW H.265 4:4:4 -> HW H.265 4:2:0 -> HW H.264 4:2:0 -> SW H.264 4:2:0 |
+| `hw-hevc-420`           | HW H.265 4:2:0 -> HW H.264 4:2:0 -> SW H.264 4:2:0                   |
+| `hw-h264-420`           | HW H.264 4:2:0 -> SW H.264 4:2:0                                     |
+| `sw-hevc-420`           | SW H.265 4:2:0                                                       |
+| `sw-h264-420`           | SW H.264 4:2:0                                                       |
 
 # Parsec Warp
 
