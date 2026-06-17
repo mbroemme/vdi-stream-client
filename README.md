@@ -158,7 +158,7 @@ chroma subsampling for sharp and crystal clear text.
   QEMU. Other virtualization solutions may use standard Linux USB/IP server and
   native [Windows client driver](https://github.com/cezanne/usbip-win).
 * Show render statistics, pipeline stage timings and video stream bandwidth
-  with `--stats <seconds>` to identify bottlenecks in FFmpeg, SDL, Parsec or
+  with `--stats SECONDS` to identify bottlenecks in FFmpeg, SDL, Parsec or
   event loop.
 
 # FFmpeg Decoder
@@ -193,8 +193,13 @@ setup fails, the client recreates the window with the default SDL renderer. If
 VA-API initialization fails despite an advertised profile, that codec falls
 back to FFmpeg software decoding. If the complete H.265 startup attempt fails,
 the client reconnects once with H.265 disabled and uses the selected hardware
-or software FFmpeg H.264 decoder. Use `--video-decoder <mode>` to select one
-of these policies:
+or software FFmpeg H.264 decoder. Use `--video-decoder MODE` to select one
+of these policies. `MODE` has the form `TYPE-CODEC-CHROMA`:
+
+* `hw` or `sw` selects a hardware or software decoder.
+* `hevc` or `h264` selects H.265 / HEVC or H.264 / AVC.
+* `444` selects 4:4:4 chroma without subsampling.
+* `420` selects 4:2:0 chroma subsampling.
 
 | Mode                    | Behavior                                                             |
 |-------------------------|----------------------------------------------------------------------|
@@ -289,7 +294,13 @@ There are several advanced configuration options for visual and network
 latency improvements described in the Parsec [documentation](https://support.parsec.app/hc/en-us/articles/360001562772-All-Advanced-Configuration-Options)
 in the "Hosting Settings" chapter.
 
-The client requires a `sessionID` and a `peerID` obtained through the Parsec
+The command syntax is:
+
+```text
+vdi-stream-client [OPTION]... --session ID --peer ID
+```
+
+The client requires a session `ID` and peer `ID` obtained through the Parsec
 API to identify users to make secure connections. For convenience you can use
 [tools/parsec-login](tools/parsec-login) script to retrieve list of available
 hosts. This is one-time operation whenever you add Parsec host application to
@@ -328,10 +339,16 @@ You need to add additional `<redirdev>` sections to redirect multiple devices
 and increase the port number accordingly. After reloading libvirt and starting
 the Virtual Machine with the configuration above, you can redirect a local USB
 device. You can get a list of available devices with their `<vendorID>` and
-`<productID>` with `lsusb` command.
+`<productID>` with `lsusb` command. The `--redirect SPEC` argument uses this
+format:
+
+```text
+VENDOR:PRODUCT@ADDRESS#PORT[,...]
+```
 
 ```
-vdi-stream-client --session <sessionID> --peer <peerID> --redirect <vendorID>:<productID>@<ip>#4000
+vdi-stream-client --session ID --peer ID \
+  --redirect VENDOR:PRODUCT@ADDRESS#4000
 ```
 
 Once connection is established it will redirect the local USB device to the
