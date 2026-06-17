@@ -961,8 +961,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    if (decoder_policy.color444) {
-        if (cfg.video[DEFAULT_STREAM].decoderH265 == 1 && hevc444_acceleration) {
+    if (decoder_policy.color444 && cfg.video[DEFAULT_STREAM].decoderH265 == 1) {
+        if (hevc444_acceleration) {
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Chroma Subsampling\n");
             cfg.video[DEFAULT_STREAM].decoder444 = 1;
         } else {
