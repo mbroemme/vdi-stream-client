@@ -1,12 +1,12 @@
 # VDI Stream Client
 
 [![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
-[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/issues)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
 [![License: GPL-3.0 + exception](https://img.shields.io/badge/license-GPL--3.0%20%2B%20exception-orange.svg)](LICENSE)
-[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/releases)
 
 A very tiny and low latency desktop streaming client for remote Windows guests
 with GPU passthrough which supports [Nvidia NVENC](https://en.wikipedia.org/wiki/Nvidia_NVENC),
@@ -214,6 +214,9 @@ of these policies. `MODE` has the form `TYPE-CODEC-CHROMA`:
 * Support for disabling chroma subsampling to support color mode 4:4:4 with
   sharp and crisp text and better colors. Available for Nvidia Hosts running
   GTX 900 or better.
+
+# Known Issues
+
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -292,9 +295,7 @@ or [x86](https://builds.parsecgaming.com/package/parsec-windows32.exe)) is
 running and you have created a [free account](https://parsec.app/signup).
 There are several advanced configuration options for visual and network
 latency improvements described in the Parsec [documentation](https://support.parsec.app/hc/en-us/articles/360001562772-All-Advanced-Configuration-Options)
-in the "Hosting Settings" chapter.
-
-The command syntax is:
+in the "Hosting Settings" chapter. The command syntax is:
 
 ```text
 vdi-stream-client [OPTION]... --session ID --peer ID
@@ -338,8 +339,8 @@ virtualization host:
 You need to add additional `<redirdev>` sections to redirect multiple devices
 and increase the port number accordingly. After reloading libvirt and starting
 the Virtual Machine with the configuration above, you can redirect a local USB
-device. You can get a list of available devices with their `<vendorID>` and
-`<productID>` with `lsusb` command. The `--redirect SPEC` argument uses this
+device. You can get a list of available devices with their `<VENDOR>` and
+`<PRODUCT>` with `lsusb` command. The `--redirect SPEC` argument uses this
 format:
 
 ```text
