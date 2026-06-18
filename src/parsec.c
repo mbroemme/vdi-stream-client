@@ -463,7 +463,7 @@ vdi_stream_client__render_text(void *opaque, const char *text)
         parsec_context->surface_ttf = NULL;
     }
 
-    /* create the text surface. */
+    /* Create the text surface. */
     parsec_context->surface_ttf = TTF_RenderText_Blended(parsec_context->font, text, 0, color);
     if (parsec_context->surface_ttf == NULL) {
         SDL_LogError(
@@ -472,7 +472,7 @@ vdi_stream_client__render_text(void *opaque, const char *text)
         return VDI_STREAM_CLIENT_ERROR;
     }
 
-    /* convert the text into an sdl texture. */
+    /* Convert the text into an SDL texture. */
     parsec_context->texture_ttf =
         SDL_CreateTextureFromSurface(parsec_context->renderer, parsec_context->surface_ttf);
     if (parsec_context->texture_ttf == NULL) {
@@ -482,7 +482,7 @@ vdi_stream_client__render_text(void *opaque, const char *text)
         return VDI_STREAM_CLIENT_ERROR;
     }
 
-    /* no error. */
+    /* No error. */
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
@@ -930,28 +930,28 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_WindowFlags window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
     const char *video_driver;
 
-    /* default values. */
+    /* Default values. */
     parsec_context.timeout = 100;
     parsec_context.render_timeout = 5;
     parsec_context.next_overlay_tick = 0;
     parsec_context.stats_enabled = vdi_config->stats;
     parsec_context.stats_period_ms = vdi_config->stats_period * 1000;
 
-    /* sdl init. */
+    /* SDL init. */
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize SDL\n");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed: %s\n", SDL_GetError());
         goto error;
     }
 
-    /* ttf init. */
+    /* TTF init. */
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize TTF\n");
     if (!TTF_Init()) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed: %s\n", SDL_GetError());
         goto error;
     }
 
-    /* load font. */
+    /* Load font. */
     parsec_context.font = TTF_OpenFontIO(
         SDL_IOFromMem(MorePerfectDOSVGA_ttf, MorePerfectDOSVGA_ttf_len), true, 16.0f
     );
@@ -960,7 +960,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    /* configure upnp before parsec init consumes the network configuration. */
+    /* Configure UPnP before Parsec init consumes the network configuration. */
     if (vdi_config->upnp == 1) {
         network_cfg.upnp = 1;
     }
@@ -969,7 +969,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         network_cfg.upnp = 0;
     }
 
-    /* parsec init. */
+    /* Parsec init. */
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize Parsec\n");
     e = vdi_stream_client__parsec_init(&parsec_context, &network_cfg);
     if (e != PARSEC_OK) {
@@ -984,7 +984,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    /* use client resolution if specified. */
+    /* Use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->width,
@@ -1000,7 +1000,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable H.265 (HEVC) Video Codec\n");
     }
 
-    /* configure client decoding acceleration. */
+    /* Configure client decoding acceleration. */
     if (!decoder_policy.acceleration) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable Hardware Accelerated Video Decoding\n");
     }
@@ -1049,23 +1049,23 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    /* check if reconnect should be disabled. */
+    /* Check if reconnect should be disabled. */
     if (vdi_config->reconnect == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable automatic reconnect\n");
     }
 
-    /* check if exclusive mouse grab should be disabled. */
+    /* Check if exclusive mouse grab should be disabled. */
     if (vdi_config->grab == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable exclusive mouse grab\n");
     }
 
-    /* check if window decorations should be disabled. */
+    /* Check if window decorations should be disabled. */
     if (vdi_config->decoration == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable window decorations\n");
         window_flags |= SDL_WINDOW_BORDERLESS;
     }
 
-    /* configure screen saver. */
+    /* Configure screen saver. */
     if (vdi_config->screensaver == 1) {
         SDL_EnableScreenSaver();
     }
@@ -1074,7 +1074,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         SDL_DisableScreenSaver();
     }
 
-    /* check if clipboard should be disabled. */
+    /* Check if clipboard should be disabled. */
     if (vdi_config->clipboard == 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Disable clipboard sharing\n");
     }
@@ -1084,7 +1084,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         vdi_stream_client__context_set_connection(&parsec_context, false);
         parsec_context.decoder = false;
 
-        /* parsec connect. */
+        /* Parsec connect. */
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec service\n");
         e = ParsecClientConnect(parsec_context.parsec, &cfg, vdi_config->session, vdi_config->peer);
         if (e != PARSEC_OK) {
@@ -1092,17 +1092,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             goto error;
         }
 
-        /* wait until connection is established. */
+        /* Wait until connection is established. */
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
         while (!parsec_context.decoder) {
 
-            /* get client status. */
+            /* Get client status. */
             e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
 
-            /* connection established */
+            /* Connection established. */
             if (e == PARSEC_OK) {
 
-                /* decoder not yet initialized. */
+                /* Decoder not yet initialized. */
                 if (parsec_context.client_status.decoder[DEFAULT_STREAM].width == 0 &&
                     parsec_context.client_status.decoder[DEFAULT_STREAM].height == 0 &&
                     !vdi_stream_client__context_connected(&parsec_context)) {
@@ -1110,7 +1110,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                     vdi_stream_client__context_set_connection(&parsec_context, true);
                 }
 
-                /* decoder initialized. */
+                /* Decoder initialized. */
                 if (parsec_context.client_status.decoder[DEFAULT_STREAM].width > 0 &&
                     parsec_context.client_status.decoder[DEFAULT_STREAM].height > 0) {
                     SDL_LogInfo(
@@ -1136,17 +1136,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 }
             }
 
-            /* unknown error. */
+            /* Unknown error. */
             if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
                 break;
             }
 
-            /* check if timeout reached. */
+            /* Check if timeout reached. */
             if (wait_time >= vdi_config->timeout) {
                 break;
             }
 
-            /* wait some time and re-check. */
+            /* Wait some time and re-check. */
             SDL_Delay(250);
             wait_time = wait_time + 250;
         }
@@ -1165,14 +1165,14 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         break;
     }
 
-    /* detect sdl video driver. */
+    /* Detect SDL video driver. */
     video_driver = SDL_GetCurrentVideoDriver();
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION, "Use %s video\n",
         video_driver != NULL ? video_driver : "unknown"
     );
 
-    /* check if connected and decoder initialized. */
+    /* Check if connected and decoder initialized. */
     if (!parsec_context.decoder) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
         goto error;
@@ -1195,7 +1195,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* start polling audio only after the connection and video output are ready. */
+    /* Start polling audio only after the connection and video output are ready. */
     if (parsec_context.audio != NULL) {
         audio_thread = SDL_CreateThread(
             vdi_stream_client__audio_thread, "vdi_stream_client__audio_thread", &parsec_context
@@ -1208,23 +1208,23 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
     }
 
-    /* configure usb. */
+    /* Configure USB. */
     if (vdi_config->usb_count > 0) {
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize USB\n");
 
-        /* one thread per one usb device redirect. */
+        /* One thread per one USB device redirect. */
         for (device = 0; device < vdi_config->usb_count; device++) {
 
-            /* store main thread context in a pointer. */
+            /* Store main thread context in a pointer. */
             redirect_context[device].parsec_context = &parsec_context;
 
-            /* prepare data for network thread. */
+            /* Prepare data for network thread. */
             redirect_context[device].server_addr.v4 = vdi_config->server_addrs[device].v4;
             redirect_context[device].server_addr.v6 = vdi_config->server_addrs[device].v6;
             redirect_context[device].usb_device.vendor = vdi_config->usb_devices[device].vendor;
             redirect_context[device].usb_device.product = vdi_config->usb_devices[device].product;
 
-            /* sdl network thread. */
+            /* SDL network thread. */
             network_thread[device] = SDL_CreateThread(
                 vdi_stream_client__network_thread, "vdi_stream_client__network_thread",
                 &redirect_context[device]
@@ -1251,7 +1251,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    /* event loop. */
+    /* Event loop. */
     while (!vdi_stream_client__context_done(&parsec_context)) {
         Uint64 loop_sdl_events = 0;
         Uint64 loop_parsec_events = 0;
@@ -1276,7 +1276,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         local_interaction = vdi_stream_client__context_input_local_interaction(&parsec_context);
         vdi_stream_client__handle_input_commands(&input_context, &force_redraw);
 
-        /* prioritize SDL responsiveness after local interaction without forcing
+        /* Prioritize SDL responsiveness after local interaction without forcing
          * redundant presents of the last video frame. */
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
@@ -1314,7 +1314,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         }
         rendered = vdi_stream_client__video_render(&parsec_context, force_redraw);
 
-        /* check if we need to resize window due to client resolution change. */
+        /* Check if we need to resize window due to client resolution change. */
         if ((parsec_context.window_width !=
                  parsec_context.client_status.decoder[DEFAULT_STREAM].width ||
              parsec_context.window_height !=
@@ -1362,7 +1362,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         vdi_stream_client__render_stats(&parsec_context);
     }
 
-    /* already release any grabbed keyboard because thread termination can take some time. */
+    /* Already release any grabbed keyboard because thread termination can take some time. */
     SDL_SetWindowMouseGrab(parsec_context.window, false);
     SDL_SetWindowKeyboardGrab(parsec_context.window, false);
 
@@ -1371,23 +1371,23 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     );
     vdi_stream_client__input_destroy(&input_context);
 
-    /* destroy video resources before releasing the parsec client. */
+    /* Destroy video resources before releasing the Parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
 
-    /* parsec destroy. */
+    /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
 
-    /* ttf destroy. */
+    /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
     TTF_Quit();
 
-    /* sdl destroy. */
+    /* SDL destroy. */
     vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();
 
-    /* terminate loop. */
+    /* Terminate loop. */
     return VDI_STREAM_CLIENT_SUCCESS;
 
 error:
@@ -1397,22 +1397,22 @@ error:
     );
     vdi_stream_client__input_destroy(&input_context);
 
-    /* destroy video resources before releasing the parsec client. */
+    /* Destroy video resources before releasing the Parsec client. */
     vdi_stream_client__video_destroy(&parsec_context);
 
-    /* parsec destroy. */
+    /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
 
-    /* ttf destroy. */
+    /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
     TTF_Quit();
 
-    /* sdl destroy. */
+    /* SDL destroy. */
     vdi_stream_client__audio_destroy(&parsec_context);
     SDL_DestroySurface(parsec_context.surface_ttf);
     SDL_DestroyWindow(parsec_context.window);
     SDL_Quit();
 
-    /* return with error. */
+    /* Return with error. */
     return VDI_STREAM_CLIENT_ERROR;
 }

@@ -268,7 +268,7 @@ vdi_stream_client__frame_text(void *opaque)
         return;
     }
 
-    /* calculate position and size to center of window. */
+    /* Calculate position and size to center of window. */
     dst.x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2.0f;
     dst.y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2.0f;
     dst.w = parsec_context->surface_ttf->w;
@@ -388,7 +388,7 @@ bool
 vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw)
 {
 
-    /* show parsec frame. */
+    /* Show Parsec frame. */
     if (vdi_stream_client__context_connected(parsec_context)) {
         if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
             return false;
@@ -401,7 +401,7 @@ vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool fo
         return true;
     }
 
-    /* show reconnecting/shutdown text if available. */
+    /* Show reconnecting or shutdown text if available. */
     if (parsec_context->surface_ttf != NULL &&
         (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
         vdi_stream_client__frame_text(parsec_context);

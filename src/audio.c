@@ -139,7 +139,7 @@ vdi_stream_client__audio_thread(void *opaque)
 
     while (!vdi_stream_client__context_done(parsec_context)) {
 
-        /* poll audio only if connected. */
+        /* Poll audio only if connected. */
         if (vdi_stream_client__context_connected(parsec_context)) {
             vdi_stream_client__context_set_audio_polling(parsec_context, true);
             if (vdi_stream_client__context_connected(parsec_context) &&
@@ -151,10 +151,10 @@ vdi_stream_client__audio_thread(void *opaque)
             vdi_stream_client__context_set_audio_polling(parsec_context, false);
         }
 
-        /* delay loop if in reconnect state. */
+        /* Delay loop if in reconnect state. */
         if (!vdi_stream_client__context_connected(parsec_context)) {
 
-            /* clear queue and pause audio device. */
+            /* Clear queue and pause audio device. */
             if (vdi_stream_client__context_playing(parsec_context)) {
                 SDL_ClearAudioStream(parsec_context->audio);
                 SDL_PauseAudioStreamDevice(parsec_context->audio);

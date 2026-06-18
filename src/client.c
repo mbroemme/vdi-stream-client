@@ -43,7 +43,7 @@ Sint32
 vdi_stream_client__usage(char *program_name)
 {
 
-    /* show the help. */
+    /* Show the help text. */
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
         "Usage: %s [OPTION]... --session ID --peer ID\n"
@@ -128,7 +128,7 @@ vdi_stream_client__usage(char *program_name)
         program_name, PACKAGE_BUGREPORT
     );
 
-    /* if no error was found, return zero. */
+    /* Return success after printing help. */
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
@@ -167,7 +167,7 @@ Sint32
 vdi_stream_client__version(char *program_name)
 {
 
-    /* show the version. */
+    /* Show the version information. */
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION,
         "%s version %s Copyright (c) 2020-2026 The VDI Stream developers\n"
@@ -179,7 +179,7 @@ vdi_stream_client__version(char *program_name)
         program_name, VERSION, AUTHOR
     );
 
-    /* if no error was found, return zero. */
+    /* Return success after printing version information. */
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
@@ -190,14 +190,14 @@ int
 main(int argc, char **argv)
 {
 
-    /* variables. */
+    /* Main parser state. */
     Sint32 option_index = 0;
     Sint32 opt;
     char *program_name;
     vdi_config_s *vdi_config = NULL;
     static const vdi_server_addr_u zero_server_addr = { 0 };
 
-    /* temp variables for command line parser. */
+    /* Temporary variables for command-line parsing. */
     Uint32 device;
     Sint32 type;
     char *redirect_list;
@@ -212,7 +212,7 @@ main(int argc, char **argv)
     Sint64 height;
     Sint64 stats_period;
 
-    /* command line options. */
+    /* Command-line option identifiers. */
     enum
     {
         OPTION_HELP = 1,
@@ -237,14 +237,14 @@ main(int argc, char **argv)
 
     struct option long_options[] = {
 
-        /* help options. */
+        /* Help options. */
         { "help", no_argument, NULL, OPTION_HELP },
         { "version", no_argument, NULL, OPTION_VERSION },
 
-        /* debug options. */
+        /* Debug options. */
         { "stats", required_argument, NULL, OPTION_STATS },
 
-        /* parsec options. */
+        /* Parsec options. */
         { "session", required_argument, NULL, OPTION_SESSION },
         { "peer", required_argument, NULL, OPTION_PEER },
         { "timeout", required_argument, NULL, OPTION_TIMEOUT },
@@ -252,7 +252,7 @@ main(int argc, char **argv)
         { "width", required_argument, NULL, OPTION_WIDTH },
         { "height", required_argument, NULL, OPTION_HEIGHT },
 
-        /* client options. */
+        /* Client options. */
         { "video-decoder", required_argument, NULL, OPTION_VIDEO_DECODER },
         { "no-upnp", no_argument, NULL, OPTION_NO_UPNP },
         { "no-reconnect", no_argument, NULL, OPTION_NO_RECONNECT },
@@ -262,27 +262,27 @@ main(int argc, char **argv)
         { "no-clipboard", no_argument, NULL, OPTION_NO_CLIPBOARD },
         { "no-audio", no_argument, NULL, OPTION_NO_AUDIO },
 
-        /* usb options. */
+        /* USB options. */
         { "redirect", required_argument, NULL, OPTION_REDIRECT },
 
-        /* end options. */
+        /* End options. */
         { 0, 0, 0, 0 },
     };
 
-    /* default values. */
+    /* Reset getopt state and suppress its own diagnostics. */
     optind = 0;
     opterr = 0;
 
-    /* allocate memory defaults. */
+    /* Allocate configuration storage. */
     if ((vdi_config = SDL_calloc(1, sizeof(vdi_config_s))) == NULL) {
         goto error;
     }
 
-    /* parsec defaults. */
+    /* Parsec defaults. */
     vdi_config->timeout = 5000;
     vdi_config->speed = 100;
 
-    /* client defaults. */
+    /* Client defaults. */
     vdi_config->video_decoder = VDI_VIDEO_DECODER_HW_HEVC_444;
     vdi_config->upnp = 1;
     vdi_config->reconnect = 1;
@@ -304,18 +304,18 @@ main(int argc, char **argv)
         goto done;
     }
 
-    /* parse command line. */
+    /* Parse command line. */
     while ((opt = getopt_long(argc, argv, ":hv", long_options, &option_index)) != -1) {
 
-        /* check if all command line options are parsed. */
+        /* Check if all command-line options are parsed. */
         if (opt == -1) {
             break;
         }
 
-        /* parse option. */
+        /* Parse option. */
         switch (opt) {
 
-        /* help options. */
+        /* Help options. */
         case 'h':
         case OPTION_HELP:
             vdi_stream_client__usage(program_name);
@@ -325,7 +325,7 @@ main(int argc, char **argv)
             vdi_stream_client__version(program_name);
             goto done;
 
-        /* parsec options. */
+        /* Parsec options. */
         case OPTION_SESSION:
             SDL_free(vdi_config->session);
             vdi_config->session = SDL_strdup(optarg);
@@ -404,7 +404,7 @@ main(int argc, char **argv)
             vdi_config->height = height;
             continue;
 
-        /* client options. */
+        /* Client options. */
         case OPTION_VIDEO_DECODER:
             if (!vdi_stream_client__video_decoder_parse(optarg, &vdi_config->video_decoder)) {
                 SDL_LogError(
@@ -460,15 +460,15 @@ main(int argc, char **argv)
             vdi_config->stats_period = stats_period;
             continue;
 
-        /* usb options. */
+        /* USB options. */
         case OPTION_REDIRECT:
 
-            /* loop through multiple redirect configs. */
+            /* Loop through multiple redirect configs. */
             device = vdi_config->usb_count;
             redirect_list = optarg;
             while ((redirect = strsep(&redirect_list, ",")) != NULL) {
 
-                /* check if number of usb redirects are out of range. */
+                /* Check if number of USB redirects is out of range. */
                 if (device >= USB_MAX) {
                     SDL_LogError(
                         SDL_LOG_CATEGORY_APPLICATION, "%s: usb redirection limit of %d reached\n",
@@ -481,14 +481,14 @@ main(int argc, char **argv)
                     goto error;
                 }
 
-                /* initialize. */
+                /* Initialize per-device network address storage. */
                 vdi_config->server_addrs[device] = zero_server_addr;
 
-                /* loop through redirect categroy. (usb vendor, product, address and port) */
+                /* Parse USB vendor/product, address, and port fields. */
                 type = 0;
                 while ((item = strsep(&redirect, "@#")) != NULL) {
 
-                    /* reject additional fields after port. */
+                    /* Reject additional fields after port. */
                     if (type > 2) {
                         SDL_LogError(
                             SDL_LOG_CATEGORY_APPLICATION,
@@ -501,10 +501,10 @@ main(int argc, char **argv)
                         goto error;
                     }
 
-                    /* usb device. */
+                    /* USB device. */
                     if (type == 0) {
 
-                        /* check if usb vendor is out of range. */
+                        /* Check if USB vendor is out of range. */
                         vdi_config->usb_devices[device].vendor = SDL_strtol(item, &endptr, 16);
                         if (vdi_config->usb_devices[device].vendor <= 0 ||
                             vdi_config->usb_devices[device].vendor > 0xffff) {
@@ -520,7 +520,7 @@ main(int argc, char **argv)
                             goto error;
                         }
 
-                        /* check if usb product is given. */
+                        /* Check if USB product is given. */
                         delim = SDL_strchr(item, ':');
                         if (*endptr != ':' || delim == NULL || SDL_strlen(delim) == 1) {
                             SDL_LogError(
@@ -534,7 +534,7 @@ main(int argc, char **argv)
                             goto error;
                         }
 
-                        /* check if usb product is out of range. (product id 0000 is valid) */
+                        /* Check if USB product is out of range. Product ID 0000 is valid. */
                         vdi_config->usb_devices[device].product =
                             SDL_strtol(delim + 1, &endptr, 16);
                         if (*endptr != '\0' || vdi_config->usb_devices[device].product < 0 ||
@@ -552,10 +552,10 @@ main(int argc, char **argv)
                         }
                     }
 
-                    /* address. */
+                    /* Network address. */
                     if (type == 1) {
 
-                        /* check if empty ip address given. */
+                        /* Check if an empty IP address was given. */
                         if (item[0] == '\0') {
                             SDL_LogError(
                                 SDL_LOG_CATEGORY_APPLICATION,
@@ -568,21 +568,21 @@ main(int argc, char **argv)
                             goto error;
                         }
 
-                        /* check if ipv4 address. */
+                        /* Check if address is IPv4. */
                         if (inet_pton(
                                 AF_INET, item, &vdi_config->server_addrs[device].v4.sin_addr
                             ) == 1) {
                             vdi_config->server_addrs[device].v4.sin_family = AF_INET;
                         }
 
-                        /* check if ipv6 address. */
+                        /* Check if address is IPv6. */
                         if (inet_pton(
                                 AF_INET6, item, &vdi_config->server_addrs[device].v6.sin6_addr
                             ) == 1) {
                             vdi_config->server_addrs[device].v6.sin6_family = AF_INET6;
                         }
 
-                        /* check if bad formatted address. */
+                        /* Check if address has an unsupported format. */
                         if (vdi_config->server_addrs[device].v4.sin_family != AF_INET &&
                             vdi_config->server_addrs[device].v6.sin6_family != AF_INET6) {
                             SDL_LogError(
@@ -597,10 +597,10 @@ main(int argc, char **argv)
                         }
                     }
 
-                    /* port. */
+                    /* Port. */
                     if (type == 2) {
 
-                        /* check if empty port given. */
+                        /* Check if an empty port was given. */
                         if (item[0] == '\0') {
                             SDL_LogError(
                                 SDL_LOG_CATEGORY_APPLICATION, "%s: no port in usb redirection\n",
@@ -613,10 +613,10 @@ main(int argc, char **argv)
                             goto error;
                         }
 
-                        /* convert port string to integer. */
+                        /* Convert port string to integer. */
                         port = SDL_strtol(item, &endptr, 10);
 
-                        /* check if port is out of range. */
+                        /* Check if port is out of range. */
                         if (endptr == item || *endptr != '\0' || port <= 0 || port >= 65536) {
                             SDL_LogError(
                                 SDL_LOG_CATEGORY_APPLICATION,
@@ -629,12 +629,12 @@ main(int argc, char **argv)
                             goto error;
                         }
 
-                        /* check if ipv4 address has been assigned previosuly. */
+                        /* Check if an IPv4 address has been assigned previously. */
                         if (vdi_config->server_addrs[device].v4.sin_family == AF_INET) {
                             vdi_config->server_addrs[device].v4.sin_port = htons(port);
                         }
 
-                        /* check if ipv6 address has been assigned previosuly. */
+                        /* Check if an IPv6 address has been assigned previously. */
                         if (vdi_config->server_addrs[device].v6.sin6_family == AF_INET6) {
                             vdi_config->server_addrs[device].v6.sin6_port = htons(port);
                         }
@@ -642,7 +642,7 @@ main(int argc, char **argv)
                     type++;
                 }
 
-                /* check if no ip address was given. */
+                /* Check if no IP address was given. */
                 if (type == 1) {
                     SDL_LogError(
                         SDL_LOG_CATEGORY_APPLICATION, "%s: no ip address in usb redirection\n",
@@ -655,7 +655,7 @@ main(int argc, char **argv)
                     goto error;
                 }
 
-                /* check if no port was given. */
+                /* Check if no port was given. */
                 if (type == 2) {
                     SDL_LogError(
                         SDL_LOG_CATEGORY_APPLICATION, "%s: no port in usb redirection\n",
@@ -668,7 +668,7 @@ main(int argc, char **argv)
                     goto error;
                 }
 
-                /* exactly usb device, ip address and port must be given. */
+                /* Exactly USB device, IP address, and port must be given. */
                 if (type != 3) {
                     SDL_LogError(
                         SDL_LOG_CATEGORY_APPLICATION, "%s: invalid usb redirection format\n",
@@ -686,7 +686,7 @@ main(int argc, char **argv)
             }
             continue;
 
-        /* missing arguments. */
+        /* Missing arguments. */
         case ':':
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "%s: option `%s' requires an argument\n",
@@ -698,7 +698,7 @@ main(int argc, char **argv)
             );
             goto error;
 
-        /* unknown switches. */
+        /* Unknown switches. */
         case '?':
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "%s: unrecognized option `%s'\n", program_name,
@@ -712,7 +712,7 @@ main(int argc, char **argv)
         }
     }
 
-    /* mandatory arguments not given. */
+    /* Mandatory arguments not given. */
     if (vdi_config->session == NULL || vdi_config->peer == NULL ||
         SDL_strlen(vdi_config->session) == 0 || SDL_strlen(vdi_config->peer) == 0) {
         SDL_LogError(
@@ -724,7 +724,7 @@ main(int argc, char **argv)
         goto error;
     }
 
-    /* width and height must be specified together. */
+    /* Width and height must be specified together. */
     if ((vdi_config->width == 0) != (vdi_config->height == 0)) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "%s: --width and --height must be specified together\n",
@@ -736,7 +736,7 @@ main(int argc, char **argv)
         goto error;
     }
 
-    /* additional non-option arguments given. */
+    /* Additional non-option arguments given. */
     if (argc > optind) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "%s: non-option argument `%s'\n", program_name,
@@ -748,17 +748,17 @@ main(int argc, char **argv)
         goto error;
     }
 
-    /* main event loop. */
+    /* Main event loop. */
     if (vdi_stream_client__event_loop(vdi_config) != 0) {
         goto error;
     }
 
-    /* quit application. */
+    /* Quit application. */
     goto done;
 
 error:
 
-    /* free allocated memory and quit application with error code. */
+    /* Free allocated memory and quit application with error code. */
     if (vdi_config != NULL) {
         SDL_free(vdi_config->session);
         SDL_free(vdi_config->peer);
@@ -768,7 +768,7 @@ error:
 
 done:
 
-    /* free allocated memory and quit application. */
+    /* Free allocated memory and quit application. */
     if (vdi_config != NULL) {
         SDL_free(vdi_config->session);
         SDL_free(vdi_config->peer);
