@@ -130,8 +130,57 @@ default.
 .B  \-\-video\-decoder \fIMODE\fP
 Select the video decoder mode. The default is
 .BR hw\-hevc\-444 .
-Valid modes are listed in
-.BR "VIDEO DECODER MODES" .
+.RS 8
+.PP
+\fIMODE\fP has the form \fITYPE-CODEC-CHROMA\fP:
+.TP 8
+.B hw
+Hardware decoder.
+.TP 8
+.B sw
+Software decoder.
+.TP 8
+.B hevc
+H.265 / HEVC.
+.TP 8
+.B h264
+H.264 / AVC.
+.TP 8
+.B 444
+4:4:4 chroma without subsampling.
+.TP 8
+.B 420
+4:2:0 chroma subsampling.
+.PP
+The valid modes and their ordered fallbacks are:
+.TP 16
+.B hw\-hevc\-444
+Hardware HEVC 4:4:4, hardware HEVC 4:2:0, hardware H.264 4:2:0, then software
+H.264 4:2:0. This is the default. HEVC 4:4:4 requires a commercial Parsec Warp
+subscription.
+.TP 16
+.B hw\-hevc\-420
+Hardware HEVC 4:2:0, hardware H.264 4:2:0, then software H.264 4:2:0.
+.TP 16
+.B hw\-h264\-420
+Hardware H.264 4:2:0, then software H.264 4:2:0.
+.TP 16
+.B sw\-hevc\-420
+Software HEVC 4:2:0.
+.TP 16
+.B sw\-h264\-420
+Software H.264 4:2:0.
+.PP
+The client queries libva profile and decode-entrypoint metadata without
+processing a test frame when a hardware mode is selected. VA-API frames are
+mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
+through libplacebo into Vulkan without copying frame pixels through CPU
+memory. Older RADV devices without DRM modifier support use a validated
+multi-planar linear external-memory import path. If direct import fails after
+Vulkan setup, the client transfers frames to system memory and uploads them
+through libplacebo. Vulkan setup failure falls back to the default SDL
+renderer. Software decoding may be too slow for smooth client rendering.
+.RE
 .SS USB options
 .TP 8
 .B  \-\-redirect \fISPEC\fP
@@ -168,56 +217,6 @@ FFmpeg decoder during the current stats period. See
 .BR "PERFORMANCE TIPS"
 for guidance on interpreting idle frame delivery and Parsec host-side
 FPS settings.
-.SH VIDEO DECODER MODES
-.PP
-\fIMODE\fP has the form \fITYPE-CODEC-CHROMA\fP:
-.TP 12
-.B hw
-Hardware decoder.
-.TP 12
-.B sw
-Software decoder.
-.TP 12
-.B hevc
-H.265 / HEVC.
-.TP 12
-.B h264
-H.264 / AVC.
-.TP 12
-.B 444
-4:4:4 chroma without subsampling.
-.TP 12
-.B 420
-4:2:0 chroma subsampling.
-.PP
-The valid modes and their ordered fallbacks are:
-.TP 24
-.B hw\-hevc\-444
-Hardware HEVC 4:4:4, hardware HEVC 4:2:0, hardware H.264 4:2:0, then software
-H.264 4:2:0. This is the default. HEVC 4:4:4 requires a commercial Parsec Warp
-subscription.
-.TP 24
-.B hw\-hevc\-420
-Hardware HEVC 4:2:0, hardware H.264 4:2:0, then software H.264 4:2:0.
-.TP 24
-.B hw\-h264\-420
-Hardware H.264 4:2:0, then software H.264 4:2:0.
-.TP 24
-.B sw\-hevc\-420
-Software HEVC 4:2:0.
-.TP 24
-.B sw\-h264\-420
-Software H.264 4:2:0.
-.PP
-The client queries libva profile and decode-entrypoint metadata without
-processing a test frame when a hardware mode is selected. VA-API frames are
-mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
-through libplacebo into Vulkan without copying frame pixels through CPU
-memory. Older RADV devices without DRM modifier support use a validated
-multi-planar linear external-memory import path. If direct import fails after
-Vulkan setup, the client transfers frames to system memory and uploads them
-through libplacebo. Vulkan setup failure falls back to the default SDL
-renderer. Software decoding may be too slow for smooth client rendering.
 .SH KEYBOARD CONTROL
 During connection to the host, you can use certain key combinations to
 release keyboard grab or to switch into force grab mode.
