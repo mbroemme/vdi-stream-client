@@ -37,7 +37,8 @@
 #include <stdint.h>
 #include <string.h>
 
-/* this function show the usage. */
+/* Print command-line help. The function only reports supported options and
+ * returns success; parsing and validation stay in main(). */
 Sint32
 vdi_stream_client__usage(char *program_name)
 {
@@ -131,6 +132,8 @@ vdi_stream_client__usage(char *program_name)
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
+/* Convert the user-facing --video-decoder string into the internal decoder
+ * policy enum that later drives codec, chroma, and acceleration selection. */
 static bool
 vdi_stream_client__video_decoder_parse(const char *value, vdi_video_decoder_e *video_decoder)
 {
@@ -158,7 +161,8 @@ vdi_stream_client__video_decoder_parse(const char *value, vdi_video_decoder_e *v
     return false;
 }
 
-/* this function shows the version information. */
+/* Print version, license, and author information for --version without starting
+ * SDL, Parsec, or any streaming resources. */
 Sint32
 vdi_stream_client__version(char *program_name)
 {
@@ -179,7 +183,9 @@ vdi_stream_client__version(char *program_name)
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
-/* main function to initialize structs and parse command line options. */
+/* Parse command-line options into vdi_config_s, validate required arguments and
+ * USB redirect specifications, then hand the fully populated configuration to
+ * the streaming event loop. */
 int
 main(int argc, char **argv)
 {

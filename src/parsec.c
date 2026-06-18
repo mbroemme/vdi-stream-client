@@ -45,12 +45,18 @@
 #include <unistd.h>
 
 #ifdef HAVE_LIBPARSEC
+
+/* Initialize the system-installed Parsec SDK and store its client handle in the
+ * shared runtime context. */
 static ParsecStatus
 vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecConfig *network_cfg)
 {
     return ParsecInit(PARSEC_VER, network_cfg, NULL, &parsec_context->parsec);
 }
 #else
+
+/* Initialize the vendored Parsec DSO wrapper and normalize its partial-success
+ * case into a real initialization failure if the wrapped SDK handle is absent. */
 static ParsecStatus
 vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecConfig *network_cfg)
 {
@@ -65,6 +71,8 @@ vdi_stream_client__parsec_init(struct parsec_context_s *parsec_context, ParsecCo
 }
 #endif
 
+/* Convert a byte count over an elapsed millisecond interval into megabits per
+ * second for human-readable render statistics. */
 static double
 vdi_stream_client__stats_mbps(Uint64 bytes, Uint64 elapsed_ms)
 {
@@ -75,12 +83,15 @@ vdi_stream_client__stats_mbps(Uint64 bytes, Uint64 elapsed_ms)
     return (double)bytes * 8.0 / ((double)elapsed_ms * 1000.0);
 }
 
+/* Convert nanosecond timing counters into milliseconds for statistics output. */
 static double
 vdi_stream_client__stats_ms(Uint64 ns)
 {
     return (double)ns / 1000000.0;
 }
 
+/* Compute an average stage duration in milliseconds while treating a zero call
+ * count as an empty sample rather than a divide-by-zero error. */
 static double
 vdi_stream_client__stats_avg_ms(Uint64 ns, Uint64 calls)
 {
@@ -91,6 +102,8 @@ vdi_stream_client__stats_avg_ms(Uint64 ns, Uint64 calls)
     return vdi_stream_client__stats_ms(ns) / (double)calls;
 }
 
+/* Reset per-period render counters after a stats line is emitted. Counters that
+ * are drained from other modules are reset through their own drain helpers. */
 static void
 vdi_stream_client__render_stats_reset(struct parsec_context_s *parsec_context)
 {
@@ -111,6 +124,8 @@ vdi_stream_client__render_stats_reset(struct parsec_context_s *parsec_context)
     parsec_context->stats_idle_wait_ms = 0;
 }
 
+/* Reconnect the existing Parsec client after first marking the stream
+ * disconnected and waiting for audio/input worker calls to leave Parsec APIs. */
 static ParsecStatus
 vdi_stream_client__parsec_reconnect(
     struct parsec_context_s *parsec_context, ParsecClientConfig *cfg,
@@ -137,7 +152,8 @@ vdi_stream_client__parsec_reconnect(
     return e;
 }
 
-/* parsec clipboard event. */
+/* Handle a Parsec user-data clipboard packet by fetching the SDK-owned buffer,
+ * copying supported clipboard payloads into SDL, and freeing the Parsec buffer. */
 static void
 vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id, Uint32 buffer_key)
 {
@@ -154,7 +170,8 @@ vdi_stream_client__clipboard(struct parsec_context_s *parsec_context, Uint32 id,
 #endif
 }
 
-/* log render stats at the configured interval. */
+/* Emit render and decoder timing at the configured interval. The first call
+ * primes counters so the first log line covers a full measurement period. */
 static void
 vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
 {
@@ -268,7 +285,9 @@ vdi_stream_client__render_stats(struct parsec_context_s *parsec_context)
     vdi_stream_client__render_stats_reset(parsec_context);
 }
 
-/* signal worker threads and wait until they stop using shared runtime resources. */
+/* Signal every worker thread to stop and wait for them to release shared runtime
+ * resources. Network threads are joined first so USB redirect I/O cannot keep
+ * using context state while input/audio teardown continues. */
 static void
 vdi_stream_client__stop_threads(
     struct parsec_context_s *parsec_context, SDL_Thread **input_thread, SDL_Thread **audio_thread,
@@ -312,7 +331,8 @@ vdi_stream_client__stop_threads(
     }
 }
 
-/* keep cursor-induced grabs separate from user-requested grabs. */
+/* Apply or release mouse grab that was requested by remote cursor state without
+ * confusing it with user-configured grab or forced-grab modes. */
 static void
 vdi_stream_client__cursor_set_grab(
     struct parsec_context_s *parsec_context, bool enable, bool grab, bool grab_forced
@@ -332,6 +352,8 @@ vdi_stream_client__cursor_set_grab(
     parsec_context->cursor_grab = false;
 }
 
+/* Set SDL relative mouse mode and publish the actual result for the input
+ * worker. SDL may reject the requested state, so callers read back the window. */
 static void
 vdi_stream_client__set_relative_mouse_mode(
     struct parsec_context_s *parsec_context, bool relative_mouse
@@ -343,7 +365,9 @@ vdi_stream_client__set_relative_mouse_mode(
     );
 }
 
-/* parsec cursor event. */
+/* Apply a Parsec cursor event to SDL. This updates cursor imagery, visibility,
+ * relative mouse mode, and temporary grab behavior needed by hidden or relative
+ * remote cursors. */
 static void
 vdi_stream_client__cursor(
     struct parsec_context_s *parsec_context, ParsecCursor *cursor, Uint32 buffer_key, bool grab,
@@ -423,7 +447,8 @@ vdi_stream_client__cursor(
     vdi_stream_client__context_set_input_relative(parsec_context, cursor->relative);
 }
 
-/* render text. */
+/* Rebuild the SDL surface and texture used for centered connection-state text
+ * overlays such as "Reconnecting..." or "Closing...". */
 Sint32
 vdi_stream_client__render_text(void *opaque, const char *text)
 {
@@ -461,6 +486,8 @@ vdi_stream_client__render_text(void *opaque, const char *text)
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
+/* Release all mouse and keyboard capture state that belongs to normal or forced
+ * grab modes and restore the default window title. */
 static void
 vdi_stream_client__release_grab(struct parsec_context_s *parsec_context)
 {
@@ -476,6 +503,8 @@ vdi_stream_client__release_grab(struct parsec_context_s *parsec_context)
     SDL_SetWindowTitle(parsec_context->window, "VDI Stream Client");
 }
 
+/* Apply main-thread grab changes after a mouse-button press. It starts normal
+ * grab mode, relative mouse mode, or hidden-cursor capture when required. */
 static void
 vdi_stream_client__handle_mouse_button_down(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config, bool grab_forced
@@ -506,6 +535,8 @@ vdi_stream_client__handle_mouse_button_down(
     }
 }
 
+/* Apply main-thread cursor release behavior after a mouse-button release. This
+ * relaxes temporary hidden-cursor grabs once a drag has completed. */
 static void
 vdi_stream_client__handle_mouse_button_up(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config, bool grab_forced
@@ -520,6 +551,8 @@ vdi_stream_client__handle_mouse_button_up(
     }
 }
 
+/* Enable forced grab mode from the main thread. Forced grab intentionally holds
+ * keyboard and mouse capture until the user toggles it off with Shift+F12. */
 static void
 vdi_stream_client__handle_force_grab_enable(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config
@@ -541,6 +574,8 @@ vdi_stream_client__handle_force_grab_enable(
     );
 }
 
+/* Push the current local SDL clipboard text to the Parsec host when clipboard
+ * sharing is enabled and the client is connected. */
 static void
 vdi_stream_client__handle_clipboard_update(struct parsec_context_s *parsec_context)
 {
@@ -559,6 +594,8 @@ vdi_stream_client__handle_clipboard_update(struct parsec_context_s *parsec_conte
 
 static void vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 height);
 
+/* Execute one command produced by the input worker. Commands that need SDL
+ * window APIs or Parsec user data are centralized here on the main thread. */
 static void
 vdi_stream_client__handle_input_command(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
@@ -617,6 +654,8 @@ vdi_stream_client__handle_input_command(
     }
 }
 
+/* Drain all pending input-worker commands before rendering. Multiple commands
+ * can accumulate between main-loop iterations, so this keeps UI state current. */
 static void
 vdi_stream_client__handle_input_commands(
     vdi_stream_client__input_context_s *input_context, bool *force_redraw
@@ -631,6 +670,8 @@ vdi_stream_client__handle_input_commands(
     }
 }
 
+/* Update the connection-state overlay text and request a redraw on the next
+ * render pass. */
 static void
 vdi_stream_client__show_connection_overlay(
     struct parsec_context_s *parsec_context, bool *force_redraw, const char *text
@@ -640,6 +681,8 @@ vdi_stream_client__show_connection_overlay(
     *force_redraw = true;
 }
 
+/* Switch a failed HEVC connection attempt to H.264 once. This avoids repeatedly
+ * mutating the client config after the fallback has already been used. */
 static void
 vdi_stream_client__use_h264_fallback(
     ParsecClientConfig *cfg, bool *hevc_attempt_active, bool *h264_fallback_done
@@ -663,6 +706,8 @@ struct vdi_stream_client__video_decoder_policy_s
     bool acceleration;
 };
 
+/* Translate the command-line decoder mode into booleans used by Parsec
+ * negotiation and FFmpeg acceleration setup. */
 static bool
 vdi_stream_client__video_decoder_policy(
     vdi_video_decoder_e video_decoder, struct vdi_stream_client__video_decoder_policy_s *policy
@@ -703,6 +748,8 @@ vdi_stream_client__video_decoder_policy(
     return false;
 }
 
+/* Poll Parsec connection health, decide whether to close or reconnect, and
+ * publish connected state once network failure clears after a successful poll. */
 static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
@@ -743,6 +790,8 @@ vdi_stream_client__handle_connection_status(
     }
 }
 
+/* Clamp the SDL window to the active stream size by disabling user resizing and
+ * setting matching minimum and maximum dimensions. */
 static void
 vdi_stream_client__window_lock_size(SDL_Window *window, Sint32 width, Sint32 height)
 {
@@ -763,6 +812,8 @@ vdi_stream_client__window_lock_size(SDL_Window *window, Sint32 width, Sint32 hei
     }
 }
 
+/* Remove the fixed-size constraints before the client applies a new stream
+ * resolution. */
 static void
 vdi_stream_client__window_unlock_size(SDL_Window *window)
 {
@@ -780,6 +831,8 @@ vdi_stream_client__window_unlock_size(SDL_Window *window)
     }
 }
 
+/* Restore a maximized or manually resized window to the current stream
+ * dimensions, synchronize the window manager change, and lock the new size. */
 static void
 vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 height)
 {
@@ -819,6 +872,8 @@ vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 
     vdi_stream_client__window_lock_size(window, width, height);
 }
 
+/* Create the SDL window and initialize the renderer. If initialization fails,
+ * this tears down partial video resources so the caller can try another path. */
 static bool
 vdi_stream_client__video_setup(
     struct parsec_context_s *parsec_context, SDL_WindowFlags window_flags, bool acceleration
@@ -845,7 +900,9 @@ vdi_stream_client__video_setup(
     return false;
 }
 
-/* parsec event loop. */
+/* Own the application lifetime after command-line parsing. This initializes SDL,
+ * Parsec, FFmpeg, audio, input, optional USB redirect threads, then runs the
+ * main render/event loop until shutdown or an unrecoverable error. */
 Sint32
 vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 {

@@ -50,13 +50,16 @@ static _Thread_local Sint32 server_fd = -1;
 static _Thread_local libusb_device_handle *device_handle = NULL;
 static _Thread_local struct usbredirhost *host = NULL;
 
-/* this must be defined, otherwise usbredir will crash. */
+/* Satisfy usbredirhost's logging callback requirement. Runtime diagnostics for
+ * this module are emitted through SDL at higher-level state transitions. */
 static void
 vdi_stream_client__usb_log(void *priv, Sint32 level, const char *msg)
 {
 }
 
-/* read data from client. */
+/* Read guest-side usbredir bytes from the connected TCP socket. EAGAIN is not
+ * fatal because the socket is non-blocking; EOF marks the guest connection as
+ * closed for the outer reconnect loop. */
 static Sint32
 vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
 {
@@ -76,7 +79,8 @@ vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
     return r;
 }
 
-/* write data to client. */
+/* Write usbredir bytes toward the guest TCP socket. A broken pipe is treated as
+ * a clean disconnect so the thread can close the socket and reconnect later. */
 static Sint32
 vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count)
 {
@@ -97,7 +101,8 @@ vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count)
     return r;
 }
 
-/* usb hotplug event. */
+/* Handle libusb device removal notifications by tearing down the guest socket.
+ * This forces the processing loop to unwind and close the usbredir host. */
 static Sint32
 vdi_stream_client__usb_remove(
     struct libusb_context *usb_context, struct libusb_device *device, libusb_hotplug_event event,
@@ -116,7 +121,9 @@ vdi_stream_client__usb_remove(
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
-/* sdl network thread. */
+/* Redirect one configured local USB device to a qemu usbredir guest service.
+ * The thread independently reconnects the TCP socket, waits for the matching
+ * USB device, and multiplexes libusb poll descriptors with guest socket I/O. */
 Sint32
 vdi_stream_client__network_thread(void *opaque)
 {

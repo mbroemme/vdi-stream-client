@@ -35,6 +35,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+/* Initialize SDL audio output for Parsec PCM packets. When audio is disabled or
+ * no playback device exists, the client continues without an audio stream. */
 bool
 vdi_stream_client__audio_init(struct parsec_context_s *parsec_context, bool enabled)
 {
@@ -79,6 +81,8 @@ vdi_stream_client__audio_init(struct parsec_context_s *parsec_context, bool enab
     return true;
 }
 
+/* Destroy the SDL audio stream and clear the shared context pointer so later
+ * shutdown paths can call this safely after partial initialization failures. */
 void
 vdi_stream_client__audio_destroy(struct parsec_context_s *parsec_context)
 {
@@ -88,7 +92,8 @@ vdi_stream_client__audio_destroy(struct parsec_context_s *parsec_context)
     }
 }
 
-/* parsec audio event. */
+/* Receive decoded PCM from Parsec, maintain a small packet buffer, and start or
+ * pause SDL playback when the queue crosses the configured thresholds. */
 static void
 vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
 {
@@ -125,7 +130,8 @@ vdi_stream_client__audio(const Sint16 *pcm, Uint32 frames, void *opaque)
     }
 }
 
-/* sdl audio thread. */
+/* Poll Parsec audio on a worker thread while connected. During reconnect waits
+ * it drains and pauses playback so stale audio does not resume after a gap. */
 Sint32
 vdi_stream_client__audio_thread(void *opaque)
 {

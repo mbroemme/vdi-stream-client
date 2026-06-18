@@ -37,6 +37,8 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+/* Wrap SDL_RenderTexture so render timing and call counts are recorded in one
+ * place whenever render statistics are enabled. */
 static bool
 vdi_stream_client__video_render_texture(
     struct parsec_context_s *parsec_context, SDL_Texture *texture, const SDL_FRect *src,
@@ -53,6 +55,8 @@ vdi_stream_client__video_render_texture(
     return rendered;
 }
 
+/* Present the SDL renderer and account for both attempted and successful
+ * presents. The caller still logs SDL errors because it knows the context. */
 static bool
 vdi_stream_client__video_present(struct parsec_context_s *parsec_context)
 {
@@ -69,6 +73,9 @@ vdi_stream_client__video_present(struct parsec_context_s *parsec_context)
     return presented;
 }
 
+/* Resolve the SDL texture format for a Parsec frame. FFmpeg descriptor frames
+ * are queried first because their real pixel layout lives in the retained
+ * AVFrame rather than only in ParsecFrame::format. */
 static bool
 vdi_stream_client__video_format(
     const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
@@ -96,6 +103,8 @@ vdi_stream_client__video_format(
     }
 }
 
+/* Ensure the streaming SDL texture exists and matches the current frame size
+ * and format. Recreating here keeps the hot upload path focused on pixels. */
 static bool
 vdi_stream_client__video_texture(
     struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image
@@ -146,6 +155,9 @@ vdi_stream_client__video_texture(
     return true;
 }
 
+/* Parsec frame callback used by the render loop. It first gives libplacebo a
+ * chance to render VA-API hardware frames, then falls back to SDL texture
+ * uploads for FFmpeg descriptor frames or raw Parsec image buffers. */
 static void
 vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque)
 {
@@ -244,7 +256,8 @@ done:
     vdi_stream_client__parsec_ffmpeg_frame_release(frame, image);
 }
 
-/* sdl frame text event. */
+/* Render the current text overlay centered in the window. This is used while
+ * connecting, reconnecting, or shutting down when no fresh video frame exists. */
 static void
 vdi_stream_client__frame_text(void *opaque)
 {
@@ -268,7 +281,9 @@ vdi_stream_client__frame_text(void *opaque)
     );
 }
 
-/* sdl frame video event. */
+/* Poll one Parsec video frame, update the active frame texture, and draw it to
+ * the renderer. The function returns false when nothing changed and no forced
+ * redraw was requested. */
 static bool
 vdi_stream_client__frame_video(void *opaque, bool force_redraw)
 {
@@ -317,13 +332,16 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
     return true;
 }
 
+/* Choose SDL window creation flags required by the selected rendering path.
+ * Hardware decoding asks for a Vulkan-capable window for libplacebo interop. */
 SDL_WindowFlags
 vdi_stream_client__video_window_flags(bool acceleration)
 {
     return acceleration ? SDL_WINDOW_VULKAN : 0;
 }
 
-/* initialize video rendering on the main thread. */
+/* Initialize the renderer for the already-created window. The Vulkan path tries
+ * libplacebo first so VA-API frames can be sampled without CPU copies. */
 bool
 vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acceleration)
 {
@@ -364,7 +382,8 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
     return true;
 }
 
-/* render a single frame on the main thread. */
+/* Render one main-thread video iteration. Connected sessions draw Parsec video;
+ * disconnected sessions periodically redraw the current text overlay. */
 bool
 vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw)
 {
@@ -398,7 +417,8 @@ vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool fo
     return false;
 }
 
-/* release video resources on the main thread. */
+/* Release renderer-owned textures and the optional libplacebo Vulkan bridge.
+ * The SDL window itself is destroyed by the higher-level event loop. */
 void
 vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context)
 {
