@@ -1,12 +1,12 @@
 # VDI Stream Client
 
 [![CI](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml/badge.svg)](https://github.com/mbroemme/vdi-stream-client/actions/workflows/ci.yml)
-[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
-[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/issues)
-[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/network/members)
-[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
+[![GitHub release](https://img.shields.io/github/release/mbroemme/vdi-stream-client?style=flat&label=release&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub issues](https://img.shields.io/github/issues/mbroemme/vdi-stream-client?style=flat&label=issues&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/issues)
+[![GitHub forks](https://img.shields.io/github/forks/mbroemme/vdi-stream-client?style=flat&label=forks&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/network/members)
+[![GitHub stars](https://img.shields.io/github/stars/mbroemme/vdi-stream-client?style=flat&label=stars&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/stargazers)
 [![License: GPL-3.0 + exception](https://img.shields.io/badge/license-GPL--3.0%20%2B%20exception-orange.svg)](LICENSE)
-[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=3600)](https://github.com/mbroemme/vdi-stream-client/releases)
+[![GitHub downloads](https://img.shields.io/github/downloads/mbroemme/vdi-stream-client/total?style=flat&label=downloads&cacheSeconds=21600)](https://github.com/mbroemme/vdi-stream-client/releases)
 
 A very tiny and low latency desktop streaming client for remote Windows guests
 with GPU passthrough which supports [Nvidia NVENC](https://en.wikipedia.org/wiki/Nvidia_NVENC),
@@ -93,7 +93,7 @@ System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
-[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | [SDK limitation](https://github.com/mbroemme/parsec-sdk)                  | Yes
+[Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | Yes               | Yes
 
 # Requirements
 
@@ -108,9 +108,11 @@ decoding remains in the injected FFmpeg decoder.
 Any recent GPU with [VA-API](https://en.wikipedia.org/wiki/Video_Acceleration_API)
 support can be used for FFmpeg hardware decoding. The client queries libva
 profile and decode-entrypoint metadata without encoding or decoding a test
-frame. It uses hardware H.265 when available, otherwise hardware H.264, and
-otherwise software H.264. The `--no-acceleration` option skips that query and
-uses software H.265, or software H.264 together with `--no-hevc`.
+frame. The `--video-decoder` option selects the codec, color mode, acceleration
+policy and ordered fallbacks. Its default `hw-hevc-444` mode tries hardware H.265
+4:4:4, hardware H.265 4:2:0, hardware H.264 4:2:0 and software H.264 4:2:0 in
+that order. H.265 4:4:4 is enabled only when the VA-API device exposes a
+`VAProfileHEVC*444` VLD profile with a matching YUV444 render-target format.
 With libplacebo and Vulkan, retained VA-API frames are imported as DRM PRIME
 DMA-BUFs and rendered without copying frame pixels through CPU memory.
 
@@ -156,7 +158,7 @@ chroma subsampling for sharp and crystal clear text.
   QEMU. Other virtualization solutions may use standard Linux USB/IP server and
   native [Windows client driver](https://github.com/cezanne/usbip-win).
 * Show render statistics, pipeline stage timings and video stream bandwidth
-  with `--stats <seconds>` to identify bottlenecks in FFmpeg, SDL, Parsec or
+  with `--stats SECONDS` to identify bottlenecks in FFmpeg, SDL, Parsec or
   event loop.
 
 # FFmpeg Decoder
@@ -191,11 +193,21 @@ setup fails, the client recreates the window with the default SDL renderer. If
 VA-API initialization fails despite an advertised profile, that codec falls
 back to FFmpeg software decoding. If the complete H.265 startup attempt fails,
 the client reconnects once with H.265 disabled and uses the selected hardware
-or software FFmpeg H.264 decoder.
+or software FFmpeg H.264 decoder. Use `--video-decoder MODE` to select one
+of these policies. `MODE` has the form `TYPE-CODEC-CHROMA`:
 
-Use `--no-hevc` to disable H.265 entirely and use the FFmpeg H.264 decoder. Use
-`--no-acceleration` to disable hardware decoding and use FFmpeg software decoding
-for either codec.
+* `hw` or `sw` selects a hardware or software decoder.
+* `hevc` or `h264` selects H.265 / HEVC or H.264 / AVC.
+* `444` selects 4:4:4 chroma without subsampling.
+* `420` selects 4:2:0 chroma subsampling.
+
+| Mode                    | Behavior                                                             |
+|-------------------------|----------------------------------------------------------------------|
+| `hw-hevc-444` (default) | HW H.265 4:4:4 -> HW H.265 4:2:0 -> HW H.264 4:2:0 -> SW H.264 4:2:0 |
+| `hw-hevc-420`           | HW H.265 4:2:0 -> HW H.264 4:2:0 -> SW H.264 4:2:0                   |
+| `hw-h264-420`           | HW H.264 4:2:0 -> SW H.264 4:2:0                                     |
+| `sw-hevc-420`           | SW H.265 4:2:0                                                       |
+| `sw-h264-420`           | SW H.264 4:2:0                                                       |
 
 # Parsec Warp
 
@@ -205,15 +217,6 @@ for either codec.
 
 # Known Issues
 
-* Color mode 4:4:4 is not yet supported by the public SDK path used by this
-  client. This limitation was previously tracked in the original
-  `parsec-cloud/parsec-sdk` issue tracker, but that repository is no longer
-  available after Parsec was acquired by Unity. The SDK files referenced by this
-  project are mirrored at [Parsec SDK](https://github.com/mbroemme/parsec-sdk).
-  The FFmpeg decoder currently supports I420 or NV12 frame content and does not
-  add 4:4:4 support. In the official
-  [Parsec](https://parsec.app/downloads) client 4:4:4 works already with
-  internal SDK callbacks.
 * Resolution changes from client connected to the host are not persistent and
   only valid within the session. Once the last client disconnects the host
   restores original resolution.
@@ -239,8 +242,7 @@ applicable Parsec SDK terms allow you to do so.
 VDI Stream Client uses GNU Build System to configure, build and install the
 application. It requires `sdl3`, `sdl3-ttf`, `libusb`, `usbredir`,
 `libavcodec`, `libavutil`, `libavformat`, `libva`, `libdrm`, `libplacebo`,
-Vulkan and the
-[Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
+Vulkan and the [Parsec SDK](https://github.com/mbroemme/parsec-sdk). The original
 `parsec-cloud/parsec-sdk` repository is no longer available after Parsec was
 acquired by Unity, so this project references the mirrored SDK repository
 instead. FFmpeg is a mandatory dependency because video decoding is implemented
@@ -293,9 +295,13 @@ or [x86](https://builds.parsecgaming.com/package/parsec-windows32.exe)) is
 running and you have created a [free account](https://parsec.app/signup).
 There are several advanced configuration options for visual and network
 latency improvements described in the Parsec [documentation](https://support.parsec.app/hc/en-us/articles/360001562772-All-Advanced-Configuration-Options)
-in the "Hosting Settings" chapter.
+in the "Hosting Settings" chapter. The command syntax is:
 
-The client requires a `sessionID` and a `peerID` obtained through the Parsec
+```text
+vdi-stream-client [OPTION]... --session ID --peer ID
+```
+
+The client requires a session `ID` and peer `ID` obtained through the Parsec
 API to identify users to make secure connections. For convenience you can use
 [tools/parsec-login](tools/parsec-login) script to retrieve list of available
 hosts. This is one-time operation whenever you add Parsec host application to
@@ -333,11 +339,17 @@ virtualization host:
 You need to add additional `<redirdev>` sections to redirect multiple devices
 and increase the port number accordingly. After reloading libvirt and starting
 the Virtual Machine with the configuration above, you can redirect a local USB
-device. You can get a list of available devices with their `<vendorID>` and
-`<productID>` with `lsusb` command.
+device. You can get a list of available devices with their `<VENDOR>` and
+`<PRODUCT>` with `lsusb` command. The `--redirect SPEC` argument uses this
+format:
+
+```text
+VENDOR:PRODUCT@ADDRESS#PORT[,...]
+```
 
 ```
-vdi-stream-client --session <sessionID> --peer <peerID> --redirect <vendorID>:<productID>@<ip>#4000
+vdi-stream-client --session ID --peer ID \
+  --redirect VENDOR:PRODUCT@ADDRESS#4000
 ```
 
 Once connection is established it will redirect the local USB device to the

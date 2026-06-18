@@ -42,6 +42,15 @@ typedef union
     struct sockaddr_in6 v6; /* address (ipv6) to connect for usb redirection. */
 } vdi_server_addr_u;
 
+typedef enum
+{
+    VDI_VIDEO_DECODER_HW_HEVC_444,
+    VDI_VIDEO_DECODER_HW_HEVC_420,
+    VDI_VIDEO_DECODER_HW_H264_420,
+    VDI_VIDEO_DECODER_SW_HEVC_420,
+    VDI_VIDEO_DECODER_SW_H264_420,
+} vdi_video_decoder_e;
+
 /* stored command line options. */
 typedef struct vdi_config_s
 {
@@ -54,11 +63,8 @@ typedef struct vdi_config_s
     Uint16 width;   /* screen width in pixel. (host resolution is used if not specified) */
     Uint16 height;  /* screen height in pixel. (host resolution is used if not specified) */
 
-    /* color mode to use. (0 = 4:4:4, 1 = 4:2:0) */
-    Uint16 subsampling;
-
-    /* client decoding type. (0 = software, 1 = hardware) */
-    Uint16 acceleration;
+    /* video codec, color mode and acceleration policy. */
+    vdi_video_decoder_e video_decoder;
 
     /* upnp nat traversal support. (0 = disable upnp, 1 = enable upnp) */
     Uint16 upnp;
@@ -82,9 +88,6 @@ typedef struct vdi_config_s
 
     /* audio support. (0 = disable audio streaming, 1 = enable audio streaming) */
     Uint16 audio;
-
-    /* streaming codec to use. (0 = h264, 1 = h265) */
-    Uint16 hevc;
 
     /* render stats logging. (0 = disable, 1 = enable) */
     Uint16 stats;

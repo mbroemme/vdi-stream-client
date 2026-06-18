@@ -67,6 +67,8 @@ struct vdi_stream_client__placebo_source_s
     bool mapped_avframe;
 };
 
+/* Forward libplacebo warnings and errors into SDL logging while suppressing
+ * lower-priority chatter from the rendering library. */
 static void
 vdi_stream_client__placebo_log(void *opaque, enum pl_log_level level, const char *message)
 {
@@ -79,6 +81,8 @@ vdi_stream_client__placebo_log(void *opaque, enum pl_log_level level, const char
     }
 }
 
+/* Wait for the timeline semaphore value signaled when libplacebo finishes using
+ * the shared target texture before SDL samples from it. */
 static bool
 vdi_stream_client__placebo_wait_ready(struct vdi_stream_client__placebo_s *placebo)
 {
@@ -92,6 +96,8 @@ vdi_stream_client__placebo_wait_ready(struct vdi_stream_client__placebo_s *place
     return vkWaitSemaphores(placebo->vulkan->device, &wait_info, UINT64_MAX) == VK_SUCCESS;
 }
 
+/* Hold the libplacebo render target for SDL sampling. This transitions ownership
+ * with libplacebo and waits until the target is ready to be wrapped by SDL. */
 static bool
 vdi_stream_client__placebo_hold_target(struct vdi_stream_client__placebo_s *placebo)
 {
@@ -119,6 +125,8 @@ vdi_stream_client__placebo_hold_target(struct vdi_stream_client__placebo_s *plac
     return true;
 }
 
+/* Release the shared target back to libplacebo before the next render pass. SDL
+ * and libplacebo share the main-thread Vulkan queue, so ordering is preserved. */
 static void
 vdi_stream_client__placebo_release_target(struct vdi_stream_client__placebo_s *placebo)
 {
@@ -127,6 +135,7 @@ vdi_stream_client__placebo_release_target(struct vdi_stream_client__placebo_s *p
     }
 
     if (placebo->vulkan != NULL && placebo->target != NULL) {
+
         /* SDL_RenderPresent submitted the previous sample on this same
          * main-thread graphics queue, so the next libplacebo submission is
          * ordered after it. The hold path uses a timeline semaphore before
@@ -142,6 +151,8 @@ vdi_stream_client__placebo_release_target(struct vdi_stream_client__placebo_s *p
     placebo->target_held = false;
 }
 
+/* Destroy the SDL-wrapped libplacebo target texture and clear any active video
+ * frame reference to it before dimensions or render paths change. */
 static void
 vdi_stream_client__placebo_target_destroy(
     struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo
@@ -153,6 +164,7 @@ vdi_stream_client__placebo_target_destroy(
 
     vdi_stream_client__placebo_release_target(placebo);
     if (placebo->vulkan != NULL) {
+
         /* SDL and libplacebo submit to the same Vulkan graphics queue on the
          * main thread. This waits for prior SDL sampling before destruction. */
         pl_gpu_finish(placebo->vulkan->gpu);
@@ -166,6 +178,8 @@ vdi_stream_client__placebo_target_destroy(
     placebo->height = 0;
 }
 
+/* Tear down all temporary textures, imported Vulkan images, memory objects, and
+ * AVFrame references created while mapping one VA-API frame. */
 static void
 vdi_stream_client__placebo_source_unmap(
     struct vdi_stream_client__placebo_s *placebo, struct vdi_stream_client__placebo_source_s *source
@@ -191,6 +205,8 @@ vdi_stream_client__placebo_source_unmap(
     SDL_memset(source, 0, sizeof(*source));
 }
 
+/* Detect Mesa RADV on AMD hardware so the renderer can enable the legacy linear
+ * external-memory path used by older VA-API exports without DRM modifiers. */
 static bool
 vdi_stream_client__placebo_is_radv(struct vdi_stream_client__placebo_s *placebo)
 {
@@ -207,6 +223,8 @@ vdi_stream_client__placebo_is_radv(struct vdi_stream_client__placebo_s *placebo)
            driver_properties.driverID == VK_DRIVER_ID_MESA_RADV;
 }
 
+/* Pick a Vulkan memory type compatible with an imported external image,
+ * preferring device-local memory and falling back to the first allowed type. */
 static bool
 vdi_stream_client__placebo_memory_type(
     struct vdi_stream_client__placebo_s *placebo, Uint32 memory_type_bits, Uint32 *memory_type_index
@@ -235,6 +253,8 @@ vdi_stream_client__placebo_memory_type(
     return true;
 }
 
+/* Import a contiguous linear NV12 DMA-BUF as a single two-plane Vulkan image for
+ * RADV systems that lack DRM modifier import but accept opaque FD memory. */
 static bool
 vdi_stream_client__placebo_source_import_linear(
     struct vdi_stream_client__placebo_s *placebo,
@@ -246,6 +266,7 @@ vdi_stream_client__placebo_source_import_linear(
     const VkFormat vulkan_format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
     const Uint32 allocation_width = (Uint32)FFALIGN(av_frame->width, 16);
     const Uint32 allocation_height = (Uint32)FFALIGN(av_frame->height, 16);
+
     /* RADV advertises linear external images through opaque FD handles. */
     const VkExternalMemoryHandleTypeFlagBits handle_type =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
@@ -400,6 +421,7 @@ vdi_stream_client__placebo_source_import_linear(
         );
         return false;
     }
+
     /* A two-plane image deliberately bypasses RADV's single-plane RadeonSI
      * metadata compatibility hook. Matching Mesa's 16-pixel video allocation
      * dimensions makes RADV calculate the same contiguous legacy NV12 layout
@@ -447,6 +469,9 @@ vdi_stream_client__placebo_source_import_linear(
     return true;
 }
 
+/* Map a VA-API AVFrame to DRM PRIME, import each DMA-BUF plane into Vulkan, and
+ * populate a libplacebo frame that can be rendered without copying through CPU
+ * memory. */
 static bool
 vdi_stream_client__placebo_source_map(
     struct vdi_stream_client__placebo_s *placebo, const AVFrame *av_frame,
@@ -712,6 +737,9 @@ error:
     return false;
 }
 
+/* Fallback path for VA-API frames that cannot be imported directly. It transfers
+ * the hardware frame to a software AVFrame and lets libplacebo upload it to
+ * temporary GPU textures. */
 static bool
 vdi_stream_client__placebo_source_upload(
     struct vdi_stream_client__placebo_s *placebo, const AVFrame *av_frame,
@@ -757,6 +785,8 @@ vdi_stream_client__placebo_source_upload(
     return true;
 }
 
+/* Ensure the libplacebo render target and SDL texture wrapper exist for the
+ * current frame size. The created texture is later sampled by SDL's renderer. */
 static bool
 vdi_stream_client__placebo_target_create(
     struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo,
@@ -830,6 +860,8 @@ vdi_stream_client__placebo_target_create(
     return true;
 }
 
+/* Permanently disable direct DMA-BUF zero-copy for this renderer instance and
+ * record a stats fallback. Later frames use the Vulkan upload fallback. */
 static void
 vdi_stream_client__placebo_disable(
     struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo,
@@ -848,6 +880,9 @@ vdi_stream_client__placebo_disable(
     }
 }
 
+/* Initialize the libplacebo Vulkan bridge for an SDL Vulkan window. This creates
+ * the shared Vulkan renderer, SDL renderer wrapper, timeline semaphore, and
+ * capability flags needed for VA-API DRM PRIME rendering. */
 bool
 vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
 {
@@ -910,6 +945,7 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
         goto error;
     }
     if ((placebo->vulkan->gpu->import_caps.tex & PL_HANDLE_DMA_BUF) == 0) {
+
         /* Pre-GFX9 RADV exports linear RadeonSI video surfaces but does not
          * expose VK_EXT_image_drm_format_modifier. RADV accepts those BOs
          * through its opaque-FD external-memory compatibility path. */
@@ -1003,6 +1039,9 @@ error:
     return false;
 }
 
+/* Render one VA-API hardware frame with libplacebo. The function first tries
+ * direct DMA-BUF import, falls back to Vulkan upload when import fails, and
+ * publishes the SDL texture that now contains the rendered RGB frame. */
 bool
 vdi_stream_client__placebo_render(
     struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image,
@@ -1112,6 +1151,8 @@ done:
     return rendered;
 }
 
+/* Destroy the libplacebo bridge, SDL renderer wrapper, Vulkan surface, and all
+ * target resources owned by parsec_context->placebo. */
 void
 vdi_stream_client__placebo_destroy(struct parsec_context_s *parsec_context)
 {

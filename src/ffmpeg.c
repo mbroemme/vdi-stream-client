@@ -20,6 +20,7 @@
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_vaapi.h>
+#include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <limits.h>
 #include <stdatomic.h>
@@ -104,9 +105,13 @@ static atomic_uint_fast64_t vdi_stream_client__parsec_ffmpeg_descriptor_fallback
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hardware_active;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_h264_acceleration;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hevc_acceleration;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_color444;
 
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 
+/* Return the CPU-visible pixel format for an AVFrame. VA-API frames expose this
+ * through their hardware frames context, while software frames store it directly
+ * in AVFrame::format. */
 static enum AVPixelFormat
 vdi_stream_client__parsec_ffmpeg_frame_software_format(const AVFrame *frame)
 {
@@ -123,6 +128,8 @@ vdi_stream_client__parsec_ffmpeg_frame_software_format(const AVFrame *frame)
     return frames_context != NULL ? frames_context->sw_format : AV_PIX_FMT_NONE;
 }
 
+/* Transfer a hardware AVFrame into a software AVFrame and record timing
+ * counters used by --stats. */
 Sint32
 vdi_stream_client__parsec_ffmpeg_hwframe_transfer(AVFrame *destination, const AVFrame *source)
 {
@@ -144,6 +151,8 @@ vdi_stream_client__parsec_ffmpeg_hwframe_transfer(AVFrame *destination, const AV
     return err;
 }
 
+/* Validate and return the lightweight descriptor stored behind a ParsecFrame
+ * image pointer when the FFmpeg decoder passes retained AVFrames downstream. */
 static const struct vdi_stream_client__parsec_ffmpeg_frame_descriptor_s *
 vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, const void *image)
 {
@@ -157,11 +166,16 @@ vdi_stream_client__parsec_ffmpeg_frame_descriptor(const ParsecFrame *frame, cons
     return descriptor;
 }
 
+/* Map supported FFmpeg pixel formats to Parsec and SDL formats. Planar 4:4:4 is
+ * accepted only for descriptor-based paths because SDL has no direct texture
+ * upload format for it here. */
 static bool
 vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
     enum AVPixelFormat format, ParsecColorFormat *parsec_format, SDL_PixelFormat *sdl_format
 )
 {
+    const AVPixFmtDescriptor *descriptor;
+
     switch (format) {
     case AV_PIX_FMT_YUV420P:
 #if LIBAVUTIL_VERSION_MAJOR < 59
@@ -183,10 +197,23 @@ vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
         }
         return true;
     default:
+        break;
+    }
+
+    descriptor = av_pix_fmt_desc_get(format);
+    if (descriptor == NULL || (descriptor->flags & AV_PIX_FMT_FLAG_RGB) != 0 ||
+        descriptor->nb_components < 3 || descriptor->log2_chroma_w != 0 ||
+        descriptor->log2_chroma_h != 0) {
         return false;
     }
+    if (parsec_format != NULL) {
+        *parsec_format = FORMAT_I444;
+    }
+    return sdl_format == NULL;
 }
 
+/* Resolve a descriptor to its retained AVFrame slot and hold the shared slot
+ * mutex while the caller inspects or clones the frame. */
 static AVFrame *
 vdi_stream_client__parsec_ffmpeg_frame_lock(
     const ParsecFrame *frame, const void *image,
@@ -221,6 +248,7 @@ vdi_stream_client__parsec_ffmpeg_frame_lock(
     return slot->frame;
 }
 
+/* Release a frame slot lock acquired by vdi_stream_client__parsec_ffmpeg_frame_lock(). */
 static void
 vdi_stream_client__parsec_ffmpeg_frame_unlock(
     struct vdi_stream_client__parsec_ffmpeg_frame_slot_s *slot
@@ -231,12 +259,16 @@ vdi_stream_client__parsec_ffmpeg_frame_unlock(
     }
 }
 
+/* Report whether the frame/image pair carries an FFmpeg descriptor instead of a
+ * raw Parsec image buffer. */
 bool
 vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(const ParsecFrame *frame, const void *image)
 {
     return vdi_stream_client__parsec_ffmpeg_frame_descriptor(frame, image) != NULL;
 }
 
+/* Report whether a descriptor currently references a VA-API hardware frame,
+ * which lets the video path choose libplacebo zero-copy rendering. */
 bool
 vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, const void *image)
 {
@@ -253,6 +285,8 @@ vdi_stream_client__parsec_ffmpeg_frame_is_hardware(const ParsecFrame *frame, con
     return hardware;
 }
 
+/* Clone the retained AVFrame referenced by a descriptor. Callers own the
+ * returned reference and can safely use it after the descriptor slot unlocks. */
 AVFrame *
 vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void *image)
 {
@@ -268,6 +302,8 @@ vdi_stream_client__parsec_ffmpeg_frame_ref(const ParsecFrame *frame, const void 
     return reference;
 }
 
+/* Query the SDL texture format required to upload a descriptor-backed FFmpeg
+ * frame through the software renderer fallback path. */
 bool
 vdi_stream_client__parsec_ffmpeg_frame_texture_format(
     const ParsecFrame *frame, const void *image, SDL_PixelFormat *pixel_format
@@ -289,6 +325,8 @@ vdi_stream_client__parsec_ffmpeg_frame_texture_format(
     return supported;
 }
 
+/* Upload a descriptor-backed FFmpeg frame into an SDL texture. Hardware frames
+ * are transferred to a software AVFrame before SDL receives the planes. */
 bool
 vdi_stream_client__parsec_ffmpeg_frame_update(
     SDL_Texture *texture, const ParsecFrame *frame, const void *image, Uint64 *upload_ns
@@ -364,6 +402,8 @@ done:
     return ok;
 }
 
+/* Release the retained AVFrame slot after the renderer has consumed a
+ * descriptor-backed frame. Raw Parsec image buffers are ignored. */
 void
 vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const void *image)
 {
@@ -381,6 +421,8 @@ vdi_stream_client__parsec_ffmpeg_frame_release(const ParsecFrame *frame, const v
     vdi_stream_client__parsec_ffmpeg_frame_unlock(slot);
 }
 
+/* Atomically drain FFmpeg decoder counters into the caller's stats structure and
+ * reset them for the next render statistics interval. */
 void
 vdi_stream_client__parsec_ffmpeg_drain_stats(struct vdi_stream_client__parsec_ffmpeg_stats_s *stats)
 {
@@ -422,6 +464,8 @@ vdi_stream_client__parsec_ffmpeg_drain_stats(struct vdi_stream_client__parsec_ff
     );
 }
 
+/* Return whether the currently published FFmpeg decoder instance is using
+ * hardware acceleration. The video setup uses this to decide on Vulkan support. */
 bool
 vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void)
 {
@@ -430,6 +474,8 @@ vdi_stream_client__parsec_ffmpeg_decoder_is_hardware(void)
     );
 }
 
+/* Check whether a VA-API profile exposes the VLD decode entrypoint needed for
+ * video decoding. */
 static bool
 vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
     VADisplay display, VAProfile profile, VAEntrypoint *entrypoints, Sint32 max_entrypoints
@@ -449,8 +495,41 @@ vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
     return false;
 }
 
+/* Identify HEVC VA-API profiles that represent 4:4:4 chroma modes. */
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_hevc444(VAProfile profile)
+{
+    switch (profile) {
+    case VAProfileHEVCMain444:
+    case VAProfileHEVCMain444_10:
+    case VAProfileHEVCMain444_12:
+    case VAProfileHEVCSccMain444:
+    case VAProfileHEVCSccMain444_10:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/* Verify that a 4:4:4 HEVC profile can actually output a YUV444 render target,
+ * not just appear in the driver's profile list. */
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_yuv444(VADisplay display, VAProfile profile)
+{
+    VAConfigAttrib attribute = {
+        .type = VAConfigAttribRTFormat,
+    };
+    const Uint32 formats = VA_RT_FORMAT_YUV444 | VA_RT_FORMAT_YUV444_10 | VA_RT_FORMAT_YUV444_12;
+
+    return vaGetConfigAttributes(display, profile, VAEntrypointVLD, &attribute, 1) ==
+               VA_STATUS_SUCCESS &&
+           attribute.value != VA_ATTRIB_NOT_SUPPORTED && (attribute.value & formats) != 0;
+}
+
+/* Probe VA-API decode capabilities used by the decoder policy. The probe only
+ * queries profile metadata and does not allocate decode surfaces. */
 bool
-vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
+vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc, bool *hevc444)
 {
     AVBufferRef *device_ref = NULL;
     AVHWDeviceContext *device_context;
@@ -463,11 +542,12 @@ vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
     Sint32 profile_count;
     bool available = false;
 
-    if (h264 == NULL || hevc == NULL) {
+    if (h264 == NULL || hevc == NULL || hevc444 == NULL) {
         return false;
     }
     *h264 = false;
     *hevc = false;
+    *hevc444 = false;
 
     /* Query profile metadata only. No VA config, context, surface or frame is created. */
     if (av_hwdevice_ctx_create(&device_ref, AV_HWDEVICE_TYPE_VAAPI, NULL, NULL, 0) < 0 ||
@@ -513,6 +593,10 @@ vdi_stream_client__parsec_ffmpeg_vaapi_codecs(bool *h264, bool *hevc)
             *h264 = true;
         } else if (SDL_strncmp(name, "VAProfileHEVC", sizeof("VAProfileHEVC") - 1) == 0) {
             *hevc = true;
+            if (vdi_stream_client__parsec_ffmpeg_vaapi_profile_hevc444(profiles[i]) &&
+                vdi_stream_client__parsec_ffmpeg_vaapi_profile_yuv444(display, profiles[i])) {
+                *hevc444 = true;
+            }
         }
     }
 
@@ -523,6 +607,8 @@ cleanup:
     return available;
 }
 
+/* Temporarily change page protections so the client can update Parsec SDK
+ * decoder table entries and narrow negotiation patches at runtime. */
 static bool
 vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
 {
@@ -540,6 +626,79 @@ vdi_stream_client__parsec_make_writable(void *address, size_t len, int prot)
     return mprotect((void *)start, (size_t)(end - start), prot) == 0;
 }
 
+/* Patch the Parsec SDK branch that rejects 4:4:4 negotiation based on its
+ * bundled decoder. The injected FFmpeg decoder owns that capability instead. */
+static bool
+vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(struct parsec_context_s *parsec_context)
+{
+    static bool patched;
+    const Uint8 pattern[] = {
+        0x84, 0xc0,                   /* test al, al */
+        0x41, 0x58,                   /* pop r8 */
+        0x4c, 0x8b, 0x5c, 0x24, 0x18, /* mov r11, [rsp+0x18] */
+        0x0f, 0x85,                   /* jne rel32 */
+    };
+    Uint8 replacement[6];
+    Uint8 *branch;
+    Uint8 *func;
+    Uint8 *scan;
+    int32_t old_relative;
+    int32_t new_relative;
+    uintptr_t target;
+    Uint32 offset;
+
+    if (patched) {
+        return true;
+    }
+
+#ifdef HAVE_LIBPARSEC
+    (void)parsec_context;
+    func = (Uint8 *)(void *)ParsecClientConnect;
+#else
+    if (parsec_context->parsec == NULL || parsec_context->parsec->api.ParsecClientConnect == NULL) {
+        return false;
+    }
+    func = (Uint8 *)(void *)parsec_context->parsec->api.ParsecClientConnect;
+#endif
+
+    /* Parsec SDK 6.0 checks its bundled FFmpeg dependency before enabling
+     * decoder444. The injected decoder replaces that implementation, so bypass
+     * only the result branch of that dependency check. */
+    scan = (Uint8 *)((uintptr_t)func - 0x10000u);
+    for (offset = 0; offset + sizeof(pattern) + sizeof(old_relative) <= 0x14000u; offset++) {
+        if (SDL_memcmp(scan + offset, pattern, sizeof(pattern)) != 0) {
+            continue;
+        }
+
+        branch = scan + offset + 9u;
+        SDL_memcpy(&old_relative, branch + 2u, sizeof(old_relative));
+        target = (uintptr_t)(branch + 6u + old_relative);
+        new_relative = (int32_t)(target - (uintptr_t)(branch + 5u));
+        replacement[0] = 0xe9;
+        SDL_memcpy(replacement + 1u, &new_relative, sizeof(new_relative));
+        replacement[5] = 0x90;
+
+        if (!vdi_stream_client__parsec_make_writable(
+                branch, sizeof(replacement), PROT_READ | PROT_WRITE
+            )) {
+            return false;
+        }
+        SDL_memcpy(branch, replacement, sizeof(replacement));
+        __builtin___clear_cache((char *)branch, (char *)branch + sizeof(replacement));
+        if (!vdi_stream_client__parsec_make_writable(
+                branch, sizeof(replacement), PROT_READ | PROT_EXEC
+            )) {
+            return false;
+        }
+        patched = true;
+        return true;
+    }
+
+    return false;
+}
+
+/* Set the hidden flag on a raw Parsec decoder table entry so only the injected
+ * FFmpeg decoder is visible for client negotiation. */
 static bool
 vdi_stream_client__parsec_decoder_set_hidden(Uint8 *entry, bool hidden)
 {
@@ -561,6 +720,8 @@ vdi_stream_client__parsec_decoder_set_hidden(Uint8 *entry, bool hidden)
     return true;
 }
 
+/* Locate the in-process Parsec decoder table by scanning ParsecGetDecoders for
+ * its RIP-relative table load. */
 static Uint8 *
 vdi_stream_client__parsec_decoder_table(struct parsec_context_s *parsec_context)
 {
@@ -593,6 +754,8 @@ vdi_stream_client__parsec_decoder_table(struct parsec_context_s *parsec_context)
     return NULL;
 }
 
+/* Query Parsec's public decoder list and return the index for the requested
+ * decoder name after the table has been patched. */
 static bool
 vdi_stream_client__parsec_decoder_lookup(
     struct parsec_context_s *parsec_context, const char *name, Uint32 *decoder_index
@@ -623,8 +786,10 @@ vdi_stream_client__parsec_decoder_lookup(
     return false;
 }
 
+/* Populate one Parsec decoder query capability blob. H.265 can advertise 4:4:4
+ * support, while H.264 remains 4:2:0 only. */
 static void
-vdi_stream_client__parsec_ffmpeg_query_enable(void *query)
+vdi_stream_client__parsec_ffmpeg_query_enable(void *query, bool color444)
 {
     Uint8 *bytes = query;
 
@@ -636,14 +801,23 @@ vdi_stream_client__parsec_ffmpeg_query_enable(void *query)
         bytes[i] = 0;
     }
     bytes[0] = 1;
+    bytes[1] = color444;
 }
 
+/* Decoder query callback installed into the Parsec decoder table. It reports
+ * the H.264 and H.265 capabilities selected during startup. */
 static void
 vdi_stream_client__parsec_ffmpeg_query(void *h264, void *h265)
 {
-    vdi_stream_client__parsec_ffmpeg_query_enable(h264);
-    vdi_stream_client__parsec_ffmpeg_query_enable(h265);
+    bool color444 =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_color444, memory_order_relaxed);
+
+    vdi_stream_client__parsec_ffmpeg_query_enable(h264, false);
+    vdi_stream_client__parsec_ffmpeg_query_enable(h265, color444);
 }
+
+/* Convert an FFmpeg error code into caller-provided storage, falling back to a
+ * numeric message if libavutil cannot format it. */
 static const char *
 vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len)
 {
@@ -656,6 +830,9 @@ vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len)
     return buffer;
 }
 
+/* FFmpeg get_format callback that selects the VA-API hardware pixel format
+ * discovered during decoder initialization, falling back to FFmpeg's first
+ * offered format if the expected one is absent. */
 static enum AVPixelFormat
 vdi_stream_client__parsec_ffmpeg_get_hw_format(
     AVCodecContext *codec, const enum AVPixelFormat *formats
@@ -676,6 +853,8 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
     return formats != NULL ? formats[0] : AV_PIX_FMT_NONE;
 }
 
+/* Attach a VA-API device to the codec context when the selected codec and
+ * runtime policy both support hardware acceleration. */
 static bool
 vdi_stream_client__parsec_ffmpeg_setup_vaapi(
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVCodec *codec,
@@ -723,6 +902,8 @@ vdi_stream_client__parsec_ffmpeg_setup_vaapi(
     return true;
 }
 
+/* Apply low-latency FFmpeg codec settings shared by hardware and software
+ * decoder contexts. */
 static void
 vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *codec)
 {
@@ -736,6 +917,8 @@ vdi_stream_client__parsec_ffmpeg_configure_context(AVCodecContext *codec)
     codec->flags2 |= AV_CODEC_FLAG2_FAST;
 }
 
+/* Log each codec/acceleration mode once so reconnects or multiple decoder
+ * instances do not spam identical mode messages. */
 static void
 vdi_stream_client__parsec_ffmpeg_log_decoder_mode(
     const struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
@@ -764,6 +947,8 @@ vdi_stream_client__parsec_ffmpeg_log_decoder_mode(
     );
 }
 
+/* Release all resources owned by one injected FFmpeg decoder instance,
+ * including retained frame slots that may still be referenced by descriptors. */
 static void
 vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg)
 {
@@ -797,6 +982,9 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
     SDL_free(ffmpeg);
 }
 
+/* Common Parsec decoder init callback. It allocates FFmpeg state, selects H.264
+ * or H.265 from Parsec's selector byte, tries VA-API first when allowed, and
+ * falls back to software decoding if opening the hardware context fails. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_init_common(
     void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags
@@ -901,6 +1089,8 @@ vdi_stream_client__parsec_ffmpeg_init_common(
     return PARSEC_OK;
 }
 
+/* Parsec decoder init callback installed into the SDK decoder table. It exists
+ * as a stable callback symbol and delegates to the shared initializer. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_init(
     void *decoder, void *stream, Uint32 stream_id, void *codec_selector, void *flags
@@ -911,6 +1101,8 @@ vdi_stream_client__parsec_ffmpeg_init(
     );
 }
 
+/* Parsec decoder cleanup callback that releases the FFmpeg instance and clears
+ * Parsec's decoder-private pointer. */
 static void
 vdi_stream_client__parsec_ffmpeg_cleanup(void *decoder)
 {
@@ -929,6 +1121,8 @@ vdi_stream_client__parsec_ffmpeg_cleanup(void *decoder)
     *((void **)decoder) = NULL;
 }
 
+/* Copy one AVFrame plane into a tightly packed destination plane, honoring the
+ * source and destination pitches for every row. */
 static bool
 vdi_stream_client__parsec_ffmpeg_copy_plane(
     Uint8 *dst, const Uint8 *src, Sint32 dst_pitch, Sint32 src_pitch, Sint32 width, Sint32 height
@@ -949,6 +1143,9 @@ vdi_stream_client__parsec_ffmpeg_copy_plane(
     return true;
 }
 
+/* Write a ParsecFrame header that points at a retained AVFrame descriptor
+ * instead of copying pixel planes. The renderer later clones and releases the
+ * retained frame through the descriptor slot. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, const AVFrame *source,
@@ -1017,6 +1214,8 @@ vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
     return PARSEC_OK;
 }
 
+/* Serialize a YUV420P AVFrame into Parsec's contiguous I420 frame buffer when
+ * descriptor passing is unavailable or unsuitable. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_write_i420(
     const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size
@@ -1075,6 +1274,8 @@ vdi_stream_client__parsec_ffmpeg_write_i420(
     return PARSEC_OK;
 }
 
+/* Serialize an NV12 AVFrame into Parsec's contiguous NV12 frame buffer when the
+ * renderer cannot consume a retained FFmpeg descriptor directly. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_write_nv12(
     const AVFrame *source, ParsecFrame *frame, Uint32 *frame_size
@@ -1124,6 +1325,9 @@ vdi_stream_client__parsec_ffmpeg_write_nv12(
     return PARSEC_OK;
 }
 
+/* Convert the most recently decoded FFmpeg frame into Parsec decoder output.
+ * Hardware frames prefer descriptor-based zero-copy handoff, then transfer and
+ * fall back to software descriptors or packed buffers as needed. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_write_frame(
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg, void *frame_data, Uint32 *frame_size
@@ -1191,6 +1395,16 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
         );
         break;
     default:
+        if (vdi_stream_client__parsec_ffmpeg_frame_pixel_format(
+                (enum AVPixelFormat)source->format, NULL, NULL
+            )) {
+            err = vdi_stream_client__parsec_ffmpeg_write_frame_descriptor(
+                ffmpeg, source, (ParsecFrame *)frame_data, frame_size
+            );
+            if (err == PARSEC_OK) {
+                return PARSEC_OK;
+            }
+        }
         SDL_LogWarn(
             SDL_LOG_CATEGORY_APPLICATION, "Unsupported FFmpeg pixel format %d\n", source->format
         );
@@ -1210,6 +1424,7 @@ vdi_stream_client__parsec_ffmpeg_write_frame(
     return err;
 }
 
+/* Wrap avcodec_send_packet with optional timing counters for render statistics. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_send_packet(AVCodecContext *codec, const AVPacket *packet)
 {
@@ -1231,6 +1446,8 @@ vdi_stream_client__parsec_ffmpeg_send_packet(AVCodecContext *codec, const AVPack
     return err;
 }
 
+/* Wrap avcodec_receive_frame with optional timing counters for render
+ * statistics. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_receive_frame(AVCodecContext *codec, AVFrame *frame)
 {
@@ -1252,6 +1469,9 @@ vdi_stream_client__parsec_ffmpeg_receive_frame(AVCodecContext *codec, AVFrame *f
     return err;
 }
 
+/* Parsec decoder decode callback. It feeds one compressed packet into FFmpeg,
+ * handles EAGAIN/EOF as accepted input, and emits a ParsecFrame when FFmpeg has
+ * a decoded frame ready. */
 static Sint32
 vdi_stream_client__parsec_ffmpeg_decode(
     void *decoder, const void *packet_data, Uint32 packet_size, void *frame_data, Uint32 *frame_size
@@ -1318,10 +1538,13 @@ vdi_stream_client__parsec_ffmpeg_decode(
     return vdi_stream_client__parsec_ffmpeg_write_frame(ffmpeg, frame_data, frame_size);
 }
 
+/* Install the injected FFmpeg decoder into Parsec's decoder table, hide the SDK
+ * software/hardware decoders, publish startup policy for callbacks, and return
+ * the decoder index Parsec should request. */
 bool
 vdi_stream_client__parsec_ffmpeg_decoder_enable(
     struct parsec_context_s *parsec_context, Uint32 *decoder_index, bool h264_acceleration,
-    bool hevc_acceleration
+    bool hevc_acceleration, bool color444
 )
 {
     Uint8 *table;
@@ -1339,6 +1562,9 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     );
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_hevc_acceleration, hevc_acceleration, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_color444, color444, memory_order_relaxed
     );
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
@@ -1379,6 +1605,16 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     (void)vdi_stream_client__parsec_make_writable(
         entry, VDI_STREAM_CLIENT_PARSEC_DECODER_ENTRY_SIZE, PROT_READ
     );
+
+    if (color444 && !vdi_stream_client__parsec_ffmpeg_patch_decoder444_gate(parsec_context)) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "Parsec SDK 4:4:4 negotiation gate patch failed; use 4:2:0 color\n"
+        );
+        atomic_store_explicit(
+            &vdi_stream_client__parsec_ffmpeg_color444, false, memory_order_relaxed
+        );
+    }
 
     return vdi_stream_client__parsec_decoder_lookup(parsec_context, "FFMPEG", decoder_index);
 }

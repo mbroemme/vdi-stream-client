@@ -142,48 +142,64 @@ struct parsec_context_s
     Uint64 stats_idle_wait_ms;
 };
 
+/* Read the shared shutdown flag with acquire ordering so worker threads observe
+ * prior shutdown-side state updates before leaving their loops. */
 static inline bool
 vdi_stream_client__context_done(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->done, memory_order_acquire);
 }
 
+/* Publish the shared shutdown flag with release ordering. All worker threads
+ * use this as the common signal to stop polling external APIs. */
 static inline void
 vdi_stream_client__context_set_done(struct parsec_context_s *parsec_context, bool done)
 {
     atomic_store_explicit(&parsec_context->done, done, memory_order_release);
 }
 
+/* Read whether the Parsec client is currently considered connected. Audio,
+ * input, and rendering use this to decide whether to poll or show overlays. */
 static inline bool
 vdi_stream_client__context_connected(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->connection, memory_order_acquire);
 }
 
+/* Publish the current Parsec connection state for worker threads and the main
+ * loop without requiring callers to manage atomic ordering themselves. */
 static inline void
 vdi_stream_client__context_set_connection(struct parsec_context_s *parsec_context, bool connection)
 {
     atomic_store_explicit(&parsec_context->connection, connection, memory_order_release);
 }
 
+/* Read whether SDL audio playback is actively running. The audio thread uses
+ * this to avoid redundant pause/resume calls around buffer thresholds. */
 static inline bool
 vdi_stream_client__context_playing(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->playing, memory_order_acquire);
 }
 
+/* Publish the current SDL audio playback state after the audio stream is paused
+ * or resumed. */
 static inline void
 vdi_stream_client__context_set_playing(struct parsec_context_s *parsec_context, bool playing)
 {
     atomic_store_explicit(&parsec_context->playing, playing, memory_order_release);
 }
 
+/* Read whether the audio thread is inside a Parsec audio poll. Reconnect waits
+ * for this to clear before disconnecting the shared Parsec client. */
 static inline bool
 vdi_stream_client__context_audio_polling(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->audio_polling, memory_order_acquire);
 }
 
+/* Mark the short section where the audio thread may call into the Parsec client
+ * so reconnect and shutdown can avoid racing that API use. */
 static inline void
 vdi_stream_client__context_set_audio_polling(
     struct parsec_context_s *parsec_context, bool audio_polling
@@ -192,12 +208,16 @@ vdi_stream_client__context_set_audio_polling(
     atomic_store_explicit(&parsec_context->audio_polling, audio_polling, memory_order_release);
 }
 
+/* Read whether the input thread is inside a Parsec input send. Reconnect waits
+ * on this flag before disconnecting the shared client. */
 static inline bool
 vdi_stream_client__context_input_polling(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->input_polling, memory_order_acquire);
 }
 
+/* Mark the short section where the input thread may send a message through the
+ * Parsec client. */
 static inline void
 vdi_stream_client__context_set_input_polling(
     struct parsec_context_s *parsec_context, bool input_polling
@@ -206,6 +226,8 @@ vdi_stream_client__context_set_input_polling(
     atomic_store_explicit(&parsec_context->input_polling, input_polling, memory_order_release);
 }
 
+/* Consume and clear the local-interaction marker. The render loop uses the
+ * one-shot signal to temporarily reduce frame-poll latency after SDL input. */
 static inline bool
 vdi_stream_client__context_input_local_interaction(struct parsec_context_s *parsec_context)
 {
@@ -214,12 +236,16 @@ vdi_stream_client__context_input_local_interaction(struct parsec_context_s *pars
     );
 }
 
+/* Set the one-shot local-interaction marker when the input thread receives any
+ * SDL event that should make the next render loop iteration more responsive. */
 static inline void
 vdi_stream_client__context_set_input_local_interaction(struct parsec_context_s *parsec_context)
 {
     atomic_store_explicit(&parsec_context->input_local_interaction, true, memory_order_release);
 }
 
+/* Consume and clear the force-redraw marker. It lets worker-side events request
+ * a main-thread redraw without repeatedly presenting the same frame. */
 static inline bool
 vdi_stream_client__context_input_force_redraw(struct parsec_context_s *parsec_context)
 {
@@ -228,18 +254,24 @@ vdi_stream_client__context_input_force_redraw(struct parsec_context_s *parsec_co
     );
 }
 
+/* Set the one-shot redraw marker when input events change visible state while
+ * no new video frame may arrive, such as during reconnect overlays. */
 static inline void
 vdi_stream_client__context_set_input_force_redraw(struct parsec_context_s *parsec_context)
 {
     atomic_store_explicit(&parsec_context->input_force_redraw, true, memory_order_release);
 }
 
+/* Read whether the remote cursor currently requests relative motion semantics.
+ * The input thread uses this to decide how mouse motion should be encoded. */
 static inline bool
 vdi_stream_client__context_input_relative(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->input_relative, memory_order_acquire);
 }
 
+/* Publish whether the remote cursor state is relative so input event handling
+ * can encode motion before the main thread sees the next cursor event. */
 static inline void
 vdi_stream_client__context_set_input_relative(
     struct parsec_context_s *parsec_context, bool relative
@@ -248,12 +280,16 @@ vdi_stream_client__context_set_input_relative(
     atomic_store_explicit(&parsec_context->input_relative, relative, memory_order_release);
 }
 
+/* Read whether SDL relative mouse mode is currently enabled on the window. This
+ * distinguishes remote relative cursor state from local window capture state. */
 static inline bool
 vdi_stream_client__context_input_relative_mouse(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->input_relative_mouse, memory_order_acquire);
 }
 
+/* Publish the actual SDL relative mouse mode after the main thread attempts to
+ * enable or disable it. */
 static inline void
 vdi_stream_client__context_set_input_relative_mouse(
     struct parsec_context_s *parsec_context, bool relative_mouse
@@ -264,24 +300,32 @@ vdi_stream_client__context_set_input_relative_mouse(
     );
 }
 
+/* Read whether a mouse button is currently pressed. Cursor grab logic uses this
+ * to keep hidden-cursor drags captured until the drag ends. */
 static inline bool
 vdi_stream_client__context_input_pressed(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->input_pressed, memory_order_acquire);
 }
 
+/* Publish the current mouse-button pressed state from the input thread for use
+ * by cursor and grab handling on the main thread. */
 static inline void
 vdi_stream_client__context_set_input_pressed(struct parsec_context_s *parsec_context, bool pressed)
 {
     atomic_store_explicit(&parsec_context->input_pressed, pressed, memory_order_release);
 }
 
+/* Read whether the user has forced mouse and keyboard grab mode. This overrides
+ * automatic grab release rules until toggled off. */
 static inline bool
 vdi_stream_client__context_input_grab_forced(struct parsec_context_s *parsec_context)
 {
     return atomic_load_explicit(&parsec_context->input_grab_forced, memory_order_acquire);
 }
 
+/* Publish forced-grab state after the input thread accepts the Shift+F12 toggle
+ * and before the main thread applies the matching window state change. */
 static inline void
 vdi_stream_client__context_set_input_grab_forced(
     struct parsec_context_s *parsec_context, bool grab_forced

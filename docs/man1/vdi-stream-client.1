@@ -20,7 +20,7 @@
 vdi-stream-client \- a low latency desktop streaming client
 .SH SYNOPSIS
 .B vdi-stream-client
-[\fI\-\-session\fP <id>] [\fI\-\-peer\fP <id>] [\fIoptions\fP]
+[\fIOPTION\fP]... \-\-session \fIID\fP \-\-peer \fIID\fP
 .SH DESCRIPTION
 .PP
 VDI Stream Client is a tiny and low latency Linux client which connects
@@ -33,85 +33,43 @@ to public clouds like Amazon (EC2 G3 Accelerated) or Microsoft Azure
 (NV6). It uses Simple DirectMedia Layer (SDL3) for low-level access to
 audio, video, keyboard, mouse and clipboard.
 .SH OPTIONS
-Help options:
+.SS Options
 .TP 8
 .B  \-h|\-\-help
-Print the usage message on the standard output.
+Display help and exit.
 .TP 8
 .B  \-v|\-\-version
-Print the currently installed version on the standard output.
-.PP
-Debug options:
+Output version information and exit.
+.SS Connection options
 .TP 8
-.B  \-\-stats <\fIseconds\fP>
-Show render statistics, pipeline stage timings and video stream bandwidth
-every \fIseconds\fP seconds. It is disabled by default. Stage timings report
-calls, total time and average time for FFmpeg packet submission and frame
-receipt, hardware frame transfers, descriptor fallbacks, VA-API zero-copy
-rendering, SDL uploads, renders and presents during the current stats period.
-Video bandwidth is calculated from compressed video packets delivered to the
-FFmpeg decoder during the current stats period. See
-.BR "PERFORMANCE TIPS"
-for guidance on interpreting idle frame delivery and Parsec host-side
-FPS settings.
-.PP
-Parsec options:
+.B  \-\-session \fIID\fP
+The session ID for the connection. This option is required.
 .TP 8
-.B  \-\-session <\fIid\fP>
-The session ID to connect to Parsec service. This option is mandatory.
+.B  \-\-peer \fIID\fP
+The peer ID for the connection. This option is required.
 .TP 8
-.B  \-\-peer <\fIid\fP>
-The peer ID of the remote Parsec host. This option is mandatory.
-.TP 8
-.B  \-\-timeout <\fIseconds\fP>
+.B  \-\-timeout \fISECONDS\fP
 The connection timeout when first connection to host is established.
 There will be no reconnect in this case. The default timeout is 5
 seconds.
 .TP 8
-.B  \-\-speed <\fIspeed\fP>
+.B  \-\-speed \fISPEED\fP
 The mouse wheel sensitivity to use, supported range is between 0
 (disable mouse wheel completely) up to 500. The value is in pixel. The
 default value is 100.
 .TP 8
-.B  \-\-width <\fIwidth\fP>
+.B  \-\-width \fIPIXELS\fP
 The host screen and window width to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host width. The value is in pixel.
 .TP 8
-.B  \-\-height <\fIheight\fP>
+.B  \-\-height \fIPIXELS\fP
 The host screen and window height to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host height. The value is in pixel.
-.PP
-Parsec Warp options:
-.TP 8
-.B  \-\-no\-subsampling
-Request 4:4:4 color mode without chroma subsampling. By default, the host
-compresses the video stream and applies chroma subsampling with mode 4:2:0
-to reduce data transfers. With this option, no chroma subsampling is
-applied and the client receives a sharp and crisp stream with mode 4:4:4.
-This option is only available under the commercial Parsec Warp subscription.
-.PP
-Client options:
-.TP 8
-.B  \-\-no\-acceleration
-Disable hardware accelerated client decoding. If disabled, client will
-decode H.265 frames with FFmpeg in software on CPU, or H.264 when combined
-with
-.BR \-\-no\-hevc .
-If enabled, the client queries libva profile and decode-entrypoint metadata
-without processing a test frame. It uses VA-API H.265 when available, then
-VA-API H.264, then FFmpeg software H.264. VA-API frames are
-mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
-through libplacebo into Vulkan without copying frame pixels through CPU
-memory. Older RADV devices without DRM modifier support use a validated
-multi-planar linear external-memory import path. If direct import fails after
-Vulkan setup, the client transfers frames to system memory and uploads them
-through libplacebo. Vulkan setup failure falls back to the default SDL
-renderer. With software implementation it is almost impossible to reach
-smooth client rendering. It is enabled by default.
+.SS Client options
 .TP 8
 .B  \-\-no\-upnp
 Disable UPnP NAT traversal support. If disabled, client may not be
@@ -167,33 +125,98 @@ Disable audio streaming support. If disabled, no audio from host is
 streamed and played on client machine. If enabled, audio is streamed
 and played with default audio device used by SDL. It is enabled by
 default.
+.SS Video options
 .TP 8
-.B  \-\-no\-hevc
-Disable H.265 (HEVC) video codec. If disabled, client will use H.264
-(AVC) through the custom FFmpeg decoder. If enabled, client will use H.265
-(HEVC) through the custom FFmpeg decoder.
-There is a trade-off between CPU performance and network latency and
-bandwidth consumption. When using H.265 (HEVC) - even in case of GPU
-decoding - CPU load and network latency is higher while network
-bandwidth is reduced. When using H.264 (AVC) the CPU load and network
-latency is lower while more network bandwidth is consumed. It is enabled
-by default.
+.B  \-\-video\-decoder \fIMODE\fP
+Select the video decoder mode. The default is
+.BR hw\-hevc\-444 .
+.RS 8
 .PP
-USB options:
+\fIMODE\fP has the form \fITYPE-CODEC-CHROMA\fP:
 .TP 8
-.B  \-\-redirect <\fIvendorID\fP>:<\fIproductID\fP>@<\fIip\fP>#<\fIport\fP>,[...]
-The USB devices to redirect to the host. The client will monitor the
-specified USB device with <\fIvendorID\fP> and <\fIproductID\fP> for
+.B hw
+Hardware decoder.
+.TP 8
+.B sw
+Software decoder.
+.TP 8
+.B hevc
+H.265 / HEVC.
+.TP 8
+.B h264
+H.264 / AVC.
+.TP 8
+.B 444
+4:4:4 chroma without subsampling.
+.TP 8
+.B 420
+4:2:0 chroma subsampling.
+.PP
+The valid modes and their ordered fallbacks are:
+.TP 16
+.B hw\-hevc\-444
+Hardware HEVC 4:4:4, hardware HEVC 4:2:0, hardware H.264 4:2:0, then software
+H.264 4:2:0. This is the default. HEVC 4:4:4 requires a commercial Parsec Warp
+subscription.
+.TP 16
+.B hw\-hevc\-420
+Hardware HEVC 4:2:0, hardware H.264 4:2:0, then software H.264 4:2:0.
+.TP 16
+.B hw\-h264\-420
+Hardware H.264 4:2:0, then software H.264 4:2:0.
+.TP 16
+.B sw\-hevc\-420
+Software HEVC 4:2:0.
+.TP 16
+.B sw\-h264\-420
+Software H.264 4:2:0.
+.PP
+The client queries libva profile and decode-entrypoint metadata without
+processing a test frame when a hardware mode is selected. VA-API frames are
+mapped to DRM PRIME and their modifier-aware DMA-BUF planes are imported
+through libplacebo into Vulkan without copying frame pixels through CPU
+memory. Older RADV devices without DRM modifier support use a validated
+multi-planar linear external-memory import path. If direct import fails after
+Vulkan setup, the client transfers frames to system memory and uploads them
+through libplacebo. Vulkan setup failure falls back to the default SDL
+renderer. Software decoding may be too slow for smooth client rendering.
+.RE
+.SS USB options
+.TP 8
+.B  \-\-redirect \fISPEC\fP
+Redirect one or more local USB devices. The specification has this form:
+.PP
+.RS 8
+.nf
+VENDOR:PRODUCT@ADDRESS#PORT[,...]
+.fi
+.PP
+The client will monitor the specified USB device with \fIVENDOR\fP and
+\fIPRODUCT\fP identifiers for
 hotplug events (attach and detach). To get a list of available USB devices
 you can use the "lsusb" command. If a USB device is connected to the
 client, it gets automatically redirected to the host with exclusive
-access. The client will connect to <\fIip\fP> and <\fIport\fP> to your
+access. The client will connect to \fIADDRESS\fP and \fIPORT\fP on the
 virtualization host to redirect devices to the hypervisor. Multiple USB
 devices can be redirected if comma separated. You can redirect up to 8
 devices in total. Moreover, devices are reconnected to the host
 automatically when you unplug and plug them again to the USB port and if
 not connected during startup of the client, they are monitored and
 redirected as soon as they are attached.
+.RE
+.SS Debug options
+.TP 8
+.B  \-\-stats \fISECONDS\fP
+Display render statistics, pipeline stage timings and video stream bandwidth
+every \fISECONDS\fP seconds. It is disabled by default. Stage timings report
+calls, total time and average time for FFmpeg packet submission and frame
+receipt, hardware frame transfers, descriptor fallbacks, VA-API zero-copy
+rendering, SDL uploads, renders and presents during the current stats period.
+Video bandwidth is calculated from compressed video packets delivered to the
+FFmpeg decoder during the current stats period. See
+.BR "PERFORMANCE TIPS"
+for guidance on interpreting idle frame delivery and Parsec host-side
+FPS settings.
 .SH KEYBOARD CONTROL
 During connection to the host, you can use certain key combinations to
 release keyboard grab or to switch into force grab mode.

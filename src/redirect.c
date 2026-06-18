@@ -50,13 +50,16 @@ static _Thread_local Sint32 server_fd = -1;
 static _Thread_local libusb_device_handle *device_handle = NULL;
 static _Thread_local struct usbredirhost *host = NULL;
 
-/* this must be defined, otherwise usbredir will crash. */
+/* Satisfy usbredirhost's logging callback requirement. Runtime diagnostics for
+ * this module are emitted through SDL at higher-level state transitions. */
 static void
 vdi_stream_client__usb_log(void *priv, Sint32 level, const char *msg)
 {
 }
 
-/* read data from client. */
+/* Read guest-side usbredir bytes from the connected TCP socket. EAGAIN is not
+ * fatal because the socket is non-blocking; EOF marks the guest connection as
+ * closed for the outer reconnect loop. */
 static Sint32
 vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
 {
@@ -68,7 +71,7 @@ vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
         return VDI_STREAM_CLIENT_ERROR;
     }
 
-    /* client disconnected. */
+    /* Client disconnected. */
     if (r == 0) {
         close(server_fd);
         server_fd = -1;
@@ -76,7 +79,8 @@ vdi_stream_client__usb_read(void *priv, Uint8 *data, Sint32 count)
     return r;
 }
 
-/* write data to client. */
+/* Write usbredir bytes toward the guest TCP socket. A broken pipe is treated as
+ * a clean disconnect so the thread can close the socket and reconnect later. */
 static Sint32
 vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count)
 {
@@ -86,7 +90,7 @@ vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count)
             return VDI_STREAM_CLIENT_SUCCESS;
         }
 
-        /* client disconnected. */
+        /* Client disconnected. */
         if (errno == EPIPE) {
             close(server_fd);
             server_fd = -1;
@@ -97,7 +101,8 @@ vdi_stream_client__usb_write(void *priv, Uint8 *data, Sint32 count)
     return r;
 }
 
-/* usb hotplug event. */
+/* Handle libusb device removal notifications by tearing down the guest socket.
+ * This forces the processing loop to unwind and close the usbredir host. */
 static Sint32
 vdi_stream_client__usb_remove(
     struct libusb_context *usb_context, struct libusb_device *device, libusb_hotplug_event event,
@@ -105,7 +110,7 @@ vdi_stream_client__usb_remove(
 )
 {
 
-    /* usb device removed. */
+    /* USB device removed. */
     if (device_handle != NULL) {
         if (server_fd != -1) {
             close(server_fd);
@@ -116,7 +121,9 @@ vdi_stream_client__usb_remove(
     return VDI_STREAM_CLIENT_SUCCESS;
 }
 
-/* sdl network thread. */
+/* Redirect one configured local USB device to a qemu usbredir guest service.
+ * The thread independently reconnects the TCP socket, waits for the matching
+ * USB device, and multiplexes libusb poll descriptors with guest socket I/O. */
 Sint32
 vdi_stream_client__network_thread(void *opaque)
 {
@@ -133,7 +140,7 @@ vdi_stream_client__network_thread(void *opaque)
     struct sockaddr *server_addr;
     socklen_t server_addr_len;
 
-    /* variables for data processing loop. */
+    /* Variables for data processing loop. */
     const struct libusb_pollfd **pollfds = NULL;
     fd_set readfds;
     fd_set writefds;
@@ -144,18 +151,18 @@ vdi_stream_client__network_thread(void *opaque)
     static const struct timeval default_timeout = { 1, 0 };
     static const struct timeval zero_timeout = { 0 };
 
-    /* initial values. */
+    /* Initial values. */
     Uint32 retry = 0;
     Uint32 delay = 1000;
     Sint32 error = 0;
 
-    /* user output. */
+    /* User output. */
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION, "Start USB Redirect %04x:%04x\n",
         redirect_context->usb_device.vendor, redirect_context->usb_device.product
     );
 
-    /* usb init. */
+    /* USB init. */
     error = libusb_init(&usb_context);
     if (error != 0) {
         SDL_LogError(
@@ -167,7 +174,7 @@ vdi_stream_client__network_thread(void *opaque)
         goto error;
     }
 
-    /* register events. */
+    /* Register events. */
     error = libusb_hotplug_register_callback(
         usb_context, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, 0, redirect_context->usb_device.vendor,
         redirect_context->usb_device.product, LIBUSB_HOTPLUG_MATCH_ANY,
@@ -187,24 +194,24 @@ vdi_stream_client__network_thread(void *opaque)
     while (!vdi_stream_client__context_done(redirect_context->parsec_context)) {
         timeout = default_timeout;
 
-        /* try until connection established or application quits. */
+        /* Try until connection is established or application quits. */
         while (server_fd == -1) {
 
-            /* check if main thread is still running. */
+            /* Check if main thread is still running. */
             if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
-            /* check if we reached reconnect retry timeout. */
+            /* Check if we reached reconnect retry timeout. */
             if (retry > 0 && retry <= 10) {
 
-                /* wait some time before reconnect. */
+                /* Wait some time before reconnect. */
                 SDL_Delay(delay);
                 retry++;
                 continue;
             }
 
-            /* check if we need to reset reconnect retry counter. */
+            /* Check if we need to reset reconnect retry counter. */
             if (retry > 10) {
                 retry = 0;
             }
@@ -212,7 +219,7 @@ vdi_stream_client__network_thread(void *opaque)
             server_addr = NULL;
             server_addr_len = 0;
 
-            /* set ipv4 or ipv6 socket. */
+            /* Set IPv4 or IPv6 socket. */
             if (redirect_context->server_addr.v4.sin_family == AF_INET) {
                 server_fd = socket(AF_INET, SOCK_STREAM, 0);
                 server_addr = (struct sockaddr *)&redirect_context->server_addr.v4;
@@ -228,15 +235,15 @@ vdi_stream_client__network_thread(void *opaque)
                 continue;
             }
 
-            /* set tcp options. */
+            /* Set TCP options. */
             flag = 1;
             setsockopt(server_fd, IPPROTO_TCP, TCP_NODELAY, &flag, sizeof(flag));
             setsockopt(server_fd, IPPROTO_TCP, TCP_QUICKACK, &flag, sizeof(flag));
 
-            /* set socket connection timeout. */
+            /* Set socket connection timeout. */
             setsockopt(server_fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
 
-            /* connect to qemu usbredir guest service. */
+            /* Connect to QEMU usbredir guest service. */
             if (connect(server_fd, server_addr, server_addr_len) == -1) {
                 close(server_fd);
                 server_fd = -1;
@@ -244,19 +251,19 @@ vdi_stream_client__network_thread(void *opaque)
                 continue;
             }
 
-            /* non-blocking client socket. */
+            /* Non-blocking client socket. */
             fcntl(server_fd, F_SETFL, O_NONBLOCK);
         }
 
-        /* try until usb device opened or disconnected or application quits. */
+        /* Try until USB device is opened, disconnected, or application quits. */
         while (host == NULL) {
 
-            /* check if main thread is still running. */
+            /* Check if main thread is still running. */
             if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
-            /* get list of usb devices. */
+            /* Get list of USB devices. */
             device_count = libusb_get_device_list(usb_context, &devices);
             if (device_count < 0) {
                 SDL_LogError(
@@ -268,7 +275,7 @@ vdi_stream_client__network_thread(void *opaque)
                 continue;
             }
 
-            /* find device to open. */
+            /* Find device to open. */
             count = 0;
             while ((device = devices[count++]) != NULL) {
                 error = libusb_get_device_descriptor(device, &desc);
@@ -281,22 +288,22 @@ vdi_stream_client__network_thread(void *opaque)
                 }
             }
 
-            /* usb device not attached. */
+            /* USB device not attached. */
             if (device == NULL) {
 
-                /* free list of usb devices after successful open. */
+                /* Free list of USB devices after scan. */
                 libusb_free_device_list(devices, 1);
 
-                /* wait some time before rescan for usb device. */
+                /* Wait some time before rescan for USB device. */
                 SDL_Delay(delay);
                 continue;
             }
 
-            /* open usb device. */
+            /* Open USB device. */
             error = libusb_open(device, &device_handle);
             if (error != 0) {
 
-                /* check if permission denied. */
+                /* Check if permission denied. */
                 if (error == LIBUSB_ERROR_ACCESS) {
                     SDL_LogInfo(
                         SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x redirect failed: %s\n",
@@ -305,70 +312,70 @@ vdi_stream_client__network_thread(void *opaque)
                     );
                 }
 
-                /* free list of usb devices after successful open. */
+                /* Free list of USB devices after scan. */
                 libusb_free_device_list(devices, 1);
 
-                /* wait some time before rescan for usb device. */
+                /* Wait some time before rescan for USB device. */
                 SDL_Delay(delay);
                 continue;
             }
 
-            /* free list of usb devices after successful open. */
+            /* Free list of USB devices after successful open. */
             libusb_free_device_list(devices, 1);
 
-            /* setup host. */
+            /* Set up usbredir host. */
             host = usbredirhost_open(
                 usb_context, device_handle, vdi_stream_client__usb_log, vdi_stream_client__usb_read,
                 vdi_stream_client__usb_write, NULL, NULL, 0, 0
             );
             if (host == NULL) {
 
-                /* close device handle if usbredir host setup failed. */
+                /* Close device handle if usbredir host setup failed. */
                 libusb_close(device_handle);
                 device_handle = NULL;
 
-                /* wait some time before rescan for usb device. */
+                /* Wait some time before rescan for USB device. */
                 SDL_Delay(delay);
                 continue;
             }
         }
 
-        /* check if usb device is connected and redirected. */
+        /* Check if USB device is connected and redirected. */
         if (host != NULL) {
 
-            /* user output. */
+            /* User output. */
             SDL_LogInfo(
                 SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x connected\n",
                 redirect_context->usb_device.vendor, redirect_context->usb_device.product
             );
         }
 
-        /* data processing loop. */
+        /* Data processing loop. */
         while (server_fd != -1) {
 
-            /* check if main thread is still running. */
+            /* Check if main thread is still running. */
             if (vdi_stream_client__context_done(redirect_context->parsec_context)) {
                 break;
             }
 
-            /* remove all socket descriptors from set. */
+            /* Remove all socket descriptors from set. */
             FD_ZERO(&readfds);
             FD_ZERO(&writefds);
 
-            /* adding client socket descriptor to set. */
+            /* Add client socket descriptor to set. */
             FD_SET(server_fd, &readfds);
             if (usbredirhost_has_data_to_write(host)) {
                 FD_SET(server_fd, &writefds);
             }
             nfds = server_fd + 1;
 
-            /* free not cleared sockets. */
+            /* Free uncleared poll descriptors. */
             if (pollfds != NULL) {
                 libusb_free_pollfds(pollfds);
                 pollfds = NULL;
             }
 
-            /* poll usb devices for data. */
+            /* Poll USB devices for data. */
             pollfds = libusb_get_pollfds(usb_context);
             for (i = 0; pollfds && pollfds[i]; i++) {
                 if (pollfds[i]->events & POLLIN) {
@@ -382,13 +389,13 @@ vdi_stream_client__network_thread(void *opaque)
                 }
             }
 
-            /* get next timeout. */
+            /* Get next timeout. */
             timeout = zero_timeout;
             if (libusb_get_next_timeout(usb_context, &timeout) == 0) {
                 timeout = default_timeout;
             }
 
-            /* select will wait for data to arrive until timeout. */
+            /* Select will wait for data to arrive until timeout. */
             n = select(nfds, &readfds, &writefds, NULL, &timeout);
             if (n == -1) {
                 if (errno == EINTR) {
@@ -397,29 +404,29 @@ vdi_stream_client__network_thread(void *opaque)
                 break;
             }
 
-            /* wait for usb events and cleanup timeout structure for re-use. */
+            /* Wait for USB events and reset timeout structure for reuse. */
             timeout = zero_timeout;
             if (n == 0) {
                 libusb_handle_events_timeout(usb_context, &timeout);
                 continue;
             }
 
-            /* read data from usb device. */
+            /* Read data from USB device. */
             if (FD_ISSET(server_fd, &readfds) != 0 && usbredirhost_read_guest_data(host) != 0) {
                 break;
             }
 
-            /* usbredirhost_read_guest_data may have detected client disconnect. */
+            /* The usbredirhost_read_guest_data() call may have detected client disconnect. */
             if (server_fd == -1) {
                 break;
             }
 
-            /* write data to usb device. */
+            /* Write data to USB device. */
             if (FD_ISSET(server_fd, &writefds) != 0 && usbredirhost_write_guest_data(host) != 0) {
                 break;
             }
 
-            /* wait until first timeout either for read or write happens. */
+            /* Wait until first timeout for either read or write happens. */
             for (i = 0; pollfds && pollfds[i]; i++) {
                 if (FD_ISSET(pollfds[i]->fd, &readfds) || FD_ISSET(pollfds[i]->fd, &writefds)) {
                     libusb_handle_events_timeout(usb_context, &timeout);
@@ -428,22 +435,22 @@ vdi_stream_client__network_thread(void *opaque)
             }
         }
 
-        /* loop terminated but socket still open. */
+        /* Loop terminated but socket is still open. */
         if (server_fd != -1) {
             close(server_fd);
             server_fd = -1;
         }
 
-        /* free memory. */
+        /* Free memory. */
         if (pollfds != NULL) {
             libusb_free_pollfds(pollfds);
             pollfds = NULL;
         }
 
-        /* usbredirhost_close() calls libusb_close() so no need to do it again. */
+        /* The usbredirhost_close() call also calls libusb_close(). */
         if (host != NULL) {
 
-            /* user output. */
+            /* User output. */
             SDL_LogInfo(
                 SDL_LOG_CATEGORY_APPLICATION, "USB Device %04x:%04x removed\n",
                 redirect_context->usb_device.vendor, redirect_context->usb_device.product
@@ -455,7 +462,7 @@ vdi_stream_client__network_thread(void *opaque)
         }
     }
 
-    /* usb destroy. */
+    /* USB destroy. */
     if (callback_registered != 0) {
         libusb_hotplug_deregister_callback(usb_context, callback_handle);
     }
@@ -463,27 +470,27 @@ vdi_stream_client__network_thread(void *opaque)
         libusb_exit(usb_context);
     }
 
-    /* user output. */
+    /* User output. */
     SDL_LogInfo(
         SDL_LOG_CATEGORY_APPLICATION, "Stop USB Redirect %04x:%04x\n",
         redirect_context->usb_device.vendor, redirect_context->usb_device.product
     );
 
-    /* terminate loop. */
+    /* Terminate loop. */
     return VDI_STREAM_CLIENT_SUCCESS;
 
 error:
 
-    /* stop main thread. */
+    /* Stop main thread. */
     vdi_stream_client__context_set_done(redirect_context->parsec_context, true);
 
-    /* close client socket. */
+    /* Close client socket. */
     if (server_fd != -1) {
         close(server_fd);
         server_fd = -1;
     }
 
-    /* usbredirhost_close() calls libusb_close() so close either host or handle. */
+    /* Close either host or handle because usbredirhost_close() also calls libusb_close(). */
     if (host != NULL) {
         usbredirhost_close(host);
         device_handle = NULL;
@@ -493,7 +500,7 @@ error:
         device_handle = NULL;
     }
 
-    /* usb destroy. */
+    /* USB destroy. */
     if (callback_registered != 0) {
         libusb_hotplug_deregister_callback(usb_context, callback_handle);
     }
@@ -501,6 +508,6 @@ error:
         libusb_exit(usb_context);
     }
 
-    /* return with error. */
+    /* Return with error. */
     return VDI_STREAM_CLIENT_ERROR;
 }

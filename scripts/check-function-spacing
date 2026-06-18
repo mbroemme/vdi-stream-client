@@ -1,0 +1,54 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if (($# == 0)); then
+	printf 'Usage: %s <source>...\n' "${0##*/}" >&2
+	exit 2
+fi
+
+status=0
+for source in "$@"; do
+	if ! awk '
+		{
+			lines[FNR] = $0
+		}
+		END {
+			for (line = 2; line <= FNR; line++) {
+				if (lines[line - 1] != "}" || lines[line] ~ /^[[:space:]]*$/) {
+					continue
+				}
+
+				signature = ""
+				for (candidate = line; candidate <= FNR; candidate++) {
+					if (candidate != line && lines[candidate] ~ /^[[:space:]]*$/) {
+						break
+					}
+					if (lines[candidate] ~ /^[[:space:]]*#/) {
+						break
+					}
+
+					signature = signature " " lines[candidate]
+					open_brace = index(lines[candidate], "{")
+					semicolon = index(lines[candidate], ";")
+					if (semicolon != 0 && (open_brace == 0 || semicolon < open_brace)) {
+						break
+					}
+					if (open_brace != 0) {
+						if (signature ~ /\(/) {
+							printf "%s:%d: function definition requires a preceding empty line\n",
+								FILENAME, line
+							failed = 1
+						}
+						break
+					}
+				}
+			}
+			exit failed
+		}
+	' "${source}"; then
+		status=1
+	fi
+done
+
+exit "${status}"

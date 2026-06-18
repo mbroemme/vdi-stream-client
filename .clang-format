@@ -67,6 +67,10 @@ Cpp11BracedListStyle: false
 # Preserve separate include blocks, but still allow sorting within each block.
 IncludeBlocks: Preserve
 
+# Standalone comment spacing
+# clang-format 22 cannot require an empty line before standalone comments.
+# scripts/check-comment-spacing enforces this rule alongside clang-format in CI.
+
 # Line length
 # Sets the preferred maximum column width before clang-format starts wrapping.
 ColumnLimit: 100

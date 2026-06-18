@@ -28,6 +28,9 @@
 /* internal includes. */
 #include "input.h"
 
+/* Enqueue a command for the main thread when input handling needs to touch
+ * window state, clipboard state, or shutdown state that should not be changed
+ * directly from the SDL event worker. */
 static bool
 vdi_stream_client__input_queue_command(
     vdi_stream_client__input_context_s *input_context, vdi_stream_client__input_command_e type,
@@ -55,6 +58,9 @@ vdi_stream_client__input_queue_command(
     return true;
 }
 
+/* Prepare the input context and its command queue. The context keeps pointers to
+ * the shared Parsec state and immutable runtime configuration used by the input
+ * worker. */
 bool
 vdi_stream_client__input_init(
     vdi_stream_client__input_context_s *input_context, struct parsec_context_s *parsec_context,
@@ -80,6 +86,8 @@ vdi_stream_client__input_init(
     return true;
 }
 
+/* Release input synchronization resources. The rest of the structure is owned
+ * by the caller and is intentionally left allocated for stack-based contexts. */
 void
 vdi_stream_client__input_destroy(vdi_stream_client__input_context_s *input_context)
 {
@@ -93,6 +101,8 @@ vdi_stream_client__input_destroy(vdi_stream_client__input_context_s *input_conte
     }
 }
 
+/* Pop the next queued input command for the main thread. The output command is
+ * cleared first so callers never observe stale data when the queue is empty. */
 bool
 vdi_stream_client__input_next_command(
     vdi_stream_client__input_context_s *input_context, vdi_stream_client__input_command_s *command
@@ -118,6 +128,9 @@ vdi_stream_client__input_next_command(
     return true;
 }
 
+/* Send a populated Parsec input message only while the connection is active.
+ * The input_polling flag lets reconnect and shutdown paths wait until this
+ * short critical section stops using the Parsec client. */
 static void
 vdi_stream_client__input_send_message(
     struct parsec_context_s *parsec_context, const ParsecMessage *pmsg
@@ -135,6 +148,8 @@ vdi_stream_client__input_send_message(
     vdi_stream_client__context_set_input_polling(parsec_context, false);
 }
 
+/* Report whether any primary mouse button is currently pressed. Grab shortcuts
+ * use this to avoid releasing capture in the middle of a drag operation. */
 static bool
 vdi_stream_client__input_mouse_buttons_pressed(
     const vdi_stream_client__input_context_s *input_context
@@ -144,6 +159,9 @@ vdi_stream_client__input_mouse_buttons_pressed(
             (SDL_BUTTON_LMASK | SDL_BUTTON_MMASK | SDL_BUTTON_RMASK)) != 0;
 }
 
+/* Translate key-down events into either local grab commands or Parsec keyboard
+ * messages. Ctrl+Alt releases normal grab mode, while Shift+F12 toggles forced
+ * grab mode when automatic grabbing is disabled. */
 static void
 vdi_stream_client__input_handle_key_down(
     vdi_stream_client__input_context_s *input_context, const SDL_Event *msg, ParsecMessage *pmsg
@@ -181,6 +199,9 @@ vdi_stream_client__input_handle_key_down(
     pmsg->keyboard.pressed = true;
 }
 
+/* Convert one SDL event into a Parsec input message and/or a command for the
+ * main thread. It also marks local interaction so the render loop can shorten
+ * frame polling latency after fresh user input. */
 static void
 vdi_stream_client__input_handle_event(
     vdi_stream_client__input_context_s *input_context, const SDL_Event *msg
@@ -282,6 +303,8 @@ vdi_stream_client__input_handle_event(
     vdi_stream_client__input_send_message(parsec_context, &pmsg);
 }
 
+/* Drain SDL events on a worker thread and hand each event to the input
+ * translator. Window-affecting operations are queued back to the main thread. */
 Sint32
 vdi_stream_client__input_thread(void *opaque)
 {
