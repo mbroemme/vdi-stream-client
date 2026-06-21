@@ -20,10 +20,13 @@
 #include "placebo.h"
 
 #include <SDL3/SDL_vulkan.h>
+#include <errno.h>
 #include <libavutil/common.h>
+#include <libavutil/error.h>
 #include <libavutil/frame.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/hwcontext_drm.h>
+#include <libavutil/hwcontext_vaapi.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/pixfmt.h>
 #include <libdrm/drm_fourcc.h>
@@ -33,7 +36,10 @@
 #include <libplacebo/utils/upload.h>
 #include <libplacebo/vulkan.h>
 #include <unistd.h>
+#include <va/va.h>
 #include <vulkan/vulkan.h>
+
+#define VDI_STREAM_CLIENT_PLACEBO_VAAPI_SYNC_RETRIES 5u
 
 struct vdi_stream_client__placebo_s
 {
@@ -221,6 +227,60 @@ vdi_stream_client__placebo_is_radv(struct vdi_stream_client__placebo_s *placebo)
     vkGetPhysicalDeviceProperties2(placebo->vulkan->phys_device, &properties);
     return properties.properties.vendorID == 0x1002 &&
            driver_properties.driverID == VK_DRIVER_ID_MESA_RADV;
+}
+
+/* Validate a VA-API frame and, on Intel iHD, pre-sync the retained surface
+ * before FFmpeg exports it as DRM PRIME. Other drivers continue through the
+ * normal FFmpeg mapping path, while transient Intel iHD sync failures are
+ * retried here before falling back to upload. */
+static bool
+vdi_stream_client__placebo_vaapi_sync(const AVFrame *av_frame)
+{
+    const AVHWFramesContext *frames_context;
+    const AVVAAPIDeviceContext *device_context;
+    const char *vendor;
+    VASurfaceID surface;
+    VAStatus status;
+
+    if (av_frame == NULL || av_frame->format != AV_PIX_FMT_VAAPI ||
+        av_frame->hw_frames_ctx == NULL) {
+        return false;
+    }
+    frames_context = (const AVHWFramesContext *)av_frame->hw_frames_ctx->data;
+    if (frames_context == NULL || frames_context->device_ctx == NULL ||
+        frames_context->device_ctx->type != AV_HWDEVICE_TYPE_VAAPI) {
+        return false;
+    }
+    device_context = (const AVVAAPIDeviceContext *)frames_context->device_ctx->hwctx;
+    if (device_context == NULL || device_context->display == NULL) {
+        return false;
+    }
+    vendor = vaQueryVendorString(device_context->display);
+    if (vendor == NULL || SDL_strstr(vendor, "Intel iHD driver") == NULL) {
+        return true;
+    }
+
+    surface = (VASurfaceID)(uintptr_t)av_frame->data[3];
+    if (surface == VA_INVALID_SURFACE) {
+        return false;
+    }
+
+    /* Intel iHD status reports can briefly lag the surface fence after a
+     * Wayland output power cycle. Retry only that specific synchronization
+     * failure before asking FFmpeg to export the same surface again. */
+    for (Uint32 attempt = 0; attempt < VDI_STREAM_CLIENT_PLACEBO_VAAPI_SYNC_RETRIES; attempt++) {
+        status = vaSyncSurface(device_context->display, surface);
+        if (status == VA_STATUS_SUCCESS) {
+            return true;
+        }
+        if (status != VA_STATUS_ERROR_OPERATION_FAILED) {
+            return false;
+        }
+        if (attempt + 1 < VDI_STREAM_CLIENT_PLACEBO_VAAPI_SYNC_RETRIES) {
+            SDL_Delay(1);
+        }
+    }
+    return false;
 }
 
 /* Pick a Vulkan memory type compatible with an imported external image,
@@ -541,7 +601,13 @@ vdi_stream_client__placebo_source_map(
         goto error;
     }
 
-    err = av_hwframe_map(source->drm_frame, av_frame, AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT);
+    if (vdi_stream_client__placebo_vaapi_sync(av_frame)) {
+        err = av_hwframe_map(
+            source->drm_frame, av_frame, AV_HWFRAME_MAP_READ | AV_HWFRAME_MAP_DIRECT
+        );
+    } else {
+        err = AVERROR(EIO);
+    }
     if (err < 0) {
         SDL_snprintf(
             placebo->import_failure, sizeof(placebo->import_failure),
