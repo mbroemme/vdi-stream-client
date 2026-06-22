@@ -681,8 +681,9 @@ vdi_stream_client__show_connection_overlay(
     *force_redraw = true;
 }
 
-/* Switch a failed HEVC connection attempt to H.264 once. This avoids repeatedly
- * mutating the client config after the fallback has already been used. */
+/* Switch a failed startup HEVC connection attempt to H.264 once. This avoids
+ * repeatedly mutating the client config after the fallback has already been
+ * used. */
 static void
 vdi_stream_client__use_h264_fallback(
     ParsecClientConfig *cfg, bool *hevc_attempt_active, bool *h264_fallback_done
@@ -753,8 +754,7 @@ vdi_stream_client__video_decoder_policy(
 static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
-    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw, bool *hevc_attempt_active,
-    bool *h264_fallback_done
+    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw
 )
 {
     ParsecStatus e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
@@ -767,7 +767,6 @@ vdi_stream_client__handle_connection_status(
     if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
         SDL_GetTicks() > *last_time + vdi_config->timeout) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
-        vdi_stream_client__use_h264_fallback(cfg, hevc_attempt_active, h264_fallback_done);
         e = vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
         *last_time = SDL_GetTicks();
     }
@@ -1281,8 +1280,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
         vdi_stream_client__handle_connection_status(
-            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw, &hevc_attempt_active,
-            &h264_fallback_done
+            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw
         );
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
