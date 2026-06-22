@@ -137,6 +137,7 @@ vdi_stream_client__parsec_reconnect(
     vdi_stream_client__context_set_connection(parsec_context, false);
     parsec_context->requested_width = 0;
     parsec_context->requested_height = 0;
+    parsec_context->client_status = (ParsecClientStatus){ 0 };
     while (vdi_stream_client__context_audio_polling(parsec_context)) {
         SDL_Delay(1);
     }
@@ -148,6 +149,8 @@ vdi_stream_client__parsec_reconnect(
     e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
     if (e != PARSEC_OK) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Reconnect failed with code: %d\n", e);
+    } else {
+        parsec_context->stream_error = PARSEC_OK;
     }
     return e;
 }
@@ -481,6 +484,7 @@ vdi_stream_client__render_text(void *opaque, const char *text)
         );
         return VDI_STREAM_CLIENT_ERROR;
     }
+    SDL_strlcpy(parsec_context->overlay_text, text, sizeof(parsec_context->overlay_text));
 
     /* No error. */
     return VDI_STREAM_CLIENT_SUCCESS;
@@ -677,6 +681,10 @@ vdi_stream_client__show_connection_overlay(
     struct parsec_context_s *parsec_context, bool *force_redraw, const char *text
 )
 {
+    if (parsec_context->surface_ttf != NULL &&
+        SDL_strcmp(parsec_context->overlay_text, text) == 0) {
+        return;
+    }
     vdi_stream_client__render_text(parsec_context, text);
     *force_redraw = true;
 }
@@ -757,7 +765,32 @@ vdi_stream_client__handle_connection_status(
     ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw
 )
 {
-    ParsecStatus e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
+    ParsecStatus e;
+
+    if (parsec_context->stream_error != PARSEC_OK) {
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        parsec_context->requested_width = 0;
+        parsec_context->requested_height = 0;
+
+        if (vdi_config->reconnect == 0) {
+            vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Parsec stream failed with code: %d\n",
+                parsec_context->stream_error
+            );
+            vdi_stream_client__context_set_done(parsec_context, true);
+            return;
+        }
+
+        vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
+        if (SDL_GetTicks() > *last_time + vdi_config->timeout) {
+            (void)vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
+            *last_time = SDL_GetTicks();
+        }
+        return;
+    }
+
+    e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
 
     if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
