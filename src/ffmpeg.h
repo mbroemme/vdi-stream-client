@@ -59,4 +59,6 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
     bool hevc_acceleration, bool color444
 );
 
+void vdi_stream_client__parsec_ffmpeg_decoder_destroy(void);
+
 #endif /* _FFMPEG_H */

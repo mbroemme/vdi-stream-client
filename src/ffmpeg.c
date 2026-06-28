@@ -107,7 +107,40 @@ static atomic_bool vdi_stream_client__parsec_ffmpeg_h264_acceleration;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_hevc_acceleration;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_color444;
 
+/* The injected decoder is created once and reused for the lifetime of the
+ * process. The Parsec SDK tears the decoder down and recreates it on every
+ * reconnect, but building a fresh VA-API/UVD decode context on the long-lived
+ * shared amdgpu device makes the kernel reject that context's first decode
+ * submission with -ENOMEM and aborts (the context created on the first connect,
+ * while the device was fresh, keeps working). Keeping one decode context across
+ * reconnects avoids creating a new one. */
+static SDL_Mutex *vdi_stream_client__parsec_ffmpeg_decoder_lock;
+static struct vdi_stream_client__parsec_ffmpeg_decoder_s
+    *vdi_stream_client__parsec_ffmpeg_decoder_cache;
+
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
+static void
+vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg);
+
+/* Release every retained frame slot so a reused decoder does not keep the
+ * previous stream's hardware surfaces referenced after a reconnect. */
+static void
+vdi_stream_client__parsec_ffmpeg_reset_frames(
+    struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    if (ffmpeg == NULL || ffmpeg->frame_lock == NULL) {
+        return;
+    }
+    SDL_LockMutex(ffmpeg->frame_lock);
+    for (Uint32 i = 0; i < VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS; i++) {
+        av_frame_free(&ffmpeg->frame_slots[i].frame);
+        ffmpeg->frame_slots[i].generation = 0;
+    }
+    ffmpeg->frame_generation = 0;
+    ffmpeg->frame_slot = 0;
+    SDL_UnlockMutex(ffmpeg->frame_lock);
+}
 
 /* Return the CPU-visible pixel format for an AVFrame. VA-API frames expose this
  * through their hardware frames context, while software frames store it directly
@@ -993,6 +1026,7 @@ vdi_stream_client__parsec_ffmpeg_init_common(
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg;
     const AVCodec *codec;
     Uint8 selector;
+    enum AVCodecID requested_codec_id;
     bool acceleration;
     Sint32 err;
     char errbuf[AV_ERROR_MAX_STRING_SIZE];
@@ -1003,6 +1037,37 @@ vdi_stream_client__parsec_ffmpeg_init_common(
 
     if (decoder == NULL) {
         return DECODE_ERR_INIT;
+    }
+
+    selector = codec_selector != NULL ? ((const Uint8 *)codec_selector)[0] : 2;
+    requested_codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+
+    /* Reuse the decode context built on a previous connect when its codec still
+     * matches. This keeps the proven VA-API/UVD context alive across reconnects
+     * instead of creating a new one on the aged shared amdgpu device. */
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock != NULL) {
+        SDL_LockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        ffmpeg = vdi_stream_client__parsec_ffmpeg_decoder_cache;
+        if (ffmpeg != NULL && ffmpeg->codec_id == requested_codec_id) {
+            SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+            vdi_stream_client__parsec_ffmpeg_reset_frames(ffmpeg);
+            if (ffmpeg->codec != NULL) {
+                avcodec_flush_buffers(ffmpeg->codec);
+            }
+            *((void **)decoder) = ffmpeg;
+            atomic_store_explicit(
+                &vdi_stream_client__parsec_ffmpeg_hardware_active, ffmpeg->hwaccel,
+                memory_order_release
+            );
+            return PARSEC_OK;
+        }
+
+        /* A cached decoder for a different codec cannot be reused. */
+        if (ffmpeg != NULL) {
+            vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
+            vdi_stream_client__parsec_ffmpeg_decoder_cache = NULL;
+        }
+        SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
     }
 
     ffmpeg = SDL_calloc(1, sizeof(*ffmpeg));
@@ -1021,8 +1086,7 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         ffmpeg->frame_slots[i].lock = ffmpeg->frame_lock;
     }
 
-    selector = codec_selector != NULL ? ((const Uint8 *)codec_selector)[0] : 2;
-    ffmpeg->codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+    ffmpeg->codec_id = requested_codec_id;
     acceleration = atomic_load_explicit(
         ffmpeg->codec_id == AV_CODEC_ID_HEVC ? &vdi_stream_client__parsec_ffmpeg_hevc_acceleration
                                              : &vdi_stream_client__parsec_ffmpeg_h264_acceleration,
@@ -1086,6 +1150,13 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         &vdi_stream_client__parsec_ffmpeg_hardware_active, ffmpeg->hwaccel, memory_order_release
     );
     ffmpeg->mode_published = true;
+
+    /* Retain the freshly built decoder so later reconnects reuse it. */
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock != NULL) {
+        SDL_LockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        vdi_stream_client__parsec_ffmpeg_decoder_cache = ffmpeg;
+        SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+    }
     return PARSEC_OK;
 }
 
@@ -1117,8 +1188,38 @@ vdi_stream_client__parsec_ffmpeg_cleanup(void *decoder)
         return;
     }
 
+    /* Keep the cached decoder alive so the next reconnect reuses its decode
+     * context; only detach it from the SDK slot. Non-cached instances (for
+     * example when the cache lock is unavailable) are freed normally. */
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock != NULL) {
+        SDL_LockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        if (ffmpeg == vdi_stream_client__parsec_ffmpeg_decoder_cache) {
+            SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+            *((void **)decoder) = NULL;
+            return;
+        }
+        SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+    }
+
     vdi_stream_client__parsec_ffmpeg_free(ffmpeg);
     *((void **)decoder) = NULL;
+}
+
+/* Free the reused decode context and its cache lock once the Parsec client and
+ * all decoder slots have been torn down. Safe to call when nothing was cached. */
+void
+vdi_stream_client__parsec_ffmpeg_decoder_destroy(void)
+{
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock != NULL) {
+        SDL_LockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        if (vdi_stream_client__parsec_ffmpeg_decoder_cache != NULL) {
+            vdi_stream_client__parsec_ffmpeg_free(vdi_stream_client__parsec_ffmpeg_decoder_cache);
+            vdi_stream_client__parsec_ffmpeg_decoder_cache = NULL;
+        }
+        SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        SDL_DestroyMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+        vdi_stream_client__parsec_ffmpeg_decoder_lock = NULL;
+    }
 }
 
 /* Copy one AVFrame plane into a tightly packed destination plane, honoring the
@@ -1566,6 +1667,10 @@ vdi_stream_client__parsec_ffmpeg_decoder_enable(
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_color444, color444, memory_order_relaxed
     );
+
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock == NULL) {
+        vdi_stream_client__parsec_ffmpeg_decoder_lock = SDL_CreateMutex();
+    }
 
     table = vdi_stream_client__parsec_decoder_table(parsec_context);
     if (table == NULL) {

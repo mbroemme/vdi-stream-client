@@ -1408,6 +1408,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
 
+    /* Release the reused decode context now that all decoders are gone. */
+    vdi_stream_client__parsec_ffmpeg_decoder_destroy();
+
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
     TTF_Quit();
@@ -1433,6 +1436,9 @@ error:
 
     /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
+
+    /* Release the reused decode context now that all decoders are gone. */
+    vdi_stream_client__parsec_ffmpeg_decoder_destroy();
 
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
