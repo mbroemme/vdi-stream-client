@@ -85,6 +85,7 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     enum AVPixelFormat hw_pix_fmt;
     bool hwaccel;
     bool mode_published;
+    bool format_configured;
     SDL_Mutex *frame_lock;
     struct vdi_stream_client__parsec_ffmpeg_frame_slot_s
         frame_slots[VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS];
@@ -118,9 +119,91 @@ static SDL_Mutex *vdi_stream_client__parsec_ffmpeg_decoder_lock;
 static struct vdi_stream_client__parsec_ffmpeg_decoder_s
     *vdi_stream_client__parsec_ffmpeg_decoder_cache;
 
+/* Resolution-change coordination (AMD/RADV only). The RADV renderer and the
+ * VA-API decoder are deduplicated by libdrm onto one in-process amdgpu device,
+ * whose GPU address space fragments across a session. After a mid-stream
+ * resolution change the larger working set no longer fits and the decode
+ * submission is rejected with -ENOMEM. The only way to defragment is to release
+ * BOTH references to the shared device (tear the renderer down and free the
+ * decoder, closing the drm file) and rebuild fresh. The get_format callback
+ * detects the change from the bitstream and returns AV_PIX_FMT_NONE so avcodec
+ * aborts before allocating the new surface pool (avoiding the crash), and raises
+ * this flag for the main thread to perform the full reset. */
+static atomic_bool vdi_stream_client__parsec_ffmpeg_reset_enabled;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_resolution_change;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_aborting_decode;
+static atomic_int vdi_stream_client__parsec_ffmpeg_target_width;
+static atomic_int vdi_stream_client__parsec_ffmpeg_target_height;
+
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 static void
 vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg);
+
+/* Enable resolution-change coordination, used only by the AMD/RADV linear path
+ * whose shared amdgpu device fragments. Other drivers leave it disabled. */
+void
+vdi_stream_client__parsec_ffmpeg_enable_resolution_reset(bool enable)
+{
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_reset_enabled, enable, memory_order_release
+    );
+}
+
+/* Main-thread query and clear for a pending resolution-change reset. */
+bool
+vdi_stream_client__parsec_ffmpeg_resolution_reset_pending(void)
+{
+    return atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_resolution_change, false, memory_order_acq_rel
+    );
+}
+
+/* Report the resolution the decoder was reconfiguring to when the reset was
+ * raised. The reconnect requests it so the host keeps the new resolution instead
+ * of reverting to the client's previous size. Returns false if unknown. */
+bool
+vdi_stream_client__parsec_ffmpeg_target_resolution(int *width, int *height)
+{
+    int w =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_target_width, memory_order_acquire);
+    int h =
+        atomic_load_explicit(&vdi_stream_client__parsec_ffmpeg_target_height, memory_order_acquire);
+
+    if (w <= 0 || h <= 0) {
+        return false;
+    }
+    *width = w;
+    *height = h;
+    return true;
+}
+
+/* Free the cached decoder so the next connect builds a fresh one with a new
+ * VA-API device. Call only after the Parsec client has been disconnected, so no
+ * decode thread is using the decoder. Releases this process's VA-API reference
+ * to the shared amdgpu device. */
+void
+vdi_stream_client__parsec_ffmpeg_invalidate_decoder(void)
+{
+    if (vdi_stream_client__parsec_ffmpeg_decoder_lock == NULL) {
+        return;
+    }
+    SDL_LockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+    if (vdi_stream_client__parsec_ffmpeg_decoder_cache != NULL) {
+        vdi_stream_client__parsec_ffmpeg_free(vdi_stream_client__parsec_ffmpeg_decoder_cache);
+        vdi_stream_client__parsec_ffmpeg_decoder_cache = NULL;
+    }
+    SDL_UnlockMutex(vdi_stream_client__parsec_ffmpeg_decoder_lock);
+}
+
+/* Resume feeding packets to the decoder after a resolution-change reset has
+ * rebuilt it, clearing the flag that skipped decodes during the reset. */
+void
+vdi_stream_client__parsec_ffmpeg_resume_decode(void)
+{
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_aborting_decode, false, memory_order_release
+    );
+}
 
 /* Release every retained frame slot so a reused decoder does not keep the
  * previous stream's hardware surfaces referenced after a reconnect. */
@@ -875,7 +958,44 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
         codec != NULL ? codec->opaque : NULL;
     const enum AVPixelFormat *format;
 
+    /* avcodec calls get_format whenever it (re)configures for the stream's pixel
+     * format and dimensions, immediately before allocating the hardware surface
+     * pool. The first call is the initial setup; any later call is a resolution
+     * change. On the AMD/RADV path the hardware pool reallocation would be
+     * rejected on the fragmented shared amdgpu device, so raise the flag for the
+     * main thread to perform the full pipeline reset and choose a software format
+     * for this one packet. Software decoding allocates no hardware pool (avoiding
+     * the crash) and still produces a frame, so avcodec never logs "no frame!";
+     * the decoded frame is discarded because the reset flag is set. */
     if (ffmpeg != NULL) {
+        if (ffmpeg->format_configured &&
+            atomic_load_explicit(
+                &vdi_stream_client__parsec_ffmpeg_reset_enabled, memory_order_acquire
+            )) {
+            atomic_store_explicit(
+                &vdi_stream_client__parsec_ffmpeg_target_width, codec->width, memory_order_relaxed
+            );
+            atomic_store_explicit(
+                &vdi_stream_client__parsec_ffmpeg_target_height, codec->height, memory_order_relaxed
+            );
+            atomic_store_explicit(
+                &vdi_stream_client__parsec_ffmpeg_aborting_decode, true, memory_order_release
+            );
+            atomic_store_explicit(
+                &vdi_stream_client__parsec_ffmpeg_resolution_change, true, memory_order_release
+            );
+
+            for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
+                const AVPixFmtDescriptor *descriptor = av_pix_fmt_desc_get(*format);
+
+                if (descriptor != NULL && (descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0) {
+                    return *format;
+                }
+            }
+            return AV_PIX_FMT_NONE;
+        }
+        ffmpeg->format_configured = true;
+
         for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
             if (*format == ffmpeg->hw_pix_fmt) {
                 return *format;
@@ -1598,11 +1718,29 @@ vdi_stream_client__parsec_ffmpeg_decode(
         );
     }
 
+    /* While a resolution change is being reset, the decode context cannot accept
+     * packets: feeding them makes FFmpeg log "no frame!" and "get_buffer()
+     * failed". Skip them here so those errors are never produced. The flag is
+     * raised by get_format and cleared once the reset has rebuilt the decoder. */
+    if (atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_aborting_decode, memory_order_acquire
+        )) {
+        return DECODE_WRN_ACCEPTED;
+    }
+
     av_packet_unref(ffmpeg->packet);
     ffmpeg->packet->data = (Uint8 *)packet_data;
     ffmpeg->packet->size = (int)packet_size;
 
     err = vdi_stream_client__parsec_ffmpeg_send_packet(ffmpeg->codec, ffmpeg->packet);
+
+    /* The packet that triggered the resolution change set the abort flag inside
+     * get_format; accept it quietly so the expected failure is not reported. */
+    if (atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_aborting_decode, memory_order_acquire
+        )) {
+        return DECODE_WRN_ACCEPTED;
+    }
     if (err == AVERROR(EAGAIN)) {
         err = vdi_stream_client__parsec_ffmpeg_receive_frame(ffmpeg->codec, ffmpeg->frame);
         if (err == 0) {

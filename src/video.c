@@ -379,11 +379,13 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
         return false;
     }
 
-    renderer_name = SDL_GetRendererName(parsec_context->renderer);
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
-        renderer_name != NULL ? renderer_name : "unknown"
-    );
+    if (!parsec_context->silent_reinit) {
+        renderer_name = SDL_GetRendererName(parsec_context->renderer);
+        SDL_LogInfo(
+            SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
+            renderer_name != NULL ? renderer_name : "unknown"
+        );
+    }
     if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "SDL_SetRenderVSync failed: %s\n", SDL_GetError()

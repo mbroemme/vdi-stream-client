@@ -1085,17 +1085,29 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
         goto error;
     }
 
-    vkGetPhysicalDeviceProperties(placebo->vulkan->phys_device, &device_properties);
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use %s Vulkan device for VA-API DRM PRIME zero-copy\n",
-        device_properties.deviceName
-    );
-    if (placebo->linear_import) {
+    /* A resolution-change reset rebuilds the renderer; keep its re-initialization
+     * silent by skipping the one-time mode banners and marking the per-frame
+     * messages as already logged. */
+    if (parsec_context->silent_reinit) {
+        placebo->direct_logged = true;
+        placebo->upload_logged = true;
+    } else {
+        vkGetPhysicalDeviceProperties(placebo->vulkan->phys_device, &device_properties);
         SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION,
-            "Use RADV linear external-memory import without DRM modifiers\n"
+            SDL_LOG_CATEGORY_APPLICATION, "Use %s Vulkan device for VA-API DRM PRIME zero-copy\n",
+            device_properties.deviceName
         );
+        if (placebo->linear_import) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Use RADV linear external-memory import without DRM modifiers\n"
+            );
+        }
     }
+
+    /* Only the RADV linear path shares and fragments the in-process amdgpu
+     * device, so a mid-stream resolution change needs the full pipeline reset. */
+    vdi_stream_client__parsec_ffmpeg_enable_resolution_reset(placebo->linear_import);
     return true;
 
 error:

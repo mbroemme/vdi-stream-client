@@ -103,6 +103,7 @@ struct parsec_context_s
     SDL_Texture *texture_video;
     SDL_Texture *frame_video_texture;
     struct vdi_stream_client__placebo_s *placebo;
+    bool silent_reinit;
     bool frame_video_updated;
     SDL_PixelFormat pixel_format_video;
     Sint32 texture_width;
