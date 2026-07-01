@@ -118,6 +118,17 @@ vdi_stream_client__video_texture(
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unsupported video format: %d\n", frame->format);
         return false;
     }
+    if (parsec_context->renderer == NULL) {
+        return false;
+    }
+    if (frame->fullWidth == 0 || frame->fullHeight == 0 || frame->fullWidth > (Uint32)INT_MAX ||
+        frame->fullHeight > (Uint32)INT_MAX) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Ignore invalid video frame size %ux%u\n",
+            frame->fullWidth, frame->fullHeight
+        );
+        return false;
+    }
 
     if (parsec_context->texture_video != NULL &&
         parsec_context->texture_width == (Sint32)frame->fullWidth &&
