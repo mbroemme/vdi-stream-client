@@ -318,14 +318,12 @@ vdi_stream_client__placebo_memory_type(
 static bool
 vdi_stream_client__placebo_source_import_linear(
     struct vdi_stream_client__placebo_s *placebo,
-    struct vdi_stream_client__placebo_source_s *source, const AVFrame *av_frame,
+    struct vdi_stream_client__placebo_source_s *source,
     const AVDRMPlaneDescriptor *const drm_planes[2], const AVDRMObjectDescriptor *drm_object,
-    size_t object_size
+    size_t object_size, Uint32 allocation_width, Uint32 allocation_height
 )
 {
     const VkFormat vulkan_format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
-    const Uint32 allocation_width = (Uint32)FFALIGN(av_frame->width, 16);
-    const Uint32 allocation_height = (Uint32)FFALIGN(av_frame->height, 16);
 
     /* RADV advertises linear external images through opaque FD handles. */
     const VkExternalMemoryHandleTypeFlagBits handle_type =
@@ -758,6 +756,11 @@ vdi_stream_client__placebo_source_map(
     }
 
     if (placebo->linear_import) {
+        int linear_width =
+            frames_context->width > av_frame->width ? frames_context->width : av_frame->width;
+        int linear_height =
+            frames_context->height > av_frame->height ? frames_context->height : av_frame->height;
+
         if (frames_context->sw_format != AV_PIX_FMT_NV12 || plane_count != 2 ||
             drm_planes[0]->object_index != drm_planes[1]->object_index ||
             drm_objects[0] != drm_objects[1] || object_sizes[0] != object_sizes[1]) {
@@ -767,8 +770,16 @@ vdi_stream_client__placebo_source_map(
             );
             goto error;
         }
+        if (linear_width <= 0 || linear_height <= 0) {
+            SDL_strlcpy(
+                placebo->import_failure, "RADV linear import has invalid allocation size",
+                sizeof(placebo->import_failure)
+            );
+            goto error;
+        }
         if (!vdi_stream_client__placebo_source_import_linear(
-                placebo, source, av_frame, drm_planes, drm_objects[0], object_sizes[0]
+                placebo, source, drm_planes, drm_objects[0], object_sizes[0],
+                (Uint32)FFALIGN(linear_width, 16), (Uint32)FFALIGN(linear_height, 16)
             )) {
             goto error;
         }
@@ -1105,8 +1116,8 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
         }
     }
 
-    /* Only the RADV linear path shares and fragments the in-process amdgpu
-     * device, so a mid-stream resolution change needs the full pipeline reset. */
+    /* Only the RADV linear path needs the reconnect fallback when a resize cannot
+     * safely reuse the current VA-API pool. */
     vdi_stream_client__parsec_ffmpeg_enable_resolution_reset(placebo->linear_import);
     return true;
 

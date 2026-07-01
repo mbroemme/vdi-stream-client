@@ -54,6 +54,8 @@
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_MAGIC 0x56444646u
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_VERSION 1u
 #define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS 16u
+#define VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_ALIGNMENT 16
+#define VDI_STREAM_CLIENT_PARSEC_FFMPEG_POOL_FALLBACK_FRAMES 8
 
 /* The public Parsec frame callback only carries a raw image pointer. For FFmpeg
  * frames, carry a small descriptor through that buffer so the renderer can
@@ -81,11 +83,15 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     AVFrame *sw_frame;
     AVPacket *packet;
     AVBufferRef *hw_device_ctx;
+    AVBufferRef *hw_frames_ctx;
     enum AVCodecID codec_id;
     enum AVPixelFormat hw_pix_fmt;
     bool hwaccel;
+    bool manual_hw_frames;
     bool mode_published;
     bool format_configured;
+    int configured_coded_width;
+    int configured_coded_height;
     SDL_Mutex *frame_lock;
     struct vdi_stream_client__parsec_ffmpeg_frame_slot_s
         frame_slots[VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS];
@@ -119,16 +125,11 @@ static SDL_Mutex *vdi_stream_client__parsec_ffmpeg_decoder_lock;
 static struct vdi_stream_client__parsec_ffmpeg_decoder_s
     *vdi_stream_client__parsec_ffmpeg_decoder_cache;
 
-/* Resolution-change coordination (AMD/RADV only). The RADV renderer and the
- * VA-API decoder are deduplicated by libdrm onto one in-process amdgpu device,
- * whose GPU address space fragments across a session. After a mid-stream
- * resolution change the larger working set no longer fits and the decode
- * submission is rejected with -ENOMEM. The only way to defragment is to release
- * BOTH references to the shared device (tear the renderer down and free the
- * decoder, closing the drm file) and rebuild fresh. The get_format callback
- * detects the change from the bitstream and returns AV_PIX_FMT_NONE so avcodec
- * aborts before allocating the new surface pool (avoiding the crash), and raises
- * this flag for the main thread to perform the full reset. */
+/* Resolution-change coordination (AMD/RADV only). The normal path keeps the
+ * first VA-API frame pool alive so stream-size reductions can reuse it. If the
+ * stream grows after a reduction, or manual pool setup fails during a
+ * reconfigure, get_format raises this flag so the main thread can fall back to
+ * the existing full reset. */
 static atomic_bool vdi_stream_client__parsec_ffmpeg_reset_enabled;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_resolution_change;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_aborting_decode;
@@ -138,6 +139,16 @@ static atomic_int vdi_stream_client__parsec_ffmpeg_target_height;
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 static void
 vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg);
+
+static int
+vdi_stream_client__parsec_ffmpeg_align_dimension(int value)
+{
+    if (value <= 0 || value > INT_MAX - (VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_ALIGNMENT - 1)) {
+        return 0;
+    }
+    return (value + (VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_ALIGNMENT - 1)) &
+           ~(VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_ALIGNMENT - 1);
+}
 
 /* Enable resolution-change coordination, used only by the AMD/RADV linear path
  * whose shared amdgpu device fragments. Other drivers leave it disabled. */
@@ -205,8 +216,8 @@ vdi_stream_client__parsec_ffmpeg_resume_decode(void)
     );
 }
 
-/* Release every retained frame slot so a reused decoder does not keep the
- * previous stream's hardware surfaces referenced after a reconnect. */
+/* Release every retained frame slot so a reused decoder does not keep stale
+ * hardware surfaces referenced after reconnect or in-stream reconfiguration. */
 static void
 vdi_stream_client__parsec_ffmpeg_reset_frames(
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
@@ -220,9 +231,28 @@ vdi_stream_client__parsec_ffmpeg_reset_frames(
         av_frame_free(&ffmpeg->frame_slots[i].frame);
         ffmpeg->frame_slots[i].generation = 0;
     }
-    ffmpeg->frame_generation = 0;
     ffmpeg->frame_slot = 0;
     SDL_UnlockMutex(ffmpeg->frame_lock);
+}
+
+/* Release every frame reference owned outside libavcodec's current decode state.
+ * This is used before an in-stream reconfigure so old VA surfaces are not held by
+ * descriptor slots while the decoder continues with the reusable pool. */
+static void
+vdi_stream_client__parsec_ffmpeg_release_frame_refs(
+    struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    if (ffmpeg == NULL) {
+        return;
+    }
+    vdi_stream_client__parsec_ffmpeg_reset_frames(ffmpeg);
+    if (ffmpeg->frame != NULL) {
+        av_frame_unref(ffmpeg->frame);
+    }
+    if (ffmpeg->sw_frame != NULL) {
+        av_frame_unref(ffmpeg->sw_frame);
+    }
 }
 
 /* Return the CPU-visible pixel format for an AVFrame. VA-API frames expose this
@@ -946,9 +976,238 @@ vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len)
     return buffer;
 }
 
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_manual_hw_frames(AVBufferRef *device_ref)
+{
+    AVHWDeviceContext *device_context;
+    AVVAAPIDeviceContext *vaapi_context;
+    const char *vendor;
+
+    if (device_ref == NULL || device_ref->data == NULL) {
+        return false;
+    }
+    device_context = (AVHWDeviceContext *)device_ref->data;
+    if (device_context->type != AV_HWDEVICE_TYPE_VAAPI) {
+        return false;
+    }
+    vaapi_context = (AVVAAPIDeviceContext *)device_context->hwctx;
+    if (vaapi_context == NULL || vaapi_context->display == NULL) {
+        return false;
+    }
+    vendor = vaQueryVendorString(vaapi_context->display);
+    return vendor != NULL && SDL_strstr(vendor, "Mesa Gallium driver") != NULL &&
+           (SDL_strstr(vendor, "AMD") != NULL || SDL_strstr(vendor, "Radeon") != NULL ||
+            SDL_strstr(vendor, "radeonsi") != NULL);
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_hw_format_offered(
+    enum AVPixelFormat hw_pix_fmt, const enum AVPixelFormat *formats
+)
+{
+    const enum AVPixelFormat *format;
+
+    for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
+        if (*format == hw_pix_fmt) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static enum AVPixelFormat
+vdi_stream_client__parsec_ffmpeg_first_software_format(const enum AVPixelFormat *formats)
+{
+    const enum AVPixelFormat *format;
+
+    for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
+        const AVPixFmtDescriptor *descriptor = av_pix_fmt_desc_get(*format);
+
+        if (descriptor != NULL && (descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0) {
+            return *format;
+        }
+    }
+    return AV_PIX_FMT_NONE;
+}
+
+static enum AVPixelFormat
+vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
+    AVCodecContext *codec, const enum AVPixelFormat *formats
+)
+{
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_target_width, codec->width, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_target_height, codec->height, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_aborting_decode, true, memory_order_release
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_resolution_change, true, memory_order_release
+    );
+    return vdi_stream_client__parsec_ffmpeg_first_software_format(formats);
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_coded_size(AVCodecContext *codec, int *width, int *height)
+{
+    int coded_width;
+    int coded_height;
+
+    if (codec == NULL) {
+        return false;
+    }
+    coded_width = codec->coded_width > 0 ? codec->coded_width : codec->width;
+    coded_height = codec->coded_height > 0 ? codec->coded_height : codec->height;
+    coded_width = vdi_stream_client__parsec_ffmpeg_align_dimension(coded_width);
+    coded_height = vdi_stream_client__parsec_ffmpeg_align_dimension(coded_height);
+    if (coded_width <= 0 || coded_height <= 0) {
+        return false;
+    }
+    *width = coded_width;
+    *height = coded_height;
+    return true;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_resolution_grows(
+    AVCodecContext *codec, const struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    int coded_width;
+    int coded_height;
+
+    if (ffmpeg == NULL || ffmpeg->configured_coded_width <= 0 ||
+        ffmpeg->configured_coded_height <= 0 ||
+        !vdi_stream_client__parsec_ffmpeg_coded_size(codec, &coded_width, &coded_height)) {
+        return false;
+    }
+    return coded_width > ffmpeg->configured_coded_width ||
+           coded_height > ffmpeg->configured_coded_height;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_hw_frames_compatible(
+    AVCodecContext *codec, struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    AVHWFramesContext *cached_context;
+    int target_width;
+    int target_height;
+
+    if (ffmpeg == NULL || ffmpeg->hw_frames_ctx == NULL ||
+        !vdi_stream_client__parsec_ffmpeg_coded_size(codec, &target_width, &target_height)) {
+        return false;
+    }
+
+    cached_context = (AVHWFramesContext *)ffmpeg->hw_frames_ctx->data;
+    return cached_context != NULL && cached_context->format == ffmpeg->hw_pix_fmt &&
+           cached_context->width >= target_width && cached_context->height >= target_height;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_create_hw_frames(
+    AVCodecContext *codec, struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
+)
+{
+    AVBufferRef *frames_ref = NULL;
+    AVBufferRef *cache_ref = NULL;
+    AVHWFramesContext *frames_context;
+    int target_width;
+    int target_height;
+    int pool_size;
+    Sint32 err;
+    char errbuf[AV_ERROR_MAX_STRING_SIZE];
+
+    if (ffmpeg == NULL || ffmpeg->hw_device_ctx == NULL ||
+        !vdi_stream_client__parsec_ffmpeg_coded_size(codec, &target_width, &target_height)) {
+        return false;
+    }
+    err = avcodec_get_hw_frames_parameters(
+        codec, ffmpeg->hw_device_ctx, ffmpeg->hw_pix_fmt, &frames_ref
+    );
+    if (err < 0 || frames_ref == NULL) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "FFmpeg VA-API frame parameters failed: %s\n",
+            vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf))
+        );
+        return false;
+    }
+
+    frames_context = (AVHWFramesContext *)frames_ref->data;
+    if (frames_context == NULL) {
+        av_buffer_unref(&frames_ref);
+        return false;
+    }
+    frames_context->width = target_width;
+    frames_context->height = target_height;
+    pool_size = frames_context->initial_pool_size;
+    if (pool_size < 0) {
+        pool_size = 0;
+    }
+    if (pool_size > INT_MAX - (int)VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS) {
+        av_buffer_unref(&frames_ref);
+        return false;
+    }
+    pool_size += (int)VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS;
+    if (pool_size < (int)VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS +
+                        VDI_STREAM_CLIENT_PARSEC_FFMPEG_POOL_FALLBACK_FRAMES) {
+        pool_size = (int)VDI_STREAM_CLIENT_PARSEC_FFMPEG_FRAME_SLOTS +
+                    VDI_STREAM_CLIENT_PARSEC_FFMPEG_POOL_FALLBACK_FRAMES;
+    }
+    frames_context->initial_pool_size = pool_size;
+
+    err = av_hwframe_ctx_init(frames_ref);
+    if (err < 0) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "FFmpeg VA-API frame pool setup failed: %s\n",
+            vdi_stream_client__parsec_ffmpeg_error(err, errbuf, sizeof(errbuf))
+        );
+        av_buffer_unref(&frames_ref);
+        return false;
+    }
+    cache_ref = av_buffer_ref(frames_ref);
+    if (cache_ref == NULL) {
+        av_buffer_unref(&frames_ref);
+        return false;
+    }
+
+    av_buffer_unref(&ffmpeg->hw_frames_ctx);
+    ffmpeg->hw_frames_ctx = cache_ref;
+    av_buffer_unref(&codec->hw_frames_ctx);
+    codec->hw_frames_ctx = frames_ref;
+    frames_ref = NULL;
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION,
+        "Preallocate VA-API hardware frames at %dx%d with %d surfaces\n", target_width,
+        target_height, pool_size
+    );
+    return true;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_select_hw_frames(
+    AVCodecContext *codec, struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg,
+    bool allow_create
+)
+{
+    if (ffmpeg == NULL) {
+        return false;
+    }
+    if (vdi_stream_client__parsec_ffmpeg_hw_frames_compatible(codec, ffmpeg)) {
+        av_buffer_unref(&codec->hw_frames_ctx);
+        codec->hw_frames_ctx = av_buffer_ref(ffmpeg->hw_frames_ctx);
+        return codec->hw_frames_ctx != NULL;
+    }
+    return allow_create && vdi_stream_client__parsec_ffmpeg_create_hw_frames(codec, ffmpeg);
+}
+
 /* FFmpeg get_format callback that selects the VA-API hardware pixel format
- * discovered during decoder initialization, falling back to FFmpeg's first
- * offered format if the expected one is absent. */
+ * discovered during decoder initialization. On AMD/Mesa VA-API, it reuses the
+ * cached manual frame pool for in-stream downscales and keeps the existing reset
+ * path for upscales and setup failures. */
 static enum AVPixelFormat
 vdi_stream_client__parsec_ffmpeg_get_hw_format(
     AVCodecContext *codec, const enum AVPixelFormat *formats
@@ -956,51 +1215,77 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
 {
     struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg =
         codec != NULL ? codec->opaque : NULL;
-    const enum AVPixelFormat *format;
+    bool reconfigure;
+    bool reset_enabled;
+    bool manual_hw_frames;
+    bool have_coded_size;
+    int coded_width = 0;
+    int coded_height = 0;
 
-    /* avcodec calls get_format whenever it (re)configures for the stream's pixel
-     * format and dimensions, immediately before allocating the hardware surface
-     * pool. The first call is the initial setup; any later call is a resolution
-     * change. On the AMD/RADV path the hardware pool reallocation would be
-     * rejected on the fragmented shared amdgpu device, so raise the flag for the
-     * main thread to perform the full pipeline reset and choose a software format
-     * for this one packet. Software decoding allocates no hardware pool (avoiding
-     * the crash) and still produces a frame, so avcodec never logs "no frame!";
-     * the decoded frame is discarded because the reset flag is set. */
     if (ffmpeg != NULL) {
-        if (ffmpeg->format_configured &&
-            atomic_load_explicit(
-                &vdi_stream_client__parsec_ffmpeg_reset_enabled, memory_order_acquire
-            )) {
-            atomic_store_explicit(
-                &vdi_stream_client__parsec_ffmpeg_target_width, codec->width, memory_order_relaxed
-            );
-            atomic_store_explicit(
-                &vdi_stream_client__parsec_ffmpeg_target_height, codec->height, memory_order_relaxed
-            );
-            atomic_store_explicit(
-                &vdi_stream_client__parsec_ffmpeg_aborting_decode, true, memory_order_release
-            );
-            atomic_store_explicit(
-                &vdi_stream_client__parsec_ffmpeg_resolution_change, true, memory_order_release
-            );
+        if (!vdi_stream_client__parsec_ffmpeg_hw_format_offered(ffmpeg->hw_pix_fmt, formats)) {
+            return formats != NULL ? formats[0] : AV_PIX_FMT_NONE;
+        }
 
-            for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
-                const AVPixFmtDescriptor *descriptor = av_pix_fmt_desc_get(*format);
+        reconfigure = ffmpeg->format_configured;
+        reset_enabled = atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_reset_enabled, memory_order_acquire
+        );
+        manual_hw_frames = ffmpeg->manual_hw_frames;
+        have_coded_size =
+            vdi_stream_client__parsec_ffmpeg_coded_size(codec, &coded_width, &coded_height);
 
-                if (descriptor != NULL && (descriptor->flags & AV_PIX_FMT_FLAG_HWACCEL) == 0) {
-                    return *format;
-                }
+        if (reconfigure && reset_enabled && !manual_hw_frames) {
+            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+        }
+        if (reconfigure && reset_enabled && manual_hw_frames &&
+            vdi_stream_client__parsec_ffmpeg_resolution_grows(codec, ffmpeg)) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Use resolution reset fallback for RADV VA-API upscale from coded %dx%d to %dx%d\n",
+                ffmpeg->configured_coded_width, ffmpeg->configured_coded_height, coded_width,
+                coded_height
+            );
+            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+        }
+        if (manual_hw_frames) {
+            if (reconfigure) {
+                vdi_stream_client__parsec_ffmpeg_release_frame_refs(ffmpeg);
             }
-            return AV_PIX_FMT_NONE;
+            if (vdi_stream_client__parsec_ffmpeg_select_hw_frames(
+                    codec, ffmpeg, !reconfigure || !reset_enabled
+                )) {
+                if (have_coded_size) {
+                    ffmpeg->configured_coded_width = coded_width;
+                    ffmpeg->configured_coded_height = coded_height;
+                }
+                if (reconfigure) {
+                    AVHWFramesContext *frames_context =
+                        codec->hw_frames_ctx != NULL
+                            ? (AVHWFramesContext *)codec->hw_frames_ctx->data
+                            : NULL;
+                    SDL_LogInfo(
+                        SDL_LOG_CATEGORY_APPLICATION,
+                        "Reconfigure FFmpeg VA-API decoder to %dx%d coded %dx%d using %dx%d pool\n",
+                        codec->width, codec->height, coded_width, coded_height,
+                        frames_context != NULL ? frames_context->width : 0,
+                        frames_context != NULL ? frames_context->height : 0
+                    );
+                }
+                ffmpeg->format_configured = true;
+                return ffmpeg->hw_pix_fmt;
+            }
+            if (reconfigure && reset_enabled) {
+                return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+            }
+        }
+
+        if (have_coded_size) {
+            ffmpeg->configured_coded_width = coded_width;
+            ffmpeg->configured_coded_height = coded_height;
         }
         ffmpeg->format_configured = true;
-
-        for (format = formats; format != NULL && *format != AV_PIX_FMT_NONE; format++) {
-            if (*format == ffmpeg->hw_pix_fmt) {
-                return *format;
-            }
-        }
+        return ffmpeg->hw_pix_fmt;
     }
 
     return formats != NULL ? formats[0] : AV_PIX_FMT_NONE;
@@ -1051,6 +1336,8 @@ vdi_stream_client__parsec_ffmpeg_setup_vaapi(
     }
     ffmpeg->codec->opaque = ffmpeg;
     ffmpeg->codec->get_format = vdi_stream_client__parsec_ffmpeg_get_hw_format;
+    ffmpeg->manual_hw_frames =
+        vdi_stream_client__parsec_ffmpeg_vaapi_manual_hw_frames(ffmpeg->hw_device_ctx);
     ffmpeg->hwaccel = true;
     return true;
 }
@@ -1131,6 +1418,7 @@ vdi_stream_client__parsec_ffmpeg_free(struct vdi_stream_client__parsec_ffmpeg_de
     av_frame_free(&ffmpeg->sw_frame);
     av_frame_free(&ffmpeg->frame);
     avcodec_free_context(&ffmpeg->codec);
+    av_buffer_unref(&ffmpeg->hw_frames_ctx);
     av_buffer_unref(&ffmpeg->hw_device_ctx);
     SDL_free(ffmpeg);
 }
@@ -1235,6 +1523,7 @@ vdi_stream_client__parsec_ffmpeg_init_common(
         avcodec_free_context(&ffmpeg->codec);
         av_buffer_unref(&ffmpeg->hw_device_ctx);
         ffmpeg->hwaccel = false;
+        ffmpeg->manual_hw_frames = false;
         ffmpeg->hw_pix_fmt = AV_PIX_FMT_NONE;
 
         ffmpeg->codec = avcodec_alloc_context3(codec);
