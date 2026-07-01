@@ -90,6 +90,8 @@ struct vdi_stream_client__parsec_ffmpeg_decoder_s
     bool manual_hw_frames;
     bool mode_published;
     bool format_configured;
+    int configured_width;
+    int configured_height;
     int configured_coded_width;
     int configured_coded_height;
     SDL_Mutex *frame_lock;
@@ -1032,14 +1034,20 @@ vdi_stream_client__parsec_ffmpeg_first_software_format(const enum AVPixelFormat 
 
 static enum AVPixelFormat
 vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
-    AVCodecContext *codec, const enum AVPixelFormat *formats
+    AVCodecContext *codec, const enum AVPixelFormat *formats, int target_width, int target_height
 )
 {
+    if (target_width <= 0) {
+        target_width = codec->width;
+    }
+    if (target_height <= 0) {
+        target_height = codec->height;
+    }
     atomic_store_explicit(
-        &vdi_stream_client__parsec_ffmpeg_target_width, codec->width, memory_order_relaxed
+        &vdi_stream_client__parsec_ffmpeg_target_width, target_width, memory_order_relaxed
     );
     atomic_store_explicit(
-        &vdi_stream_client__parsec_ffmpeg_target_height, codec->height, memory_order_relaxed
+        &vdi_stream_client__parsec_ffmpeg_target_height, target_height, memory_order_relaxed
     );
     atomic_store_explicit(
         &vdi_stream_client__parsec_ffmpeg_aborting_decode, true, memory_order_release
@@ -1069,6 +1077,115 @@ vdi_stream_client__parsec_ffmpeg_coded_size(AVCodecContext *codec, int *width, i
     *width = coded_width;
     *height = coded_height;
     return true;
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_profile_matches_codec(
+    enum AVCodecID codec_id, const char *profile_name
+)
+{
+    if (profile_name == NULL) {
+        return false;
+    }
+    switch (codec_id) {
+    case AV_CODEC_ID_H264:
+        return SDL_strncmp(profile_name, "VAProfileH264", sizeof("VAProfileH264") - 1) == 0;
+    case AV_CODEC_ID_HEVC:
+        return SDL_strncmp(profile_name, "VAProfileHEVC", sizeof("VAProfileHEVC") - 1) == 0;
+    default:
+        return false;
+    }
+}
+
+static bool
+vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
+    AVBufferRef *device_ref, enum AVCodecID codec_id, int coded_width, int coded_height
+)
+{
+    AVHWDeviceContext *device_context;
+    AVVAAPIDeviceContext *vaapi_context;
+    VAEntrypoint *entrypoints = NULL;
+    VAProfile *profiles = NULL;
+    VADisplay display;
+    Sint32 max_entrypoints;
+    Sint32 max_profiles;
+    Sint32 profile_count;
+    bool supported = false;
+    bool found_limits = false;
+
+    if (device_ref == NULL || device_ref->data == NULL || coded_width <= 0 || coded_height <= 0) {
+        return true;
+    }
+
+    device_context = (AVHWDeviceContext *)device_ref->data;
+    vaapi_context = device_context != NULL ? device_context->hwctx : NULL;
+    display = vaapi_context != NULL ? vaapi_context->display : NULL;
+    if (display == NULL) {
+        return true;
+    }
+
+    max_profiles = vaMaxNumProfiles(display);
+    max_entrypoints = vaMaxNumEntrypoints(display);
+    if (max_profiles <= 0 || max_entrypoints <= 0) {
+        return true;
+    }
+    profiles = SDL_malloc((size_t)max_profiles * sizeof(*profiles));
+    entrypoints = SDL_malloc((size_t)max_entrypoints * sizeof(*entrypoints));
+    if (profiles == NULL || entrypoints == NULL) {
+        goto cleanup;
+    }
+
+    profile_count = max_profiles;
+    if (vaQueryConfigProfiles(display, profiles, &profile_count) != VA_STATUS_SUCCESS) {
+        goto cleanup;
+    }
+
+    for (Sint32 i = 0; i < profile_count; i++) {
+        VAConfigAttrib attributes[2] = {
+            { .type = VAConfigAttribMaxPictureWidth },
+            { .type = VAConfigAttribMaxPictureHeight },
+        };
+        const char *profile_name = vaProfileStr(profiles[i]);
+
+        if (!vdi_stream_client__parsec_ffmpeg_vaapi_profile_matches_codec(codec_id, profile_name) ||
+            !vdi_stream_client__parsec_ffmpeg_vaapi_profile_decode(
+                display, profiles[i], entrypoints, max_entrypoints
+            )) {
+            continue;
+        }
+        if (vaGetConfigAttributes(display, profiles[i], VAEntrypointVLD, attributes, 2) !=
+            VA_STATUS_SUCCESS) {
+            continue;
+        }
+        if (attributes[0].value == VA_ATTRIB_NOT_SUPPORTED ||
+            attributes[1].value == VA_ATTRIB_NOT_SUPPORTED || attributes[0].value <= 0 ||
+            attributes[1].value <= 0) {
+            continue;
+        }
+
+        found_limits = true;
+        if (coded_width <= (int)attributes[0].value && coded_height <= (int)attributes[1].value) {
+            supported = true;
+            break;
+        }
+    }
+
+cleanup:
+    SDL_free(entrypoints);
+    SDL_free(profiles);
+    return found_limits ? supported : true;
+}
+
+static enum AVPixelFormat
+vdi_stream_client__parsec_ffmpeg_raise_current_resolution_reset(
+    AVCodecContext *codec, struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg,
+    const enum AVPixelFormat *formats
+)
+{
+    return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
+        codec, formats, ffmpeg != NULL ? ffmpeg->configured_width : 0,
+        ffmpeg != NULL ? ffmpeg->configured_height : 0
+    );
 }
 
 static bool
@@ -1123,6 +1240,17 @@ vdi_stream_client__parsec_ffmpeg_create_hw_frames(
 
     if (ffmpeg == NULL || ffmpeg->hw_device_ctx == NULL ||
         !vdi_stream_client__parsec_ffmpeg_coded_size(codec, &target_width, &target_height)) {
+        return false;
+    }
+    if (!vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
+            ffmpeg->hw_device_ctx, ffmpeg->codec_id, target_width, target_height
+        )) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION,
+            "Reject unsupported FFmpeg VA-API image size %dx%d coded %dx%d before frame-pool "
+            "setup\n",
+            codec->width, codec->height, target_width, target_height
+        );
         return false;
     }
     err = avcodec_get_hw_frames_parameters(
@@ -1236,7 +1364,23 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
             vdi_stream_client__parsec_ffmpeg_coded_size(codec, &coded_width, &coded_height);
 
         if (reconfigure && reset_enabled && !manual_hw_frames) {
-            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
+                codec, formats, codec->width, codec->height
+            );
+        }
+        if (reconfigure && reset_enabled &&
+            !vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
+                ffmpeg->hw_device_ctx, ffmpeg->codec_id, coded_width, coded_height
+            )) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Reject unsupported RADV VA-API resize to %dx%d coded %dx%d; keep current %dx%d\n",
+                codec->width, codec->height, coded_width, coded_height, ffmpeg->configured_width,
+                ffmpeg->configured_height
+            );
+            return vdi_stream_client__parsec_ffmpeg_raise_current_resolution_reset(
+                codec, ffmpeg, formats
+            );
         }
         if (reconfigure && reset_enabled && manual_hw_frames &&
             vdi_stream_client__parsec_ffmpeg_resolution_grows(codec, ffmpeg)) {
@@ -1246,7 +1390,9 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
                 ffmpeg->configured_coded_width, ffmpeg->configured_coded_height, coded_width,
                 coded_height
             );
-            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+            return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
+                codec, formats, codec->width, codec->height
+            );
         }
         if (manual_hw_frames) {
             if (reconfigure) {
@@ -1255,6 +1401,8 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
             if (vdi_stream_client__parsec_ffmpeg_select_hw_frames(
                     codec, ffmpeg, !reconfigure || !reset_enabled
                 )) {
+                ffmpeg->configured_width = codec->width;
+                ffmpeg->configured_height = codec->height;
                 if (have_coded_size) {
                     ffmpeg->configured_coded_width = coded_width;
                     ffmpeg->configured_coded_height = coded_height;
@@ -1276,10 +1424,14 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
                 return ffmpeg->hw_pix_fmt;
             }
             if (reconfigure && reset_enabled) {
-                return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(codec, formats);
+                return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
+                    codec, formats, codec->width, codec->height
+                );
             }
         }
 
+        ffmpeg->configured_width = codec->width;
+        ffmpeg->configured_height = codec->height;
         if (have_coded_size) {
             ffmpeg->configured_coded_width = coded_width;
             ffmpeg->configured_coded_height = coded_height;
