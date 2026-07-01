@@ -1307,11 +1307,6 @@ vdi_stream_client__parsec_ffmpeg_create_hw_frames(
     av_buffer_unref(&codec->hw_frames_ctx);
     codec->hw_frames_ctx = frames_ref;
     frames_ref = NULL;
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION,
-        "Preallocate VA-API hardware frames at %dx%d with %d surfaces\n", target_width,
-        target_height, pool_size
-    );
     return true;
 }
 
@@ -1386,7 +1381,7 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
             vdi_stream_client__parsec_ffmpeg_resolution_grows(codec, ffmpeg)) {
             SDL_LogInfo(
                 SDL_LOG_CATEGORY_APPLICATION,
-                "Use resolution reset fallback for RADV VA-API upscale from coded %dx%d to %dx%d\n",
+                "Reconfigure FFmpeg VA-API decoder from coded %dx%d to %dx%d\n",
                 ffmpeg->configured_coded_width, ffmpeg->configured_coded_height, coded_width,
                 coded_height
             );
