@@ -1139,8 +1139,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* Use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
         SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->width,
-            vdi_config->height
+            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->height,
+            vdi_config->width
         );
         cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
         cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
