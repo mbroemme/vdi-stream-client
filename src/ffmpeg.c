@@ -1404,10 +1404,9 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
         have_coded_size =
             vdi_stream_client__parsec_ffmpeg_coded_size(codec, &coded_width, &coded_height);
 
-        if (!reconfigure &&
-            !vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
-                ffmpeg->hw_device_ctx, ffmpeg->codec_id, coded_width, coded_height
-            )) {
+        if (!reconfigure && !vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
+                                ffmpeg->hw_device_ctx, ffmpeg->codec_id, coded_width, coded_height
+                            )) {
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION,
                 "Unsupported FFmpeg VA-API image size %dx%d coded %dx%d on this device\n",

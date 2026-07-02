@@ -1252,7 +1252,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 )) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION,
-                    "Unsupported VA-API image size %dx%d on this device; use --width and --height to override\n",
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
+                    "to override\n",
                     unsupported_width, unsupported_height
                 );
                 goto error;
@@ -1303,7 +1304,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 )) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION,
-                    "Unsupported VA-API image size %dx%d on this device; use --width and --height to override\n",
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
+                    "to override\n",
                     unsupported_width, unsupported_height
                 );
                 goto error;
