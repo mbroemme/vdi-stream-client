@@ -1072,6 +1072,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     bool h264_acceleration = false;
     bool hevc_acceleration = false;
     bool hevc444_acceleration = false;
+    int unsupported_width = 0;
+    int unsupported_height = 0;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -1245,6 +1247,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         /* Wait until connection is established. */
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
         while (!parsec_context.decoder) {
+            if (vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(
+                    &unsupported_width, &unsupported_height
+                )) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height to override\n",
+                    unsupported_width, unsupported_height
+                );
+                goto error;
+            }
 
             /* Get client status. */
             e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
@@ -1284,6 +1296,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                         parsec_context.client_status.decoder[DEFAULT_STREAM].height;
                     parsec_context.decoder = true;
                 }
+            }
+
+            if (vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(
+                    &unsupported_width, &unsupported_height
+                )) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height to override\n",
+                    unsupported_width, unsupported_height
+                );
+                goto error;
             }
 
             /* Unknown error. */

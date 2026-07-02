@@ -137,6 +137,9 @@ static atomic_bool vdi_stream_client__parsec_ffmpeg_resolution_change;
 static atomic_bool vdi_stream_client__parsec_ffmpeg_aborting_decode;
 static atomic_int vdi_stream_client__parsec_ffmpeg_target_width;
 static atomic_int vdi_stream_client__parsec_ffmpeg_target_height;
+static atomic_bool vdi_stream_client__parsec_ffmpeg_unsupported_startup;
+static atomic_int vdi_stream_client__parsec_ffmpeg_unsupported_width;
+static atomic_int vdi_stream_client__parsec_ffmpeg_unsupported_height;
 
 static const char *vdi_stream_client__parsec_ffmpeg_error(Sint32 errnum, char *buffer, size_t len);
 static void
@@ -187,6 +190,29 @@ vdi_stream_client__parsec_ffmpeg_target_resolution(int *width, int *height)
     }
     *width = w;
     *height = h;
+    return true;
+}
+
+bool
+vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(int *width, int *height)
+{
+    bool pending = atomic_exchange_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_startup, false, memory_order_acq_rel
+    );
+
+    if (!pending) {
+        return false;
+    }
+    if (width != NULL) {
+        *width = atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_unsupported_width, memory_order_acquire
+        );
+    }
+    if (height != NULL) {
+        *height = atomic_load_explicit(
+            &vdi_stream_client__parsec_ffmpeg_unsupported_height, memory_order_acquire
+        );
+    }
     return true;
 }
 
@@ -1188,6 +1214,26 @@ vdi_stream_client__parsec_ffmpeg_raise_current_resolution_reset(
     );
 }
 
+static enum AVPixelFormat
+vdi_stream_client__parsec_ffmpeg_raise_unsupported_startup_size(
+    AVCodecContext *codec, const enum AVPixelFormat *formats
+)
+{
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_width, codec->width, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_height, codec->height, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_aborting_decode, true, memory_order_release
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_startup, true, memory_order_release
+    );
+    return vdi_stream_client__parsec_ffmpeg_first_software_format(formats);
+}
+
 static bool
 vdi_stream_client__parsec_ffmpeg_resolution_grows(
     AVCodecContext *codec, const struct vdi_stream_client__parsec_ffmpeg_decoder_s *ffmpeg
@@ -1358,6 +1404,17 @@ vdi_stream_client__parsec_ffmpeg_get_hw_format(
         have_coded_size =
             vdi_stream_client__parsec_ffmpeg_coded_size(codec, &coded_width, &coded_height);
 
+        if (!reconfigure &&
+            !vdi_stream_client__parsec_ffmpeg_vaapi_size_supported(
+                ffmpeg->hw_device_ctx, ffmpeg->codec_id, coded_width, coded_height
+            )) {
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Unsupported FFmpeg VA-API image size %dx%d coded %dx%d on this device\n",
+                codec->width, codec->height, coded_width, coded_height
+            );
+            return vdi_stream_client__parsec_ffmpeg_raise_unsupported_startup_size(codec, formats);
+        }
         if (reconfigure && reset_enabled && !manual_hw_frames) {
             return vdi_stream_client__parsec_ffmpeg_raise_resolution_reset(
                 codec, formats, codec->width, codec->height
@@ -1596,6 +1653,15 @@ vdi_stream_client__parsec_ffmpeg_init_common(
 
     selector = codec_selector != NULL ? ((const Uint8 *)codec_selector)[0] : 2;
     requested_codec_id = selector == 2 ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264;
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_startup, false, memory_order_release
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_width, 0, memory_order_relaxed
+    );
+    atomic_store_explicit(
+        &vdi_stream_client__parsec_ffmpeg_unsupported_height, 0, memory_order_relaxed
+    );
 
     /* Reuse the decode context built on a previous connect when its codec still
      * matches. This keeps the proven VA-API/UVD context alive across reconnects
