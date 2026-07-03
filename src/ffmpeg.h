@@ -59,4 +59,13 @@ bool vdi_stream_client__parsec_ffmpeg_decoder_enable(
     bool hevc_acceleration, bool color444
 );
 
+void vdi_stream_client__parsec_ffmpeg_decoder_destroy(void);
+
+void vdi_stream_client__parsec_ffmpeg_enable_resolution_reset(bool enable);
+bool vdi_stream_client__parsec_ffmpeg_resolution_reset_pending(void);
+bool vdi_stream_client__parsec_ffmpeg_target_resolution(int *width, int *height);
+bool vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(int *width, int *height);
+void vdi_stream_client__parsec_ffmpeg_invalidate_decoder(void);
+void vdi_stream_client__parsec_ffmpeg_resume_decode(void);
+
 #endif /* _FFMPEG_H */

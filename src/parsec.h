@@ -85,6 +85,7 @@ struct parsec_context_s
     ParsecDSO *parsec;
 #endif
     ParsecClientStatus client_status;
+    ParsecStatus stream_error;
 
     /* video. */
     SDL_Window *window;
@@ -98,9 +99,11 @@ struct parsec_context_s
     /* sdl textures for rendering. */
     SDL_Surface *surface_ttf;
     SDL_Texture *texture_ttf;
+    char overlay_text[32];
     SDL_Texture *texture_video;
     SDL_Texture *frame_video_texture;
     struct vdi_stream_client__placebo_s *placebo;
+    bool silent_reinit;
     bool frame_video_updated;
     SDL_PixelFormat pixel_format_video;
     Sint32 texture_width;

@@ -137,6 +137,7 @@ vdi_stream_client__parsec_reconnect(
     vdi_stream_client__context_set_connection(parsec_context, false);
     parsec_context->requested_width = 0;
     parsec_context->requested_height = 0;
+    parsec_context->client_status = (ParsecClientStatus){ 0 };
     while (vdi_stream_client__context_audio_polling(parsec_context)) {
         SDL_Delay(1);
     }
@@ -148,6 +149,8 @@ vdi_stream_client__parsec_reconnect(
     e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
     if (e != PARSEC_OK) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Reconnect failed with code: %d\n", e);
+    } else {
+        parsec_context->stream_error = PARSEC_OK;
     }
     return e;
 }
@@ -481,6 +484,7 @@ vdi_stream_client__render_text(void *opaque, const char *text)
         );
         return VDI_STREAM_CLIENT_ERROR;
     }
+    SDL_strlcpy(parsec_context->overlay_text, text, sizeof(parsec_context->overlay_text));
 
     /* No error. */
     return VDI_STREAM_CLIENT_SUCCESS;
@@ -677,12 +681,17 @@ vdi_stream_client__show_connection_overlay(
     struct parsec_context_s *parsec_context, bool *force_redraw, const char *text
 )
 {
+    if (parsec_context->surface_ttf != NULL &&
+        SDL_strcmp(parsec_context->overlay_text, text) == 0) {
+        return;
+    }
     vdi_stream_client__render_text(parsec_context, text);
     *force_redraw = true;
 }
 
-/* Switch a failed HEVC connection attempt to H.264 once. This avoids repeatedly
- * mutating the client config after the fallback has already been used. */
+/* Switch a failed startup HEVC connection attempt to H.264 once. This avoids
+ * repeatedly mutating the client config after the fallback has already been
+ * used. */
 static void
 vdi_stream_client__use_h264_fallback(
     ParsecClientConfig *cfg, bool *hevc_attempt_active, bool *h264_fallback_done
@@ -753,11 +762,35 @@ vdi_stream_client__video_decoder_policy(
 static void
 vdi_stream_client__handle_connection_status(
     struct parsec_context_s *parsec_context, struct vdi_config_s *vdi_config,
-    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw, bool *hevc_attempt_active,
-    bool *h264_fallback_done
+    ParsecClientConfig *cfg, Uint64 *last_time, bool *force_redraw
 )
 {
-    ParsecStatus e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
+    ParsecStatus e;
+
+    if (parsec_context->stream_error != PARSEC_OK) {
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        parsec_context->requested_width = 0;
+        parsec_context->requested_height = 0;
+
+        if (vdi_config->reconnect == 0) {
+            vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
+            SDL_LogError(
+                SDL_LOG_CATEGORY_APPLICATION, "Parsec stream failed with code: %d\n",
+                parsec_context->stream_error
+            );
+            vdi_stream_client__context_set_done(parsec_context, true);
+            return;
+        }
+
+        vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
+        if (SDL_GetTicks() > *last_time + vdi_config->timeout) {
+            (void)vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
+            *last_time = SDL_GetTicks();
+        }
+        return;
+    }
+
+    e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
 
     if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
@@ -767,7 +800,6 @@ vdi_stream_client__handle_connection_status(
     if (vdi_config->reconnect == 1 && e != PARSEC_CONNECTING && e != PARSEC_OK &&
         SDL_GetTicks() > *last_time + vdi_config->timeout) {
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
-        vdi_stream_client__use_h264_fallback(cfg, hevc_attempt_active, h264_fallback_done);
         e = vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
         *last_time = SDL_GetTicks();
     }
@@ -872,6 +904,124 @@ vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 
     vdi_stream_client__window_lock_size(window, width, height);
 }
 
+/* Fully reset the streaming pipeline for a mid-stream resolution change on the
+ * AMD/RADV path. The renderer and the VA-API decoder are deduplicated by libdrm
+ * onto one in-process amdgpu device whose address space fragments over a
+ * session, so once a resolution change needs a larger working set the decode
+ * submission is rejected. Releasing both references to the shared device (tear
+ * the renderer down and free the decoder, which closes the drm file) resets the
+ * kernel GPU context; a fresh connect then rebuilds the decoder on a clean
+ * device at the new resolution, and the renderer is recreated on top, exactly as
+ * on the first connect. The decode thread has already aborted its decode in
+ * get_format, so no decode is in flight here. */
+static void
+vdi_stream_client__resolution_reset(
+    struct parsec_context_s *parsec_context, ParsecClientConfig *cfg,
+    struct vdi_config_s *vdi_config
+)
+{
+    bool acceleration = parsec_context->placebo != NULL;
+    Uint32 wait_time = 0;
+    int target_width = 0;
+    int target_height = 0;
+    Sint32 previous_width = parsec_context->window_width;
+    Sint32 previous_height = parsec_context->window_height;
+    ParsecStatus e;
+
+    /* Request the resolution the host switched to so the reconnect keeps it
+     * instead of reverting to the client's previous size; the Parsec host
+     * display follows the client's requested resolution. */
+    if (vdi_stream_client__parsec_ffmpeg_target_resolution(&target_width, &target_height)) {
+        cfg->video[DEFAULT_STREAM].resolutionX = target_width;
+        cfg->video[DEFAULT_STREAM].resolutionY = target_height;
+    }
+
+    /* Stop streaming and let the audio and input workers leave the Parsec API. */
+    vdi_stream_client__context_set_connection(parsec_context, false);
+    while (vdi_stream_client__context_audio_polling(parsec_context)) {
+        SDL_Delay(1);
+    }
+    while (vdi_stream_client__context_input_polling(parsec_context)) {
+        SDL_Delay(1);
+    }
+
+    /* Release both references to the shared amdgpu device. The renderer is torn
+     * down first, then the client is disconnected so the SDK stops decoding, and
+     * finally the cached decoder is freed (closing the VA-API drm file). With no
+     * reference left, the kernel GPU context and its fragmented address space are
+     * destroyed. */
+    vdi_stream_client__video_destroy(parsec_context);
+    ParsecClientDisconnect(parsec_context->parsec);
+    vdi_stream_client__parsec_ffmpeg_invalidate_decoder();
+
+    /* The old decoder is gone; restore avcodec logging for the fresh decoder. */
+    vdi_stream_client__parsec_ffmpeg_resume_decode();
+
+    /* Reconnect: the SDK builds a fresh decoder with a new VA-API device on the
+     * now-defragmented shared device and negotiates the new resolution. */
+    parsec_context->requested_width = 0;
+    parsec_context->requested_height = 0;
+    parsec_context->client_status = (ParsecClientStatus){ 0 };
+    parsec_context->decoder = false;
+    e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
+    if (e != PARSEC_OK) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Resolution reset reconnect failed: %d\n", e);
+        parsec_context->stream_error = e;
+        return;
+    }
+
+    while (!parsec_context->decoder && wait_time < vdi_config->timeout) {
+        e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
+        if (e == PARSEC_OK && parsec_context->client_status.decoder[DEFAULT_STREAM].width > 0 &&
+            parsec_context->client_status.decoder[DEFAULT_STREAM].height > 0) {
+            parsec_context->window_width =
+                parsec_context->client_status.decoder[DEFAULT_STREAM].width;
+            parsec_context->window_height =
+                parsec_context->client_status.decoder[DEFAULT_STREAM].height;
+            parsec_context->decoder = true;
+            break;
+        }
+        if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+            break;
+        }
+        SDL_Delay(50);
+        wait_time += 50;
+    }
+
+    /* Match the in-place resolution-change message used on other drivers so the
+     * RADV reset path reports the change the same way. */
+    if (parsec_context->window_width != previous_width ||
+        parsec_context->window_height != previous_height) {
+        SDL_LogInfo(
+            SDL_LOG_CATEGORY_APPLICATION, "Change resolution from %dx%d to %dx%d\n", previous_width,
+            previous_height, parsec_context->window_width, parsec_context->window_height
+        );
+    }
+
+    /* Resize the window and rebuild the renderer on the fresh device. The fresh
+     * decoder has already allocated its surface pool while the renderer was
+     * absent, mirroring the first-connect allocation order. */
+    vdi_stream_client__window_unlock_size(parsec_context->window);
+    vdi_stream_client__window_enforce_size(
+        parsec_context->window, parsec_context->window_width, parsec_context->window_height
+    );
+    parsec_context->silent_reinit = true;
+    if (!vdi_stream_client__video_init(parsec_context, acceleration)) {
+        parsec_context->silent_reinit = false;
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Resolution reset renderer rebuild failed: %s\n",
+            SDL_GetError()
+        );
+        parsec_context->stream_error = ERR_DEFAULT;
+        return;
+    }
+    parsec_context->silent_reinit = false;
+    if (parsec_context->overlay_text[0] != '\0') {
+        (void)vdi_stream_client__render_text(parsec_context, parsec_context->overlay_text);
+    }
+    vdi_stream_client__context_set_connection(parsec_context, true);
+}
+
 /* Create the SDL window and initialize the renderer. If initialization fails,
  * this tears down partial video resources so the caller can try another path. */
 static bool
@@ -922,6 +1072,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     bool h264_acceleration = false;
     bool hevc_acceleration = false;
     bool hevc444_acceleration = false;
+    int unsupported_width = 0;
+    int unsupported_height = 0;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -987,8 +1139,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* Use client resolution if specified. */
     if (vdi_config->width > 0 && vdi_config->height > 0) {
         SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->width,
-            vdi_config->height
+            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->height,
+            vdi_config->width
         );
         cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
         cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
@@ -1095,6 +1247,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         /* Wait until connection is established. */
         SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Connect to Parsec host\n");
         while (!parsec_context.decoder) {
+            if (vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(
+                    &unsupported_width, &unsupported_height
+                )) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
+                    "to override\n",
+                    unsupported_width, unsupported_height
+                );
+                goto error;
+            }
 
             /* Get client status. */
             e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
@@ -1134,6 +1297,18 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                         parsec_context.client_status.decoder[DEFAULT_STREAM].height;
                     parsec_context.decoder = true;
                 }
+            }
+
+            if (vdi_stream_client__parsec_ffmpeg_unsupported_startup_size(
+                    &unsupported_width, &unsupported_height
+                )) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
+                    "to override\n",
+                    unsupported_width, unsupported_height
+                );
+                goto error;
             }
 
             /* Unknown error. */
@@ -1261,6 +1436,13 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         bool local_interaction = false;
         bool rendered = false;
 
+        /* The decode thread aborted a decode in get_format because the stream
+         * resolution changed; rebuild the whole pipeline on a fresh device. */
+        if (vdi_stream_client__parsec_ffmpeg_resolution_reset_pending()) {
+            vdi_stream_client__resolution_reset(&parsec_context, &cfg, vdi_config);
+            continue;
+        }
+
         force_redraw = vdi_stream_client__context_input_force_redraw(&parsec_context);
         if (parsec_context.stats_enabled) {
             loop_sdl_events = (Uint64)atomic_load_explicit(
@@ -1281,8 +1463,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         parsec_context.render_timeout = local_interaction ? 0 : 5;
 
         vdi_stream_client__handle_connection_status(
-            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw, &hevc_attempt_active,
-            &h264_fallback_done
+            &parsec_context, vdi_config, &cfg, &last_time, &force_redraw
         );
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
@@ -1377,6 +1558,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
 
+    /* Release the reused decode context now that all decoders are gone. */
+    vdi_stream_client__parsec_ffmpeg_decoder_destroy();
+
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
     TTF_Quit();
@@ -1402,6 +1586,9 @@ error:
 
     /* Parsec destroy. */
     ParsecDestroy(parsec_context.parsec);
+
+    /* Release the reused decode context now that all decoders are gone. */
+    vdi_stream_client__parsec_ffmpeg_decoder_destroy();
 
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);

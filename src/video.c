@@ -118,6 +118,17 @@ vdi_stream_client__video_texture(
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unsupported video format: %d\n", frame->format);
         return false;
     }
+    if (parsec_context->renderer == NULL) {
+        return false;
+    }
+    if (frame->fullWidth == 0 || frame->fullHeight == 0 || frame->fullWidth > (Uint32)INT_MAX ||
+        frame->fullHeight > (Uint32)INT_MAX) {
+        SDL_LogWarn(
+            SDL_LOG_CATEGORY_APPLICATION, "Ignore invalid video frame size %ux%u\n",
+            frame->fullWidth, frame->fullHeight
+        );
+        return false;
+    }
 
     if (parsec_context->texture_video != NULL &&
         parsec_context->texture_width == (Sint32)frame->fullWidth &&
@@ -298,6 +309,11 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
             parsec_context->window_height, 1
         );
         if (e != PARSEC_OK) {
+            if (e < 0) {
+                parsec_context->stream_error = e;
+                vdi_stream_client__context_set_connection(parsec_context, false);
+                return false;
+            }
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Set dimensions failed with code: %d\n", e);
         } else {
             parsec_context->requested_width = parsec_context->window_width;
@@ -306,10 +322,15 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
     }
 
     parsec_context->frame_video_updated = false;
-    ParsecClientPollFrame(
+    e = ParsecClientPollFrame(
         parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update,
         parsec_context->render_timeout, parsec_context
     );
+    if (e < 0) {
+        parsec_context->stream_error = e;
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        return false;
+    }
 
     if (!force_redraw && !parsec_context->frame_video_updated) {
         return false;
@@ -369,11 +390,13 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
         return false;
     }
 
-    renderer_name = SDL_GetRendererName(parsec_context->renderer);
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
-        renderer_name != NULL ? renderer_name : "unknown"
-    );
+    if (!parsec_context->silent_reinit) {
+        renderer_name = SDL_GetRendererName(parsec_context->renderer);
+        SDL_LogInfo(
+            SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
+            renderer_name != NULL ? renderer_name : "unknown"
+        );
+    }
     if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "SDL_SetRenderVSync failed: %s\n", SDL_GetError()
