@@ -230,12 +230,14 @@ See \-\-no\-grab option for more details.
 .B  Shift+F12
 Toggle mouse and keyboard grab regardless if exclusive grab is enabled
 or disabled. If enabling forced grab, it will lock the cursor to the window
-and pass all keys, except Shift+F12 to the window. The client configured
-screen saver and screen locker is disabled and host must process locking.
-The Ctrl+Alt key combination will not release a forced grab. If disabling
-forced grab, it will release the mouse from the window, don't pass window
-manager key combinations anymore and re-enable screen saver and screen
-locker if necessary.
+and pass all keys, except Shift+F12 to the window. Shift+F24 is accepted as
+an alternative toggle for the same forced grab mode, which is useful when a
+Wayland compositor remaps one of its own shortcuts to F24. The client
+configured screen saver and screen locker is disabled and host must process
+locking. The Ctrl+Alt key combination will not release a forced grab. If
+disabling forced grab, it will release the mouse from the window, don't pass
+window manager key combinations anymore and re-enable screen saver and
+screen locker if necessary.
 .SH WAYLAND TIPS
 Wayland compositors normally keep ownership of global shortcuts such as
 Alt+Tab, Alt+F4 or Super based key bindings. For VDI, virtual machine,
@@ -255,8 +257,9 @@ requested by the client.
 .PP
 Some compositors provide compositor-specific configuration as an alternative
 or supplement. For example, labwc can disable its own key bindings for a
-matching window with a window rule. Add a rule like the following to the
-labwc configuration:
+matching window with a window rule, or can keep only the ToggleKeybinds
+binding active while forwarding an alternate forced-grab toggle to
+vdi-stream-client. Add rules like the following to the labwc configuration:
 .PP
 .RS
 .nf
@@ -266,13 +269,22 @@ labwc configuration:
   <!-- allow A-Tab and similar keybinds to be delivered. -->
   <action name="ToggleKeybinds" />
 </windowRule>
+
+<!-- allow A-Tab and similar keybinds to be delivered during forced grab. -->
+<keybind key="S-F12">
+  <action name="ToggleKeybinds" />
+  <action name="Execute" command="/usr/bin/wtype -M shift -k f24 -m shift" />
+</keybind>
 .fi
 .RE
 .PP
 With such a rule, labwc will stop handling its own key bindings for the
 vdi-stream-client window, allowing Alt+Tab and similar shortcuts to reach
-the remote session. Other Wayland compositors may require different options,
-or may not provide an equivalent mechanism.
+the remote session. The keybind example keeps ToggleKeybinds active so that
+pressing Shift+F12 can temporarily disable other labwc key bindings and send
+Shift+F24 to vdi-stream-client, which then toggles forced grab without
+handling the original compositor shortcut locally. Other Wayland compositors
+may require different options, or may not provide an equivalent mechanism.
 .SH PARSEC TIPS
 Parsec hosts expose all settings in the host's advanced configuration file
 (config.txt, or config.json since Parsec build 150-89). These are host-side
