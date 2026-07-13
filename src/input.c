@@ -161,7 +161,8 @@ vdi_stream_client__input_mouse_buttons_pressed(
 
 /* Translate key-down events into either local grab commands or Parsec keyboard
  * messages. Ctrl+Alt releases normal grab mode, while Shift+F12 and Shift+F24
- * toggle forced grab mode when automatic grabbing is disabled. */
+ * toggle forced grab mode before relative mouse mode takes over, or disable an
+ * already active forced grab. */
 static void
 vdi_stream_client__input_handle_key_down(
     vdi_stream_client__input_context_s *input_context, const SDL_Event *msg, ParsecMessage *pmsg
@@ -179,7 +180,9 @@ vdi_stream_client__input_handle_key_down(
         return;
     }
 
-    if (input_context->vdi_config->grab == 0 && (msg->key.mod & SDL_KMOD_SHIFT) != 0 &&
+    if ((grab_forced || input_context->vdi_config->grab == 0 ||
+         !vdi_stream_client__context_input_relative(parsec_context)) &&
+        (msg->key.mod & SDL_KMOD_SHIFT) != 0 &&
         (msg->key.key == SDLK_F12 || msg->key.key == SDLK_F24)) {
         vdi_stream_client__context_set_input_grab_forced(parsec_context, !grab_forced);
         if (!vdi_stream_client__input_queue_command(
