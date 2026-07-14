@@ -157,12 +157,13 @@ vdi_stream_client__video_texture(
     output->texture_width = frame->fullWidth;
     output->texture_height = frame->fullHeight;
     output->pixel_format_video = pixel_format;
-    if (format_changed) {
+    if (format_changed && !output->parsec_context->log_video_pixel_format) {
         pixel_format_name = SDL_GetPixelFormatName(pixel_format);
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION, "Use %s video pixel format\n",
             pixel_format_name != NULL ? pixel_format_name : "unknown"
         );
+        output->parsec_context->log_video_pixel_format = true;
     }
     return true;
 }
@@ -388,12 +389,13 @@ vdi_stream_client__video_init(struct vdi_stream_client__output_s *output, bool a
         return false;
     }
 
-    if (!output->silent_reinit) {
+    if (!output->silent_reinit && !output->parsec_context->log_renderer) {
         renderer_name = SDL_GetRendererName(output->renderer);
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
             renderer_name != NULL ? renderer_name : "unknown"
         );
+        output->parsec_context->log_renderer = true;
     }
     if (!SDL_SetRenderVSync(output->renderer, 1)) {
         SDL_LogError(

@@ -1041,8 +1041,9 @@ vdi_stream_client__resolution_reset(
      * RADV reset path reports the change the same way. */
     if (primary->window_width != previous_width || primary->window_height != previous_height) {
         SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION, "Change resolution from %dx%d to %dx%d\n", previous_width,
-            previous_height, primary->window_width, primary->window_height
+            SDL_LOG_CATEGORY_APPLICATION, "Monitor %u: Change resolution from %dx%d to %dx%d\n",
+            (unsigned int)primary->stream + 1u, previous_width, previous_height,
+            primary->window_width, primary->window_height
         );
     }
 
@@ -1134,9 +1135,7 @@ vdi_stream_client__output_create_with_fallback(
     }
 
     SDL_LogWarn(
-        SDL_LOG_CATEGORY_APPLICATION,
-        "Vulkan video setup failed for stream %u; retry with default SDL renderer\n",
-        (unsigned int)output->stream
+        SDL_LOG_CATEGORY_APPLICATION, "Vulkan video setup failed; retry with default SDL renderer\n"
     );
     return vdi_stream_client__video_setup(output, window_flags & ~SDL_WINDOW_VULKAN, false);
 }
@@ -1152,9 +1151,7 @@ vdi_stream_client__sync_outputs(
 
         if (decoder->width == 0 || decoder->height == 0) {
             if (stream != DEFAULT_STREAM && output->active) {
-                SDL_LogInfo(
-                    SDL_LOG_CATEGORY_APPLICATION, "Destroy stream %u window\n", (unsigned int)stream
-                );
+                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Destroy window\n");
                 vdi_stream_client__output_destroy(output);
             }
             continue;
@@ -1175,9 +1172,9 @@ vdi_stream_client__sync_outputs(
         if (output->window_width != (Sint32)decoder->width ||
             output->window_height != (Sint32)decoder->height) {
             SDL_LogInfo(
-                SDL_LOG_CATEGORY_APPLICATION, "Change stream %u resolution from %dx%d to %ux%u\n",
-                (unsigned int)stream, output->window_width, output->window_height, decoder->width,
-                decoder->height
+                SDL_LOG_CATEGORY_APPLICATION, "Monitor %u: Change resolution from %dx%d to %ux%u\n",
+                (unsigned int)stream + 1u, output->window_width, output->window_height,
+                decoder->width, decoder->height
             );
             vdi_stream_client__window_unlock_size(output->window);
             vdi_stream_client__window_enforce_size(output->window, decoder->width, decoder->height);
@@ -1439,7 +1436,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                                                                                       : "4:2:0"
                     );
                     SDL_LogInfo(
-                        SDL_LOG_CATEGORY_APPLICATION, "Use resolution %dx%d\n",
+                        SDL_LOG_CATEGORY_APPLICATION, "Monitor %u: Use resolution %dx%d\n",
+                        (unsigned int)DEFAULT_STREAM + 1u,
                         parsec_context.client_status.decoder[DEFAULT_STREAM].width,
                         parsec_context.client_status.decoder[DEFAULT_STREAM].height
                     );
@@ -1652,8 +1650,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
 
                     if (output->active) {
                         SDL_LogWarn(
-                            SDL_LOG_CATEGORY_APPLICATION, "Stream %u failed with code: %d\n",
-                            (unsigned int)event.stream.stream, event.stream.status
+                            SDL_LOG_CATEGORY_APPLICATION, "Video failed with code: %d\n",
+                            event.stream.status
                         );
                         vdi_stream_client__output_destroy(output);
                     }

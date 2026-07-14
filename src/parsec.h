@@ -127,6 +127,12 @@ struct parsec_context_s
     Uint8 monitors;
     Uint8 active_stream;
     TTF_Font *font;
+    bool log_renderer;
+    bool log_video_pixel_format;
+    bool log_vulkan_device;
+    bool log_radv_linear;
+    bool log_vaapi_upload;
+    bool log_vaapi_direct;
 
     /* audio. */
     SDL_AudioStream *audio;

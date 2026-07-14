@@ -966,6 +966,7 @@ bool
 vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output)
 {
     struct vdi_stream_client__placebo_s *placebo;
+    struct parsec_context_s *parsec_context = output->parsec_context;
     SDL_PropertiesID props = 0;
     const char *const *extensions;
     Uint32 extension_count;
@@ -1103,17 +1104,19 @@ vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output)
     if (output->silent_reinit) {
         placebo->direct_logged = true;
         placebo->upload_logged = true;
-    } else {
+    } else if (!parsec_context->log_vulkan_device) {
         vkGetPhysicalDeviceProperties(placebo->vulkan->phys_device, &device_properties);
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION, "Use %s Vulkan device for VA-API DRM PRIME zero-copy\n",
             device_properties.deviceName
         );
-        if (placebo->linear_import) {
+        parsec_context->log_vulkan_device = true;
+        if (placebo->linear_import && !parsec_context->log_radv_linear) {
             SDL_LogInfo(
                 SDL_LOG_CATEGORY_APPLICATION,
                 "Use RADV linear external-memory import without DRM modifiers\n"
             );
+            parsec_context->log_radv_linear = true;
         }
     }
 
@@ -1220,17 +1223,23 @@ vdi_stream_client__placebo_render(
     output->texture_height = placebo->height;
     output->pixel_format_video = SDL_PIXELFORMAT_RGBA32;
     if (placebo->direct_disabled && !placebo->upload_logged) {
-        SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION,
-            "Use AV_PIX_FMT_VAAPI with libplacebo Vulkan upload fallback\n"
-        );
+        if (!parsec_context->log_vaapi_upload) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Use AV_PIX_FMT_VAAPI with libplacebo Vulkan upload fallback\n"
+            );
+            parsec_context->log_vaapi_upload = true;
+        }
         placebo->upload_logged = true;
     } else if (!placebo->direct_disabled && !placebo->direct_logged) {
-        SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Use AV_PIX_FMT_VAAPI video pixel format\n");
-        SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION,
-            "Use VA-API DRM PRIME zero-copy video with libplacebo YUV shader\n"
-        );
+        if (!parsec_context->log_vaapi_direct) {
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Use AV_PIX_FMT_VAAPI video pixel format\n");
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Use VA-API DRM PRIME zero-copy video with libplacebo YUV shader\n"
+            );
+            parsec_context->log_vaapi_direct = true;
+        }
         placebo->direct_logged = true;
     }
 
