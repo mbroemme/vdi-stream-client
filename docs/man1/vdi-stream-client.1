@@ -308,6 +308,18 @@ Parsec hosts expose all settings in the host's advanced configuration file
 options; they are not client side options and cannot be forced by
 vdi-stream-client through the Parsec client SDK.
 .TP 8
+.B host_virtual_monitors=<value>
+In the Parsec UI, this host setting is shown as "Virtual Displays".
+
+This setting controls how many additional virtual displays Parsec creates during
+owner connections. Multiple streamed displays require the Parsec Virtual Display
+driver to be installed on the Windows host and this setting to be greater than
+0. Set it to 0 for no additional virtual displays, 1 for one additional virtual
+display, or 2 for two additional virtual displays. Without this host-side setup,
+requesting more than one monitor with
+.BR \-\-monitors
+will not make additional display streams available to the client.
+.TP 8
 .BR server_resolution_x=<value> ", " server_resolution_y=<value>
 In the Parsec UI, this host setting is shown as "Resolution".
 
