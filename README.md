@@ -93,6 +93,7 @@ System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
+Multi Monitor           | Yes               | Yes
 [Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | Yes               | Yes
 
 # Requirements
