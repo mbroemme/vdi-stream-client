@@ -105,17 +105,8 @@ vdi_stream_client__stats_avg_ms(Uint64 ns, Uint64 calls)
 static void
 vdi_stream_client__enable_streams(struct parsec_context_s *parsec_context)
 {
-    for (Uint8 stream = 1; stream < NUM_VSTREAMS; stream++) {
-        ParsecStatus e = ParsecClientEnableStream(
-            parsec_context->parsec, stream, stream < parsec_context->monitors
-        );
-
-        if (e != PARSEC_OK) {
-            SDL_LogWarn(
-                SDL_LOG_CATEGORY_APPLICATION, "Stream %u enablement failed with code: %d\n",
-                (unsigned int)stream, e
-            );
-        }
+    for (Uint8 stream = 1; stream < parsec_context->monitors; stream++) {
+        (void)ParsecClientEnableStream(parsec_context->parsec, stream, true);
     }
 }
 
@@ -1656,11 +1647,16 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 if (event.stream.status < 0 && event.stream.stream != DEFAULT_STREAM &&
                     event.stream.stream < parsec_context.monitors &&
                     event.stream.stream < NUM_VSTREAMS) {
-                    SDL_LogWarn(
-                        SDL_LOG_CATEGORY_APPLICATION, "Stream %u failed with code: %d\n",
-                        (unsigned int)event.stream.stream, event.stream.status
-                    );
-                    vdi_stream_client__output_destroy(&parsec_context.outputs[event.stream.stream]);
+                    struct vdi_stream_client__output_s *output =
+                        &parsec_context.outputs[event.stream.stream];
+
+                    if (output->active) {
+                        SDL_LogWarn(
+                            SDL_LOG_CATEGORY_APPLICATION, "Stream %u failed with code: %d\n",
+                            (unsigned int)event.stream.stream, event.stream.status
+                        );
+                        vdi_stream_client__output_destroy(output);
+                    }
                 } else if (event.stream.status < 0) {
                     parsec_context.stream_error = event.stream.status;
                     vdi_stream_client__context_set_connection(&parsec_context, false);
