@@ -110,6 +110,20 @@ vdi_stream_client__enable_streams(struct parsec_context_s *parsec_context)
     }
 }
 
+static bool
+vdi_stream_client__active_outputs_ready(const struct parsec_context_s *parsec_context)
+{
+    for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
+        const struct vdi_stream_client__output_s *output = &parsec_context->outputs[stream];
+        const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
+
+        if (output->active && (decoder->width == 0 || decoder->height == 0)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /* Reset per-period render counters after a stats line is emitted. Counters that
  * are drained from other modules are reset through their own drain helpers. */
 static void
@@ -837,8 +851,14 @@ vdi_stream_client__handle_connection_status(
 
     e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
 
+    if (e != PARSEC_CONNECTING && e != PARSEC_OK) {
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        vdi_stream_client__show_connection_overlay(
+            parsec_context, force_redraw,
+            vdi_config->reconnect == 0 ? "Closing..." : "Reconnecting..."
+        );
+    }
     if (vdi_config->reconnect == 0 && e != PARSEC_CONNECTING && e != PARSEC_OK) {
-        vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Parsec disconnected\n");
         vdi_stream_client__context_set_done(parsec_context, true);
     }
@@ -849,8 +869,14 @@ vdi_stream_client__handle_connection_status(
         *last_time = SDL_GetTicks();
     }
 
+    if (parsec_context->client_status.networkFailure == 1) {
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        vdi_stream_client__show_connection_overlay(
+            parsec_context, force_redraw,
+            vdi_config->reconnect == 0 ? "Closing..." : "Reconnecting..."
+        );
+    }
     if (vdi_config->reconnect == 0 && parsec_context->client_status.networkFailure == 1) {
-        vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Closing...");
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Network disconnected\n");
         vdi_stream_client__context_set_done(parsec_context, true);
     }
@@ -859,6 +885,14 @@ vdi_stream_client__handle_connection_status(
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
         e = vdi_stream_client__parsec_reconnect(parsec_context, cfg, vdi_config);
         *last_time = SDL_GetTicks();
+    }
+
+    if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
+        e == PARSEC_OK && !vdi_stream_client__active_outputs_ready(parsec_context)) {
+        vdi_stream_client__context_set_connection(parsec_context, false);
+        vdi_stream_client__enable_streams(parsec_context);
+        vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
+        return;
     }
 
     if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
@@ -1150,8 +1184,8 @@ vdi_stream_client__sync_outputs(
         const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
 
         if (decoder->width == 0 || decoder->height == 0) {
-            if (stream != DEFAULT_STREAM && output->active) {
-                SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Destroy window\n");
+            if (stream != DEFAULT_STREAM && output->active &&
+                vdi_stream_client__context_connected(parsec_context)) {
                 vdi_stream_client__output_destroy(output);
             }
             continue;
@@ -1648,11 +1682,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                     struct vdi_stream_client__output_s *output =
                         &parsec_context.outputs[event.stream.stream];
 
-                    if (output->active) {
-                        SDL_LogWarn(
-                            SDL_LOG_CATEGORY_APPLICATION, "Video failed with code: %d\n",
-                            event.stream.status
-                        );
+                    if (output->active && vdi_stream_client__context_connected(&parsec_context)) {
                         vdi_stream_client__output_destroy(output);
                     }
                 } else if (event.stream.status < 0) {
