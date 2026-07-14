@@ -69,6 +69,23 @@ The host screen and window height to use. The host will change
 resolution either to specified value or - if not supported - to closest
 one which matches. If not used, the client will resize window to current
 configured host height. The value is in pixel.
+.TP 8
+.B  \-\-monitors \fICOUNT\fP
+Request host monitor streams. The default is
+.BR 1 .
+The value must be between 1 and
+.B NUM_VSTREAMS
+inclusive; the current Parsec SDK exposes
+.B NUM_VSTREAMS
+as 2. Stream 0 is always enabled. When more than one monitor stream is
+requested, the client enables the additional stream and creates or destroys
+the matching SDL window dynamically as monitors are added or removed in
+Windows Display Settings. The
+.BR \-\-width
+and
+.BR \-\-height
+options apply only to stream 0; additional monitor sizes follow the host
+configuration.
 .SS Client options
 .TP 8
 .B  \-\-no\-upnp

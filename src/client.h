@@ -56,12 +56,13 @@ typedef struct vdi_config_s
 {
 
     /* parsec options. */
-    char *session;  /* session id for connection. */
-    char *peer;     /* peer id for connection. */
-    Uint32 timeout; /* connection timeout in milliseconds. */
-    Uint16 speed;   /* mouse wheel sensitivity. (0 - 255) */
-    Uint16 width;   /* screen width in pixel. (host resolution is used if not specified) */
-    Uint16 height;  /* screen height in pixel. (host resolution is used if not specified) */
+    char *session;   /* session id for connection. */
+    char *peer;      /* peer id for connection. */
+    Uint32 timeout;  /* connection timeout in milliseconds. */
+    Uint16 speed;    /* mouse wheel sensitivity. (0 - 255) */
+    Uint16 width;    /* screen width in pixel. (host resolution is used if not specified) */
+    Uint16 height;   /* screen height in pixel. (host resolution is used if not specified) */
+    Uint16 monitors; /* number of Parsec video streams to enable. */
 
     /* video codec, color mode and acceleration policy. */
     vdi_video_decoder_e video_decoder;

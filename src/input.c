@@ -34,7 +34,7 @@
 static bool
 vdi_stream_client__input_queue_command(
     vdi_stream_client__input_context_s *input_context, vdi_stream_client__input_command_e type,
-    bool grab_forced
+    Uint8 stream, bool grab_forced
 )
 {
     Uint32 next;
@@ -52,10 +52,29 @@ vdi_stream_client__input_queue_command(
     }
 
     input_context->commands[input_context->command_write].type = type;
+    input_context->commands[input_context->command_write].stream = stream;
     input_context->commands[input_context->command_write].grab_forced = grab_forced;
     input_context->command_write = next;
     SDL_UnlockMutex(input_context->command_lock);
     return true;
+}
+
+static Uint8
+vdi_stream_client__input_stream_for_window(
+    const vdi_stream_client__input_context_s *input_context, Uint32 window_id
+)
+{
+    const struct parsec_context_s *parsec_context = input_context->parsec_context;
+
+    if (window_id != 0) {
+        for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
+            if (parsec_context->outputs[stream].active &&
+                parsec_context->outputs[stream].window_id == window_id) {
+                return stream;
+            }
+        }
+    }
+    return parsec_context->active_stream;
 }
 
 /* Prepare the input context and its command queue. The context keeps pointers to
@@ -175,7 +194,9 @@ vdi_stream_client__input_handle_key_down(
         (msg->key.mod & SDL_KMOD_LCTRL) != 0 && (msg->key.mod & SDL_KMOD_LALT) != 0 &&
         !vdi_stream_client__input_mouse_buttons_pressed(input_context)) {
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_RELEASE_GRAB, grab_forced
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_RELEASE_GRAB,
+            vdi_stream_client__input_stream_for_window(input_context, msg->key.windowID),
+            grab_forced
         );
         return;
     }
@@ -189,6 +210,7 @@ vdi_stream_client__input_handle_key_down(
                 input_context,
                 grab_forced ? VDI_STREAM_CLIENT_INPUT_COMMAND_FORCE_GRAB_DISABLE
                             : VDI_STREAM_CLIENT_INPUT_COMMAND_FORCE_GRAB_ENABLE,
+                vdi_stream_client__input_stream_for_window(input_context, msg->key.windowID),
                 grab_forced
             )) {
             vdi_stream_client__context_set_input_grab_forced(parsec_context, grab_forced);
@@ -212,6 +234,7 @@ vdi_stream_client__input_handle_event(
 {
     struct parsec_context_s *parsec_context = input_context->parsec_context;
     ParsecMessage pmsg = { 0 };
+    Uint8 stream = parsec_context->active_stream;
 
     if (parsec_context->stats_enabled) {
         atomic_fetch_add_explicit(
@@ -227,35 +250,48 @@ vdi_stream_client__input_handle_event(
     case SDL_EVENT_QUIT:
         vdi_stream_client__context_set_input_force_redraw(parsec_context);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_QUIT, false
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_QUIT, stream, false
         );
         break;
     case SDL_EVENT_KEY_UP:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->key.windowID);
         pmsg.type = MESSAGE_KEYBOARD;
         pmsg.keyboard.code = (ParsecKeycode)msg->key.scancode;
         pmsg.keyboard.mod = msg->key.mod;
         pmsg.keyboard.pressed = false;
         break;
     case SDL_EVENT_KEY_DOWN:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->key.windowID);
         vdi_stream_client__input_handle_key_down(input_context, msg, &pmsg);
         break;
     case SDL_EVENT_MOUSE_MOTION:
-        if (vdi_stream_client__context_input_relative(parsec_context) &&
-            !vdi_stream_client__context_input_relative_mouse(parsec_context)) {
+    {
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->motion.windowID);
+        bool relative = atomic_load_explicit(
+            &parsec_context->input_relative_stream[stream], memory_order_acquire
+        );
+        bool relative_mouse = atomic_load_explicit(
+            &parsec_context->input_relative_mouse_stream[stream], memory_order_acquire
+        );
+
+        if (relative && !relative_mouse) {
             break;
         }
         pmsg.type = MESSAGE_MOUSE_MOTION;
-        pmsg.mouseMotion.relative = vdi_stream_client__context_input_relative_mouse(parsec_context);
+        pmsg.mouseMotion.relative = relative_mouse;
+        pmsg.mouseMotion.stream = stream;
         pmsg.mouseMotion.x =
             pmsg.mouseMotion.relative ? (Sint32)msg->motion.xrel : (Sint32)msg->motion.x + 1;
         pmsg.mouseMotion.y =
             pmsg.mouseMotion.relative ? (Sint32)msg->motion.yrel : (Sint32)msg->motion.y + 1;
         break;
+    }
     case SDL_EVENT_MOUSE_BUTTON_UP:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->button.windowID);
         input_context->mouse_buttons &= ~SDL_BUTTON_MASK(msg->button.button);
         vdi_stream_client__context_set_input_pressed(parsec_context, false);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_UP,
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_UP, stream,
             vdi_stream_client__context_input_grab_forced(parsec_context)
         );
         pmsg.type = MESSAGE_MOUSE_BUTTON;
@@ -263,10 +299,11 @@ vdi_stream_client__input_handle_event(
         pmsg.mouseButton.pressed = false;
         break;
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->button.windowID);
         input_context->mouse_buttons |= SDL_BUTTON_MASK(msg->button.button);
         vdi_stream_client__context_set_input_pressed(parsec_context, true);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_DOWN,
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_BUTTON_DOWN, stream,
             vdi_stream_client__context_input_grab_forced(parsec_context)
         );
         pmsg.type = MESSAGE_MOUSE_BUTTON;
@@ -274,35 +311,40 @@ vdi_stream_client__input_handle_event(
         pmsg.mouseButton.pressed = true;
         break;
     case SDL_EVENT_MOUSE_WHEEL:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->wheel.windowID);
         pmsg.type = MESSAGE_MOUSE_WHEEL;
         pmsg.mouseWheel.x = msg->wheel.x * input_context->vdi_config->speed;
         pmsg.mouseWheel.y = msg->wheel.y * input_context->vdi_config->speed;
         break;
     case SDL_EVENT_CLIPBOARD_UPDATE:
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_CLIPBOARD_UPDATE, false
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_CLIPBOARD_UPDATE, stream, false
         );
         break;
     case SDL_EVENT_WINDOW_MOUSE_ENTER:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->window.windowID);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_ENTER, false
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_ENTER, stream, false
         );
         break;
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->window.windowID);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_LEAVE, false
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_MOUSE_LEAVE, stream, false
         );
         break;
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESIZED:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->window.windowID);
         vdi_stream_client__input_queue_command(
-            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED, false
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED, stream, false
         );
         break;
     default:
         break;
     }
 
+    parsec_context->active_stream = stream;
     vdi_stream_client__input_send_message(parsec_context, &pmsg);
 }
 

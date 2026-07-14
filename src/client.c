@@ -75,6 +75,9 @@ vdi_stream_client__usage(char *program_name)
         "  --height PIXELS\n"
         "      vertical resolution (default: host)\n"
         "\n"
+        "  --monitors COUNT\n"
+        "      request 1-%d host monitors streams (default: 1)\n"
+        "\n"
         "Client options:\n"
         "  --no-upnp\n"
         "      disable UPnP NAT traversal\n"
@@ -125,7 +128,7 @@ vdi_stream_client__usage(char *program_name)
         "      display render stats every SECONDS seconds\n"
         "\n"
         "Report bugs to <%s>.\n",
-        program_name, PACKAGE_BUGREPORT
+        program_name, NUM_VSTREAMS, PACKAGE_BUGREPORT
     );
 
     /* Return success after printing help. */
@@ -210,6 +213,7 @@ main(int argc, char **argv)
     Sint64 speed;
     Sint64 width;
     Sint64 height;
+    Sint64 monitors;
     Sint64 stats_period;
 
     /* Command-line option identifiers. */
@@ -233,6 +237,7 @@ main(int argc, char **argv)
         OPTION_REDIRECT = 16,
         OPTION_STATS = 17,
         OPTION_NO_DECORATION = 18,
+        OPTION_MONITORS = 19,
     };
 
     struct option long_options[] = {
@@ -251,6 +256,7 @@ main(int argc, char **argv)
         { "speed", required_argument, NULL, OPTION_SPEED },
         { "width", required_argument, NULL, OPTION_WIDTH },
         { "height", required_argument, NULL, OPTION_HEIGHT },
+        { "monitors", required_argument, NULL, OPTION_MONITORS },
 
         /* Client options. */
         { "video-decoder", required_argument, NULL, OPTION_VIDEO_DECODER },
@@ -281,6 +287,7 @@ main(int argc, char **argv)
     /* Parsec defaults. */
     vdi_config->timeout = 5000;
     vdi_config->speed = 100;
+    vdi_config->monitors = 1;
 
     /* Client defaults. */
     vdi_config->video_decoder = VDI_VIDEO_DECODER_HW_HEVC_444;
@@ -402,6 +409,22 @@ main(int argc, char **argv)
                 goto error;
             }
             vdi_config->height = height;
+            continue;
+        case OPTION_MONITORS:
+            monitors = SDL_strtol(optarg, &endptr, 10);
+            if (endptr == optarg || *endptr != '\0' ||
+                (monitors != 1 && monitors != NUM_VSTREAMS)) {
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid monitors: %s (expected 1 or %d)\n",
+                    program_name, optarg, NUM_VSTREAMS
+                );
+                SDL_LogError(
+                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
+                    program_name
+                );
+                goto error;
+            }
+            vdi_config->monitors = (Uint16)monitors;
             continue;
 
         /* Client options. */

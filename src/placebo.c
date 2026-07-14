@@ -161,11 +161,11 @@ vdi_stream_client__placebo_release_target(struct vdi_stream_client__placebo_s *p
  * frame reference to it before dimensions or render paths change. */
 static void
 vdi_stream_client__placebo_target_destroy(
-    struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo
+    struct vdi_stream_client__output_s *output, struct vdi_stream_client__placebo_s *placebo
 )
 {
-    if (parsec_context->frame_video_texture == placebo->texture) {
-        parsec_context->frame_video_texture = NULL;
+    if (output->frame_video_texture == placebo->texture) {
+        output->frame_video_texture = NULL;
     }
 
     vdi_stream_client__placebo_release_target(placebo);
@@ -866,7 +866,7 @@ vdi_stream_client__placebo_source_upload(
  * current frame size. The created texture is later sampled by SDL's renderer. */
 static bool
 vdi_stream_client__placebo_target_create(
-    struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo,
+    struct vdi_stream_client__output_s *output, struct vdi_stream_client__placebo_s *placebo,
     Sint32 width, Sint32 height
 )
 {
@@ -882,7 +882,7 @@ vdi_stream_client__placebo_target_create(
         return true;
     }
 
-    vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+    vdi_stream_client__placebo_target_destroy(output, placebo);
     rgba = pl_find_named_fmt(placebo->vulkan->gpu, "rgba8");
     if (rgba == NULL || (rgba->caps & PL_FMT_CAP_RENDERABLE) == 0 ||
         (rgba->caps & PL_FMT_CAP_SAMPLEABLE) == 0) {
@@ -903,13 +903,13 @@ vdi_stream_client__placebo_target_create(
     if (image == VK_NULL_HANDLE || format != VK_FORMAT_R8G8B8A8_UNORM ||
         (usage & VK_IMAGE_USAGE_SAMPLED_BIT) == 0 ||
         !vdi_stream_client__placebo_hold_target(placebo)) {
-        vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+        vdi_stream_client__placebo_target_destroy(output, placebo);
         return false;
     }
 
     props = SDL_CreateProperties();
     if (props == 0) {
-        vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+        vdi_stream_client__placebo_target_destroy(output, placebo);
         return false;
     }
     configured = SDL_SetNumberProperty(
@@ -924,11 +924,11 @@ vdi_stream_client__placebo_target_create(
                      props, SDL_PROP_TEXTURE_CREATE_VULKAN_TEXTURE_NUMBER, (Sint64)(uintptr_t)image
                  );
     if (configured) {
-        placebo->texture = SDL_CreateTextureWithProperties(parsec_context->renderer, props);
+        placebo->texture = SDL_CreateTextureWithProperties(output->renderer, props);
     }
     SDL_DestroyProperties(props);
     if (placebo->texture == NULL) {
-        vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+        vdi_stream_client__placebo_target_destroy(output, placebo);
         return false;
     }
 
@@ -941,10 +941,12 @@ vdi_stream_client__placebo_target_create(
  * record a stats fallback. Later frames use the Vulkan upload fallback. */
 static void
 vdi_stream_client__placebo_disable(
-    struct parsec_context_s *parsec_context, struct vdi_stream_client__placebo_s *placebo,
+    struct vdi_stream_client__output_s *output, struct vdi_stream_client__placebo_s *placebo,
     const char *reason
 )
 {
+    struct parsec_context_s *parsec_context = output->parsec_context;
+
     if (!placebo->direct_disabled) {
         SDL_LogWarn(
             SDL_LOG_CATEGORY_APPLICATION,
@@ -961,8 +963,9 @@ vdi_stream_client__placebo_disable(
  * the shared Vulkan renderer, SDL renderer wrapper, timeline semaphore, and
  * capability flags needed for VA-API DRM PRIME rendering. */
 bool
-vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
+vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output)
 {
+    struct parsec_context_s *parsec_context;
     struct vdi_stream_client__placebo_s *placebo;
     SDL_PropertiesID props = 0;
     const char *const *extensions;
@@ -971,16 +974,17 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
     char failure[256] = "unknown failure";
     bool configured;
 
-    if (parsec_context == NULL || parsec_context->window == NULL ||
-        (SDL_GetWindowFlags(parsec_context->window) & SDL_WINDOW_VULKAN) == 0) {
+    if (output == NULL || output->parsec_context == NULL || output->window == NULL ||
+        (SDL_GetWindowFlags(output->window) & SDL_WINDOW_VULKAN) == 0) {
         return false;
     }
+    parsec_context = output->parsec_context;
 
     placebo = SDL_calloc(1, sizeof(*placebo));
     if (placebo == NULL) {
         return false;
     }
-    parsec_context->placebo = placebo;
+    output->placebo = placebo;
 
     placebo->log = pl_log_create(
         PL_API_VER,
@@ -1003,7 +1007,7 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
     );
     if (placebo->instance == NULL ||
         !SDL_Vulkan_CreateSurface(
-            parsec_context->window, placebo->instance->instance, NULL, &placebo->surface
+            output->window, placebo->instance->instance, NULL, &placebo->surface
         )) {
         SDL_strlcpy(failure, "Vulkan instance or Wayland surface creation failed", sizeof(failure));
         goto error;
@@ -1056,40 +1060,39 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
         );
         goto error;
     }
-    configured = SDL_SetStringProperty(props, SDL_PROP_RENDERER_CREATE_NAME_STRING, "vulkan") &&
-                 SDL_SetPointerProperty(
-                     props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, parsec_context->window
-                 ) &&
-                 SDL_SetPointerProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_INSTANCE_POINTER,
-                     (void *)(uintptr_t)placebo->vulkan->instance
-                 ) &&
-                 SDL_SetNumberProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_SURFACE_NUMBER,
-                     (Sint64)(uintptr_t)placebo->surface
-                 ) &&
-                 SDL_SetPointerProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_PHYSICAL_DEVICE_POINTER,
-                     (void *)(uintptr_t)placebo->vulkan->phys_device
-                 ) &&
-                 SDL_SetPointerProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_DEVICE_POINTER,
-                     (void *)(uintptr_t)placebo->vulkan->device
-                 ) &&
-                 SDL_SetNumberProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_GRAPHICS_QUEUE_FAMILY_INDEX_NUMBER,
-                     placebo->vulkan->queue_graphics.index
-                 ) &&
-                 SDL_SetNumberProperty(
-                     props, SDL_PROP_RENDERER_CREATE_VULKAN_PRESENT_QUEUE_FAMILY_INDEX_NUMBER,
-                     placebo->vulkan->queue_graphics.index
-                 );
+    configured =
+        SDL_SetStringProperty(props, SDL_PROP_RENDERER_CREATE_NAME_STRING, "vulkan") &&
+        SDL_SetPointerProperty(props, SDL_PROP_RENDERER_CREATE_WINDOW_POINTER, output->window) &&
+        SDL_SetPointerProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_INSTANCE_POINTER,
+            (void *)(uintptr_t)placebo->vulkan->instance
+        ) &&
+        SDL_SetNumberProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_SURFACE_NUMBER,
+            (Sint64)(uintptr_t)placebo->surface
+        ) &&
+        SDL_SetPointerProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_PHYSICAL_DEVICE_POINTER,
+            (void *)(uintptr_t)placebo->vulkan->phys_device
+        ) &&
+        SDL_SetPointerProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_DEVICE_POINTER,
+            (void *)(uintptr_t)placebo->vulkan->device
+        ) &&
+        SDL_SetNumberProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_GRAPHICS_QUEUE_FAMILY_INDEX_NUMBER,
+            placebo->vulkan->queue_graphics.index
+        ) &&
+        SDL_SetNumberProperty(
+            props, SDL_PROP_RENDERER_CREATE_VULKAN_PRESENT_QUEUE_FAMILY_INDEX_NUMBER,
+            placebo->vulkan->queue_graphics.index
+        );
     if (configured) {
-        parsec_context->renderer = SDL_CreateRendererWithProperties(props);
+        output->renderer = SDL_CreateRendererWithProperties(props);
     }
     SDL_DestroyProperties(props);
     props = 0;
-    if (parsec_context->renderer == NULL) {
+    if (output->renderer == NULL) {
         SDL_snprintf(
             failure, sizeof(failure), "SDL Vulkan renderer creation failed: %s", SDL_GetError()
         );
@@ -1099,7 +1102,7 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
     /* A resolution-change reset rebuilds the renderer; keep its re-initialization
      * silent by skipping the one-time mode banners and marking the per-frame
      * messages as already logged. */
-    if (parsec_context->silent_reinit) {
+    if (output->silent_reinit) {
         placebo->direct_logged = true;
         placebo->upload_logged = true;
     } else {
@@ -1123,7 +1126,7 @@ vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context)
 
 error:
     SDL_DestroyProperties(props);
-    vdi_stream_client__placebo_destroy(parsec_context);
+    vdi_stream_client__placebo_destroy(output);
     SDL_SetError("%s", failure);
     return false;
 }
@@ -1133,11 +1136,12 @@ error:
  * publishes the SDL texture that now contains the rendered RGB frame. */
 bool
 vdi_stream_client__placebo_render(
-    struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image,
+    struct vdi_stream_client__output_s *output, const ParsecFrame *frame, const void *image,
     bool *handled
 )
 {
-    struct vdi_stream_client__placebo_s *placebo = parsec_context->placebo;
+    struct parsec_context_s *parsec_context = output->parsec_context;
+    struct vdi_stream_client__placebo_s *placebo = output->placebo;
     struct vdi_stream_client__placebo_source_s imported_source = { 0 };
     struct pl_frame target = {
         .num_planes = 1,
@@ -1166,15 +1170,13 @@ vdi_stream_client__placebo_render(
     stage_start_ns = parsec_context->stats_enabled ? SDL_GetTicksNS() : 0;
     av_frame = vdi_stream_client__parsec_ffmpeg_frame_ref(frame, image);
     if (av_frame == NULL || av_frame->format != AV_PIX_FMT_VAAPI) {
-        vdi_stream_client__placebo_disable(parsec_context, placebo, "invalid hardware frame");
+        vdi_stream_client__placebo_disable(output, placebo, "invalid hardware frame");
         goto done;
     }
     if (!vdi_stream_client__placebo_target_create(
-            parsec_context, placebo, av_frame->width, av_frame->height
+            output, placebo, av_frame->width, av_frame->height
         )) {
-        vdi_stream_client__placebo_disable(
-            parsec_context, placebo, "Vulkan target creation failed"
-        );
+        vdi_stream_client__placebo_disable(output, placebo, "Vulkan target creation failed");
         goto done;
     }
 
@@ -1183,7 +1185,7 @@ vdi_stream_client__placebo_render(
         imported = vdi_stream_client__placebo_source_map(placebo, av_frame, &imported_source);
         if (!imported) {
             vdi_stream_client__placebo_disable(
-                parsec_context, placebo,
+                output, placebo,
                 placebo->linear_import
                     ? placebo->import_failure
                     : "DMA-BUF import failed, possibly due to a hybrid-GPU mismatch"
@@ -1205,17 +1207,20 @@ vdi_stream_client__placebo_render(
     rendered =
         pl_render_image(placebo->renderer, &imported_source.frame, &target, &pl_render_fast_params);
     if (!vdi_stream_client__placebo_hold_target(placebo)) {
-        vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+        vdi_stream_client__placebo_target_destroy(output, placebo);
         rendered = false;
     }
     vdi_stream_client__placebo_source_unmap(placebo, &imported_source);
     if (!rendered) {
         rendered = false;
-        vdi_stream_client__placebo_disable(parsec_context, placebo, "Vulkan rendering failed");
+        vdi_stream_client__placebo_disable(output, placebo, "Vulkan rendering failed");
         goto done;
     }
 
-    parsec_context->frame_video_texture = placebo->texture;
+    output->frame_video_texture = placebo->texture;
+    output->texture_width = placebo->width;
+    output->texture_height = placebo->height;
+    output->pixel_format_video = SDL_PIXELFORMAT_RGBA32;
     if (placebo->direct_disabled && !placebo->upload_logged) {
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION,
@@ -1241,25 +1246,25 @@ done:
 }
 
 /* Destroy the libplacebo bridge, SDL renderer wrapper, Vulkan surface, and all
- * target resources owned by parsec_context->placebo. */
+ * target resources owned by output->placebo. */
 void
-vdi_stream_client__placebo_destroy(struct parsec_context_s *parsec_context)
+vdi_stream_client__placebo_destroy(struct vdi_stream_client__output_s *output)
 {
     struct vdi_stream_client__placebo_s *placebo;
 
-    if (parsec_context == NULL || parsec_context->placebo == NULL) {
+    if (output == NULL || output->placebo == NULL) {
         return;
     }
-    placebo = parsec_context->placebo;
+    placebo = output->placebo;
 
-    vdi_stream_client__placebo_target_destroy(parsec_context, placebo);
+    vdi_stream_client__placebo_target_destroy(output, placebo);
     if (placebo->vulkan != NULL) {
         pl_vulkan_sem_destroy(placebo->vulkan->gpu, &placebo->ready);
     }
     pl_renderer_destroy(&placebo->renderer);
 
-    SDL_DestroyRenderer(parsec_context->renderer);
-    parsec_context->renderer = NULL;
+    SDL_DestroyRenderer(output->renderer);
+    output->renderer = NULL;
 
     pl_vulkan_destroy(&placebo->vulkan);
     if (placebo->surface != VK_NULL_HANDLE && placebo->instance != NULL) {
@@ -1268,5 +1273,5 @@ vdi_stream_client__placebo_destroy(struct parsec_context_s *parsec_context)
     pl_vk_inst_destroy(&placebo->instance);
     pl_log_destroy(&placebo->log);
     SDL_free(placebo);
-    parsec_context->placebo = NULL;
+    output->placebo = NULL;
 }

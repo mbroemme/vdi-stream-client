@@ -59,6 +59,44 @@ struct vdi_stream_client__placebo_s;
 /* define parsec messages. */
 #define PARSEC_CLIPBOARD_MSG 7
 
+/* Per-video-stream SDL and renderer state. Stream 0 keeps the historical single
+ * window behavior; additional streams allocate this state dynamically when the
+ * host exposes another monitor. */
+struct vdi_stream_client__output_s
+{
+    struct parsec_context_s *parsec_context;
+    Uint8 stream;
+    bool active;
+    bool decoder;
+    bool focus;
+    bool hidden;
+    bool hidden_drag;
+    bool relative;
+    bool cursor_grab;
+
+    SDL_Window *window;
+    SDL_Renderer *renderer;
+    SDL_Cursor *cursor;
+    Uint32 window_id;
+    Sint32 window_width;
+    Sint32 window_height;
+    Sint32 requested_width;
+    Sint32 requested_height;
+
+    SDL_Surface *surface_ttf;
+    SDL_Texture *texture_ttf;
+    char overlay_text[32];
+    SDL_Texture *texture_video;
+    SDL_Texture *frame_video_texture;
+    struct vdi_stream_client__placebo_s *placebo;
+    bool silent_reinit;
+    bool frame_video_updated;
+    SDL_PixelFormat pixel_format_video;
+    Sint32 texture_width;
+    Sint32 texture_height;
+    Uint64 next_overlay_tick;
+};
+
 /* parsec configuration. */
 struct parsec_context_s
 {
@@ -71,14 +109,11 @@ struct parsec_context_s
     atomic_bool input_force_redraw;
     atomic_bool input_relative;
     atomic_bool input_relative_mouse;
+    atomic_bool input_relative_stream[NUM_VSTREAMS];
+    atomic_bool input_relative_mouse_stream[NUM_VSTREAMS];
     atomic_bool input_pressed;
     atomic_bool input_grab_forced;
     bool decoder;
-    bool focus;
-    bool hidden;
-    bool hidden_drag;
-    bool relative;
-    bool cursor_grab;
 #ifdef HAVE_LIBPARSEC
     Parsec *parsec;
 #else
@@ -88,26 +123,9 @@ struct parsec_context_s
     ParsecStatus stream_error;
 
     /* video. */
-    SDL_Window *window;
-    SDL_Renderer *renderer;
-    SDL_Cursor *cursor;
-    Sint32 window_width;
-    Sint32 window_height;
-    Sint32 requested_width;
-    Sint32 requested_height;
-
-    /* sdl textures for rendering. */
-    SDL_Surface *surface_ttf;
-    SDL_Texture *texture_ttf;
-    char overlay_text[32];
-    SDL_Texture *texture_video;
-    SDL_Texture *frame_video_texture;
-    struct vdi_stream_client__placebo_s *placebo;
-    bool silent_reinit;
-    bool frame_video_updated;
-    SDL_PixelFormat pixel_format_video;
-    Sint32 texture_width;
-    Sint32 texture_height;
+    struct vdi_stream_client__output_s outputs[NUM_VSTREAMS];
+    Uint8 monitors;
+    Uint8 active_stream;
     TTF_Font *font;
 
     /* audio. */
@@ -120,7 +138,6 @@ struct parsec_context_s
     /* timeouts. */
     Uint32 timeout;
     Uint32 render_timeout;
-    Uint64 next_overlay_tick;
 
     /* render stats. */
     Uint16 stats_enabled;

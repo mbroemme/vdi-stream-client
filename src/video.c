@@ -41,12 +41,13 @@
  * place whenever render statistics are enabled. */
 static bool
 vdi_stream_client__video_render_texture(
-    struct parsec_context_s *parsec_context, SDL_Texture *texture, const SDL_FRect *src,
+    struct vdi_stream_client__output_s *output, SDL_Texture *texture, const SDL_FRect *src,
     const SDL_FRect *dst
 )
 {
+    struct parsec_context_s *parsec_context = output->parsec_context;
     Uint64 render_start_ns = parsec_context->stats_enabled ? SDL_GetTicksNS() : 0;
-    bool rendered = SDL_RenderTexture(parsec_context->renderer, texture, src, dst);
+    bool rendered = SDL_RenderTexture(output->renderer, texture, src, dst);
 
     if (parsec_context->stats_enabled) {
         parsec_context->stats_renders++;
@@ -58,10 +59,11 @@ vdi_stream_client__video_render_texture(
 /* Present the SDL renderer and account for both attempted and successful
  * presents. The caller still logs SDL errors because it knows the context. */
 static bool
-vdi_stream_client__video_present(struct parsec_context_s *parsec_context)
+vdi_stream_client__video_present(struct vdi_stream_client__output_s *output)
 {
+    struct parsec_context_s *parsec_context = output->parsec_context;
     Uint64 present_start_ns = parsec_context->stats_enabled ? SDL_GetTicksNS() : 0;
-    bool presented = SDL_RenderPresent(parsec_context->renderer);
+    bool presented = SDL_RenderPresent(output->renderer);
 
     if (parsec_context->stats_enabled) {
         parsec_context->stats_present_calls++;
@@ -107,7 +109,7 @@ vdi_stream_client__video_format(
  * and format. Recreating here keeps the hot upload path focused on pixels. */
 static bool
 vdi_stream_client__video_texture(
-    struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image
+    struct vdi_stream_client__output_s *output, const ParsecFrame *frame, const void *image
 )
 {
     SDL_PixelFormat pixel_format;
@@ -118,7 +120,7 @@ vdi_stream_client__video_texture(
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Unsupported video format: %d\n", frame->format);
         return false;
     }
-    if (parsec_context->renderer == NULL) {
+    if (output->renderer == NULL) {
         return false;
     }
     if (frame->fullWidth == 0 || frame->fullHeight == 0 || frame->fullWidth > (Uint32)INT_MAX ||
@@ -130,32 +132,31 @@ vdi_stream_client__video_texture(
         return false;
     }
 
-    if (parsec_context->texture_video != NULL &&
-        parsec_context->texture_width == (Sint32)frame->fullWidth &&
-        parsec_context->texture_height == (Sint32)frame->fullHeight &&
-        parsec_context->pixel_format_video == pixel_format) {
+    if (output->texture_video != NULL && output->texture_width == (Sint32)frame->fullWidth &&
+        output->texture_height == (Sint32)frame->fullHeight &&
+        output->pixel_format_video == pixel_format) {
         return true;
     }
 
-    format_changed = parsec_context->pixel_format_video != pixel_format;
-    if (parsec_context->frame_video_texture == parsec_context->texture_video) {
-        parsec_context->frame_video_texture = NULL;
+    format_changed = output->pixel_format_video != pixel_format;
+    if (output->frame_video_texture == output->texture_video) {
+        output->frame_video_texture = NULL;
     }
-    SDL_DestroyTexture(parsec_context->texture_video);
-    parsec_context->texture_video = SDL_CreateTexture(
-        parsec_context->renderer, pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth,
+    SDL_DestroyTexture(output->texture_video);
+    output->texture_video = SDL_CreateTexture(
+        output->renderer, pixel_format, SDL_TEXTUREACCESS_STREAMING, frame->fullWidth,
         frame->fullHeight
     );
-    if (parsec_context->texture_video == NULL) {
+    if (output->texture_video == NULL) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "Video texture creation failed: %s\n", SDL_GetError()
         );
         return false;
     }
 
-    parsec_context->texture_width = frame->fullWidth;
-    parsec_context->texture_height = frame->fullHeight;
-    parsec_context->pixel_format_video = pixel_format;
+    output->texture_width = frame->fullWidth;
+    output->texture_height = frame->fullHeight;
+    output->pixel_format_video = pixel_format;
     if (format_changed) {
         pixel_format_name = SDL_GetPixelFormatName(pixel_format);
         SDL_LogInfo(
@@ -172,7 +173,8 @@ vdi_stream_client__video_texture(
 static void
 vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *image, void *opaque)
 {
-    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    struct vdi_stream_client__output_s *output = (struct vdi_stream_client__output_s *)opaque;
+    struct parsec_context_s *parsec_context = output->parsec_context;
     const Uint8 *pixels = (const Uint8 *)image;
     Uint64 upload_elapsed_ns = 0;
     Uint64 upload_start_ns = 0;
@@ -180,7 +182,7 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
     bool placebo_handled = false;
     bool updated = false;
 
-    if (vdi_stream_client__placebo_render(parsec_context, frame, image, &placebo_handled)) {
+    if (vdi_stream_client__placebo_render(output, frame, image, &placebo_handled)) {
         updated = true;
         goto done;
     }
@@ -188,14 +190,14 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
         goto done;
     }
 
-    if (!vdi_stream_client__video_texture(parsec_context, frame, image)) {
+    if (!vdi_stream_client__video_texture(output, frame, image)) {
         goto done;
     }
 
     if (vdi_stream_client__parsec_ffmpeg_frame_is_descriptor(frame, image)) {
         upload_attempted = true;
         updated = vdi_stream_client__parsec_ffmpeg_frame_update(
-            parsec_context->texture_video, frame, image,
+            output->texture_video, frame, image,
             parsec_context->stats_enabled ? &upload_elapsed_ns : NULL
         );
         goto done;
@@ -209,7 +211,7 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
     switch (frame->format) {
     case FORMAT_NV12:
         if (!SDL_UpdateNVTexture(
-                parsec_context->texture_video, NULL, pixels, frame->fullWidth,
+                output->texture_video, NULL, pixels, frame->fullWidth,
                 pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth
             )) {
             SDL_LogError(
@@ -221,7 +223,7 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
         break;
     case FORMAT_I420:
         if (!SDL_UpdateYUVTexture(
-                parsec_context->texture_video, NULL, pixels, frame->fullWidth,
+                output->texture_video, NULL, pixels, frame->fullWidth,
                 pixels + frame->fullWidth * frame->fullHeight, frame->fullWidth / 2,
                 pixels + frame->fullWidth * frame->fullHeight +
                     (frame->fullWidth / 2) * (frame->fullHeight / 2),
@@ -236,7 +238,7 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
         break;
     case FORMAT_BGRA:
     case FORMAT_RGBA:
-        if (!SDL_UpdateTexture(parsec_context->texture_video, NULL, pixels, frame->fullWidth * 4)) {
+        if (!SDL_UpdateTexture(output->texture_video, NULL, pixels, frame->fullWidth * 4)) {
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "Video texture update failed: %s\n", SDL_GetError()
             );
@@ -250,7 +252,7 @@ vdi_stream_client__frame_video_update(const ParsecFrame *frame, const void *imag
 
 done:
     if (updated && upload_attempted) {
-        parsec_context->frame_video_texture = parsec_context->texture_video;
+        output->frame_video_texture = output->texture_video;
     }
     if (upload_attempted && parsec_context->stats_enabled) {
         parsec_context->stats_uploads++;
@@ -262,7 +264,7 @@ done:
         parsec_context->stats_last_frame_tick = SDL_GetTicks();
     }
     if (updated) {
-        parsec_context->frame_video_updated = true;
+        output->frame_video_updated = true;
     }
     vdi_stream_client__parsec_ffmpeg_frame_release(frame, image);
 }
@@ -272,24 +274,22 @@ done:
 static void
 vdi_stream_client__frame_text(void *opaque)
 {
-    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    struct vdi_stream_client__output_s *output = (struct vdi_stream_client__output_s *)opaque;
     SDL_FRect dst;
 
-    if (parsec_context->texture_ttf == NULL || parsec_context->surface_ttf == NULL) {
+    if (output->texture_ttf == NULL || output->surface_ttf == NULL) {
         return;
     }
 
     /* Calculate position and size to center of window. */
-    dst.x = (parsec_context->window_width - parsec_context->surface_ttf->w) / 2.0f;
-    dst.y = (parsec_context->window_height - parsec_context->surface_ttf->h) / 2.0f;
-    dst.w = parsec_context->surface_ttf->w;
-    dst.h = parsec_context->surface_ttf->h;
+    dst.x = (output->window_width - output->surface_ttf->w) / 2.0f;
+    dst.y = (output->window_height - output->surface_ttf->h) / 2.0f;
+    dst.w = output->surface_ttf->w;
+    dst.h = output->surface_ttf->h;
 
-    SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
-    SDL_RenderClear(parsec_context->renderer);
-    vdi_stream_client__video_render_texture(
-        parsec_context, parsec_context->texture_ttf, NULL, &dst
-    );
+    SDL_SetRenderDrawColor(output->renderer, 0x00, 0x00, 0x00, 0xFF);
+    SDL_RenderClear(output->renderer);
+    vdi_stream_client__video_render_texture(output, output->texture_ttf, NULL, &dst);
 }
 
 /* Poll one Parsec video frame, update the active frame texture, and draw it to
@@ -298,15 +298,15 @@ vdi_stream_client__frame_text(void *opaque)
 static bool
 vdi_stream_client__frame_video(void *opaque, bool force_redraw)
 {
-    struct parsec_context_s *parsec_context = (struct parsec_context_s *)opaque;
+    struct vdi_stream_client__output_s *output = (struct vdi_stream_client__output_s *)opaque;
+    struct parsec_context_s *parsec_context = output->parsec_context;
     ParsecStatus e;
     SDL_FRect src;
 
-    if (parsec_context->requested_width != parsec_context->window_width ||
-        parsec_context->requested_height != parsec_context->window_height) {
+    if (output->requested_width != output->window_width ||
+        output->requested_height != output->window_height) {
         e = ParsecClientSetDimensions(
-            parsec_context->parsec, DEFAULT_STREAM, parsec_context->window_width,
-            parsec_context->window_height, 1
+            parsec_context->parsec, output->stream, output->window_width, output->window_height, 1
         );
         if (e != PARSEC_OK) {
             if (e < 0) {
@@ -316,15 +316,15 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
             }
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Set dimensions failed with code: %d\n", e);
         } else {
-            parsec_context->requested_width = parsec_context->window_width;
-            parsec_context->requested_height = parsec_context->window_height;
+            output->requested_width = output->window_width;
+            output->requested_height = output->window_height;
         }
     }
 
-    parsec_context->frame_video_updated = false;
+    output->frame_video_updated = false;
     e = ParsecClientPollFrame(
-        parsec_context->parsec, DEFAULT_STREAM, vdi_stream_client__frame_video_update,
-        parsec_context->render_timeout, parsec_context
+        parsec_context->parsec, output->stream, vdi_stream_client__frame_video_update,
+        parsec_context->render_timeout, output
     );
     if (e < 0) {
         parsec_context->stream_error = e;
@@ -332,24 +332,22 @@ vdi_stream_client__frame_video(void *opaque, bool force_redraw)
         return false;
     }
 
-    if (!force_redraw && !parsec_context->frame_video_updated) {
+    if (!force_redraw && !output->frame_video_updated) {
         return false;
     }
 
-    SDL_SetRenderDrawColor(parsec_context->renderer, 0x00, 0x00, 0x00, 0xFF);
-    SDL_RenderClear(parsec_context->renderer);
+    SDL_SetRenderDrawColor(output->renderer, 0x00, 0x00, 0x00, 0xFF);
+    SDL_RenderClear(output->renderer);
 
-    if (parsec_context->frame_video_texture == NULL) {
+    if (output->frame_video_texture == NULL) {
         return force_redraw;
     }
 
     src.x = 0.0f;
     src.y = 0.0f;
-    src.w = parsec_context->window_width;
-    src.h = parsec_context->window_height;
-    vdi_stream_client__video_render_texture(
-        parsec_context, parsec_context->frame_video_texture, &src, NULL
-    );
+    src.w = output->texture_width;
+    src.h = output->texture_height;
+    vdi_stream_client__video_render_texture(output, output->frame_video_texture, &src, NULL);
     return true;
 }
 
@@ -364,12 +362,12 @@ vdi_stream_client__video_window_flags(bool acceleration)
 /* Initialize the renderer for the already-created window. The Vulkan path tries
  * libplacebo first so VA-API frames can be sampled without CPU copies. */
 bool
-vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acceleration)
+vdi_stream_client__video_init(struct vdi_stream_client__output_s *output, bool acceleration)
 {
     const char *renderer_name;
 
-    if (acceleration && (SDL_GetWindowFlags(parsec_context->window) & SDL_WINDOW_VULKAN) != 0) {
-        if (!vdi_stream_client__placebo_init(parsec_context)) {
+    if (acceleration && (SDL_GetWindowFlags(output->window) & SDL_WINDOW_VULKAN) != 0) {
+        if (!vdi_stream_client__placebo_init(output)) {
             SDL_LogWarn(
                 SDL_LOG_CATEGORY_APPLICATION,
                 "VA-API zero-copy renderer initialization failed: %s\n", SDL_GetError()
@@ -377,27 +375,27 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
             return false;
         }
     }
-    if (parsec_context->renderer == NULL) {
-        parsec_context->renderer = SDL_CreateRenderer(
-            parsec_context->window,
-            (SDL_GetWindowFlags(parsec_context->window) & SDL_WINDOW_VULKAN) != 0 ? "vulkan" : NULL
+    if (output->renderer == NULL) {
+        output->renderer = SDL_CreateRenderer(
+            output->window,
+            (SDL_GetWindowFlags(output->window) & SDL_WINDOW_VULKAN) != 0 ? "vulkan" : NULL
         );
     }
-    if (parsec_context->renderer == NULL) {
+    if (output->renderer == NULL) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "Renderer creation failed: %s\n", SDL_GetError()
         );
         return false;
     }
 
-    if (!parsec_context->silent_reinit) {
-        renderer_name = SDL_GetRendererName(parsec_context->renderer);
+    if (!output->silent_reinit) {
+        renderer_name = SDL_GetRendererName(output->renderer);
         SDL_LogInfo(
             SDL_LOG_CATEGORY_APPLICATION, "Use %s renderer\n",
             renderer_name != NULL ? renderer_name : "unknown"
         );
     }
-    if (!SDL_SetRenderVSync(parsec_context->renderer, 1)) {
+    if (!SDL_SetRenderVSync(output->renderer, 1)) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "SDL_SetRenderVSync failed: %s\n", SDL_GetError()
         );
@@ -408,15 +406,16 @@ vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acce
 /* Render one main-thread video iteration. Connected sessions draw Parsec video;
  * disconnected sessions periodically redraw the current text overlay. */
 bool
-vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw)
+vdi_stream_client__video_render(struct vdi_stream_client__output_s *output, bool force_redraw)
 {
+    struct parsec_context_s *parsec_context = output->parsec_context;
 
     /* Show Parsec frame. */
     if (vdi_stream_client__context_connected(parsec_context)) {
-        if (!vdi_stream_client__frame_video(parsec_context, force_redraw)) {
+        if (!vdi_stream_client__frame_video(output, force_redraw)) {
             return false;
         }
-        if (!vdi_stream_client__video_present(parsec_context)) {
+        if (!vdi_stream_client__video_present(output)) {
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "SDL_RenderPresent failed: %s\n", SDL_GetError()
             );
@@ -425,15 +424,15 @@ vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool fo
     }
 
     /* Show reconnecting or shutdown text if available. */
-    if (parsec_context->surface_ttf != NULL &&
-        (force_redraw || SDL_GetTicks() >= parsec_context->next_overlay_tick)) {
-        vdi_stream_client__frame_text(parsec_context);
-        if (!vdi_stream_client__video_present(parsec_context)) {
+    if (output->surface_ttf != NULL &&
+        (force_redraw || SDL_GetTicks() >= output->next_overlay_tick)) {
+        vdi_stream_client__frame_text(output);
+        if (!vdi_stream_client__video_present(output)) {
             SDL_LogError(
                 SDL_LOG_CATEGORY_APPLICATION, "SDL_RenderPresent failed: %s\n", SDL_GetError()
             );
         }
-        parsec_context->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
+        output->next_overlay_tick = SDL_GetTicks() + parsec_context->timeout;
         return true;
     }
 
@@ -443,18 +442,18 @@ vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool fo
 /* Release renderer-owned textures and the optional libplacebo Vulkan bridge.
  * The SDL window itself is destroyed by the higher-level event loop. */
 void
-vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context)
+vdi_stream_client__video_destroy(struct vdi_stream_client__output_s *output)
 {
-    SDL_DestroyTexture(parsec_context->texture_ttf);
-    parsec_context->texture_ttf = NULL;
+    SDL_DestroyTexture(output->texture_ttf);
+    output->texture_ttf = NULL;
 
-    SDL_DestroyTexture(parsec_context->texture_video);
-    parsec_context->texture_video = NULL;
-    parsec_context->frame_video_texture = NULL;
+    SDL_DestroyTexture(output->texture_video);
+    output->texture_video = NULL;
+    output->frame_video_texture = NULL;
 
-    vdi_stream_client__placebo_destroy(parsec_context);
-    if (parsec_context->renderer != NULL) {
-        SDL_DestroyRenderer(parsec_context->renderer);
-        parsec_context->renderer = NULL;
+    vdi_stream_client__placebo_destroy(output);
+    if (output->renderer != NULL) {
+        SDL_DestroyRenderer(output->renderer);
+        output->renderer = NULL;
     }
 }
