@@ -965,7 +965,6 @@ vdi_stream_client__placebo_disable(
 bool
 vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output)
 {
-    struct parsec_context_s *parsec_context;
     struct vdi_stream_client__placebo_s *placebo;
     SDL_PropertiesID props = 0;
     const char *const *extensions;
@@ -978,7 +977,6 @@ vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output)
         (SDL_GetWindowFlags(output->window) & SDL_WINDOW_VULKAN) == 0) {
         return false;
     }
-    parsec_context = output->parsec_context;
 
     placebo = SDL_calloc(1, sizeof(*placebo));
     if (placebo == NULL) {

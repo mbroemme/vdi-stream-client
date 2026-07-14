@@ -1654,7 +1654,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 break;
             case CLIENT_EVENT_STREAM:
                 if (event.stream.status < 0 && event.stream.stream != DEFAULT_STREAM &&
-                    event.stream.stream < parsec_context.monitors) {
+                    event.stream.stream < parsec_context.monitors &&
+                    event.stream.stream < NUM_VSTREAMS) {
                     SDL_LogWarn(
                         SDL_LOG_CATEGORY_APPLICATION, "Stream %u failed with code: %d\n",
                         (unsigned int)event.stream.stream, event.stream.status
