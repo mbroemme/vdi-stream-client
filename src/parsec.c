@@ -110,6 +110,22 @@ vdi_stream_client__enable_streams(struct parsec_context_s *parsec_context)
     }
 }
 
+static void
+vdi_stream_client__disable_streams(struct parsec_context_s *parsec_context)
+{
+    for (Uint8 stream = 1; stream < parsec_context->monitors; stream++) {
+        (void)ParsecClientEnableStream(parsec_context->parsec, stream, false);
+    }
+}
+
+static bool
+vdi_stream_client__primary_decoder_ready(const struct parsec_context_s *parsec_context)
+{
+    const ParsecDecoder *decoder = &parsec_context->client_status.decoder[DEFAULT_STREAM];
+
+    return decoder->width > 0 && decoder->height > 0;
+}
+
 static bool
 vdi_stream_client__active_outputs_ready(const struct parsec_context_s *parsec_context)
 {
@@ -169,13 +185,13 @@ vdi_stream_client__parsec_reconnect(
         SDL_Delay(1);
     }
 
+    vdi_stream_client__disable_streams(parsec_context);
     ParsecClientDisconnect(parsec_context->parsec);
     e = ParsecClientConnect(parsec_context->parsec, cfg, vdi_config->session, vdi_config->peer);
     if (e != PARSEC_OK) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Reconnect failed with code: %d\n", e);
     } else {
         parsec_context->stream_error = PARSEC_OK;
-        vdi_stream_client__enable_streams(parsec_context);
     }
     return e;
 }
@@ -888,9 +904,14 @@ vdi_stream_client__handle_connection_status(
     }
 
     if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
+        e == PARSEC_OK && !vdi_stream_client__context_connected(parsec_context) &&
+        vdi_stream_client__primary_decoder_ready(parsec_context)) {
+        vdi_stream_client__enable_streams(parsec_context);
+    }
+
+    if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
         e == PARSEC_OK && !vdi_stream_client__active_outputs_ready(parsec_context)) {
         vdi_stream_client__context_set_connection(parsec_context, false);
-        vdi_stream_client__enable_streams(parsec_context);
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
         return;
     }
