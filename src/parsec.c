@@ -415,6 +415,31 @@ vdi_stream_client__set_relative_mouse_mode(
     );
 }
 
+static void
+vdi_stream_client__window_title(
+    const struct vdi_stream_client__output_s *output, char *title, size_t title_size,
+    const char *hint
+)
+{
+    if (hint == NULL) {
+        SDL_snprintf(title, title_size, "VDI Stream Client #%u", (unsigned int)output->stream + 1u);
+        return;
+    }
+
+    SDL_snprintf(
+        title, title_size, "VDI Stream Client #%u - %s", (unsigned int)output->stream + 1u, hint
+    );
+}
+
+static void
+vdi_stream_client__window_set_title(struct vdi_stream_client__output_s *output, const char *hint)
+{
+    char title[128];
+
+    vdi_stream_client__window_title(output, title, sizeof(title), hint);
+    SDL_SetWindowTitle(output->window, title);
+}
+
 /* Apply a Parsec cursor event to SDL. This updates cursor imagery, visibility,
  * relative mouse mode, and temporary grab behavior needed by hidden or relative
  * remote cursors. */
@@ -475,9 +500,7 @@ vdi_stream_client__cursor(
     if (!SDL_GetWindowRelativeMouseMode(output->window) && cursor->relative) {
         vdi_stream_client__set_relative_mouse_mode(output, true);
         if (!pressed && !grab_forced) {
-            SDL_SetWindowTitle(
-                output->window, "VDI Stream Client (Press Ctrl+Alt to release grab)"
-            );
+            vdi_stream_client__window_set_title(output, "Press Ctrl+Alt to release grab");
         }
     } else if (SDL_GetWindowRelativeMouseMode(output->window) && !cursor->relative) {
         vdi_stream_client__set_relative_mouse_mode(output, false);
@@ -485,7 +508,7 @@ vdi_stream_client__cursor(
             SDL_ShowCursor();
         }
         if (!pressed && !grab_forced && !grab) {
-            SDL_SetWindowTitle(output->window, "VDI Stream Client");
+            vdi_stream_client__window_set_title(output, NULL);
         }
     }
 
@@ -556,7 +579,7 @@ vdi_stream_client__release_grab(struct vdi_stream_client__output_s *output)
         SDL_SetWindowMouseGrab(output->window, false);
     }
     output->cursor_grab = false;
-    SDL_SetWindowTitle(output->window, "VDI Stream Client");
+    vdi_stream_client__window_set_title(output, NULL);
 }
 
 /* Apply main-thread grab changes after a mouse-button press. It starts normal
@@ -572,14 +595,14 @@ vdi_stream_client__handle_mouse_button_down(
 
     if (vdi_config->grab == 1 && !SDL_GetWindowMouseGrab(output->window)) {
         SDL_SetWindowMouseGrab(output->window, true);
-        SDL_SetWindowTitle(output->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+        vdi_stream_client__window_set_title(output, "Press Ctrl+Alt to release grab");
     }
 
     if (output->relative && !SDL_GetWindowRelativeMouseMode(output->window)) {
         SDL_HideCursor();
         vdi_stream_client__cursor_set_grab(output, true, vdi_config->grab, grab_forced);
         vdi_stream_client__set_relative_mouse_mode(output, true);
-        SDL_SetWindowTitle(output->window, "VDI Stream Client (Press Ctrl+Alt to release grab)");
+        vdi_stream_client__window_set_title(output, "Press Ctrl+Alt to release grab");
     }
 
     if (output->hidden && !output->relative) {
@@ -621,9 +644,7 @@ vdi_stream_client__handle_force_grab_enable(
     }
 
     SDL_SetWindowMouseGrab(output->window, true);
-    SDL_SetWindowTitle(
-        output->window, "VDI Stream Client (Press Shift+F12 to release forced grab)"
-    );
+    vdi_stream_client__window_set_title(output, "Press Shift+F12 to release forced grab");
 }
 
 /* Push the current local SDL clipboard text to the Parsec host when clipboard
@@ -1126,13 +1147,9 @@ vdi_stream_client__video_setup(
     struct vdi_stream_client__output_s *output, SDL_WindowFlags window_flags, bool acceleration
 )
 {
-    char title[64];
+    char title[128];
 
-    SDL_snprintf(
-        title, sizeof(title),
-        output->stream == DEFAULT_STREAM ? "VDI Stream Client" : "VDI Stream Client %u",
-        (unsigned int)output->stream + 1u
-    );
+    vdi_stream_client__window_title(output, title, sizeof(title), NULL);
     output->window =
         SDL_CreateWindow(title, output->window_width, output->window_height, window_flags);
     if (output->window == NULL) {
