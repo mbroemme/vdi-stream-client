@@ -103,10 +103,31 @@ vdi_stream_client__stats_avg_ms(Uint64 ns, Uint64 calls)
 }
 
 static void
-vdi_stream_client__enable_streams(struct parsec_context_s *parsec_context)
+vdi_stream_client__enable_streams(
+    struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
+)
 {
-    for (Uint8 stream = 1; stream < parsec_context->monitors; stream++) {
-        (void)ParsecClientEnableStream(parsec_context->parsec, stream, true);
+    for (Uint8 stream = 1; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
+        ParsecStatus e = ParsecClientEnableStream(parsec_context->parsec, stream, true);
+
+        if (e != PARSEC_OK || !vdi_config->monitor_resolution[stream]) {
+            continue;
+        }
+        e = ParsecClientSetDimensions(
+            parsec_context->parsec, stream, vdi_config->monitor_width[stream],
+            vdi_config->monitor_height[stream], 1
+        );
+        if (e != PARSEC_OK) {
+            SDL_LogWarn(
+                SDL_LOG_CATEGORY_APPLICATION,
+                "Monitor %u resolution override failed with code: %d\n", (unsigned int)stream + 1u,
+                e
+            );
+        } else {
+            parsec_context->outputs[stream].requested_width = vdi_config->monitor_width[stream];
+            parsec_context->outputs[stream].requested_height = vdi_config->monitor_height[stream];
+        }
     }
 }
 
@@ -129,7 +150,8 @@ vdi_stream_client__primary_decoder_ready(const struct parsec_context_s *parsec_c
 static bool
 vdi_stream_client__active_outputs_ready(const struct parsec_context_s *parsec_context)
 {
-    for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
+    for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
         const struct vdi_stream_client__output_s *output = &parsec_context->outputs[stream];
         const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
 
@@ -138,6 +160,48 @@ vdi_stream_client__active_outputs_ready(const struct parsec_context_s *parsec_co
         }
     }
     return true;
+}
+
+static bool
+vdi_stream_client__monitor_resolutions_ready(
+    const struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
+)
+{
+    for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
+        const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
+
+        if (vdi_config->monitor_resolution[stream]) {
+            continue;
+        }
+        if (decoder->width == 0 || decoder->height == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void
+vdi_stream_client__log_monitor_resolutions(
+    const struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
+)
+{
+    for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
+        Sint32 width = parsec_context->client_status.decoder[stream].width;
+        Sint32 height = parsec_context->client_status.decoder[stream].height;
+
+        if (vdi_config->monitor_resolution[stream]) {
+            width = vdi_config->monitor_width[stream];
+            height = vdi_config->monitor_height[stream];
+        }
+        if (width > 0 && height > 0) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "Use monitor %u resolution %dx%d\n",
+                (unsigned int)stream + 1u, width, height
+            );
+        }
+    }
 }
 
 /* Reset per-period render counters after a stats line is emitted. Counters that
@@ -668,7 +732,8 @@ vdi_stream_client__handle_clipboard_update(struct parsec_context_s *parsec_conte
 static void vdi_stream_client__window_enforce_size(SDL_Window *window, Sint32 width, Sint32 height);
 static void vdi_stream_client__output_destroy(struct vdi_stream_client__output_s *output);
 static bool vdi_stream_client__sync_outputs(
-    struct parsec_context_s *parsec_context, SDL_WindowFlags window_flags, bool hardware_decoding
+    struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config,
+    SDL_WindowFlags window_flags, bool hardware_decoding
 );
 
 /* Execute one command produced by the input worker. Commands that need SDL
@@ -927,7 +992,7 @@ vdi_stream_client__handle_connection_status(
     if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
         e == PARSEC_OK && !vdi_stream_client__context_connected(parsec_context) &&
         vdi_stream_client__primary_decoder_ready(parsec_context)) {
-        vdi_stream_client__enable_streams(parsec_context);
+        vdi_stream_client__enable_streams(parsec_context, vdi_config);
     }
 
     if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
@@ -1094,7 +1159,7 @@ vdi_stream_client__resolution_reset(
         parsec_context->stream_error = e;
         return;
     }
-    vdi_stream_client__enable_streams(parsec_context);
+    vdi_stream_client__enable_streams(parsec_context, vdi_config);
 
     while (!parsec_context->decoder && wait_time < vdi_config->timeout) {
         e = ParsecClientGetStatus(parsec_context->parsec, &parsec_context->client_status);
@@ -1124,7 +1189,9 @@ vdi_stream_client__resolution_reset(
     }
 
     primary->silent_reinit = true;
-    if (!vdi_stream_client__sync_outputs(parsec_context, window_flags, hardware_decoding)) {
+    if (!vdi_stream_client__sync_outputs(
+            parsec_context, vdi_config, window_flags, hardware_decoding
+        )) {
         primary->silent_reinit = false;
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "Resolution reset renderer rebuild failed: %s\n",
@@ -1214,12 +1281,15 @@ vdi_stream_client__output_create_with_fallback(
 
 static bool
 vdi_stream_client__sync_outputs(
-    struct parsec_context_s *parsec_context, SDL_WindowFlags window_flags, bool hardware_decoding
+    struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config,
+    SDL_WindowFlags window_flags, bool hardware_decoding
 )
 {
     for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
         struct vdi_stream_client__output_s *output = &parsec_context->outputs[stream];
         const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
+        Sint32 target_width = decoder->width;
+        Sint32 target_height = decoder->height;
 
         if (decoder->width == 0 || decoder->height == 0) {
             if (stream != DEFAULT_STREAM && output->active &&
@@ -1229,9 +1299,14 @@ vdi_stream_client__sync_outputs(
             continue;
         }
 
+        if (vdi_config->monitor_resolution[stream]) {
+            target_width = vdi_config->monitor_width[stream];
+            target_height = vdi_config->monitor_height[stream];
+        }
+
         if (!output->active) {
-            output->window_width = decoder->width;
-            output->window_height = decoder->height;
+            output->window_width = target_width;
+            output->window_height = target_height;
             output->decoder = true;
             if (!vdi_stream_client__output_create_with_fallback(
                     output, window_flags, hardware_decoding
@@ -1241,17 +1316,16 @@ vdi_stream_client__sync_outputs(
             continue;
         }
 
-        if (output->window_width != (Sint32)decoder->width ||
-            output->window_height != (Sint32)decoder->height) {
+        if (output->window_width != target_width || output->window_height != target_height) {
             SDL_LogInfo(
-                SDL_LOG_CATEGORY_APPLICATION, "Change monitor %u resolution from %dx%d to %ux%u\n",
+                SDL_LOG_CATEGORY_APPLICATION, "Change monitor %u resolution from %dx%d to %dx%d\n",
                 (unsigned int)stream + 1u, output->window_width, output->window_height,
-                decoder->width, decoder->height
+                target_width, target_height
             );
             vdi_stream_client__window_unlock_size(output->window);
-            vdi_stream_client__window_enforce_size(output->window, decoder->width, decoder->height);
-            output->window_width = decoder->width;
-            output->window_height = decoder->height;
+            vdi_stream_client__window_enforce_size(output->window, target_width, target_height);
+            output->window_width = target_width;
+            output->window_height = target_height;
         }
     }
     return true;
@@ -1281,6 +1355,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     bool hevc444_acceleration = false;
     int unsupported_width = 0;
     int unsupported_height = 0;
+    Uint32 resolution_wait = 0;
+    Uint32 resolution_timeout = 0;
     bool hardware_decoding;
     Uint32 device;
     SDL_Thread *input_thread = NULL;
@@ -1348,17 +1424,17 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         goto error;
     }
 
-    /* Use client resolution if specified. */
-    if (vdi_config->width > 0 && vdi_config->height > 0) {
-        SDL_LogInfo(
-            SDL_LOG_CATEGORY_APPLICATION, "Override resolution %dx%d\n", vdi_config->height,
-            vdi_config->width
-        );
-        cfg.video[DEFAULT_STREAM].resolutionX = vdi_config->width;
-        cfg.video[DEFAULT_STREAM].resolutionY = vdi_config->height;
-    }
-
-    for (Uint8 stream = 0; stream < parsec_context.monitors; stream++) {
+    for (Uint8 stream = 0; stream < parsec_context.monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
+        if (vdi_config->monitor_resolution[stream]) {
+            SDL_LogInfo(
+                SDL_LOG_CATEGORY_APPLICATION, "Override monitor %u resolution %ux%u\n",
+                (unsigned int)stream + 1u, (unsigned int)vdi_config->monitor_width[stream],
+                (unsigned int)vdi_config->monitor_height[stream]
+            );
+            cfg.video[stream].resolutionX = vdi_config->monitor_width[stream];
+            cfg.video[stream].resolutionY = vdi_config->monitor_height[stream];
+        }
         cfg.video[stream].decoderH265 = decoder_policy.hevc;
         cfg.video[stream].decoder444 = 0;
     }
@@ -1473,8 +1549,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 )) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION,
-                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
-                    "to override\n",
+                    "Unsupported VA-API image size %dx%d on this device; use --monitors "
+                    "N:WIDTHxHEIGHT to override\n",
                     unsupported_width, unsupported_height
                 );
                 goto error;
@@ -1507,12 +1583,6 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                         parsec_context.client_status.decoder[DEFAULT_STREAM].color444 ? "4:4:4"
                                                                                       : "4:2:0"
                     );
-                    SDL_LogInfo(
-                        SDL_LOG_CATEGORY_APPLICATION, "Use monitor %u resolution %dx%d\n",
-                        (unsigned int)DEFAULT_STREAM + 1u,
-                        parsec_context.client_status.decoder[DEFAULT_STREAM].width,
-                        parsec_context.client_status.decoder[DEFAULT_STREAM].height
-                    );
                     parsec_context.outputs[DEFAULT_STREAM].window_width =
                         parsec_context.client_status.decoder[DEFAULT_STREAM].width;
                     parsec_context.outputs[DEFAULT_STREAM].window_height =
@@ -1527,8 +1597,8 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                 )) {
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION,
-                    "Unsupported VA-API image size %dx%d on this device; use --width and --height "
-                    "to override\n",
+                    "Unsupported VA-API image size %dx%d on this device; use --monitors "
+                    "N:WIDTHxHEIGHT to override\n",
                     unsupported_width, unsupported_height
                 );
                 goto error;
@@ -1563,20 +1633,31 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         break;
     }
 
-    /* Detect SDL video driver. */
-    video_driver = SDL_GetCurrentVideoDriver();
-    SDL_LogInfo(
-        SDL_LOG_CATEGORY_APPLICATION, "Use %s video\n",
-        video_driver != NULL ? video_driver : "unknown"
-    );
-
     /* Check if connected and decoder initialized. */
     if (!parsec_context.decoder) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Connection failed with code: %d\n", e);
         goto error;
     }
 
-    vdi_stream_client__enable_streams(&parsec_context);
+    vdi_stream_client__enable_streams(&parsec_context, vdi_config);
+    resolution_timeout = vdi_config->timeout < 1000 ? vdi_config->timeout : 1000;
+    while (!vdi_stream_client__monitor_resolutions_ready(&parsec_context, vdi_config) &&
+           resolution_wait < resolution_timeout) {
+        SDL_Delay(25);
+        resolution_wait += 25;
+        e = ParsecClientGetStatus(parsec_context.parsec, &parsec_context.client_status);
+        if (e != PARSEC_OK) {
+            break;
+        }
+    }
+    vdi_stream_client__log_monitor_resolutions(&parsec_context, vdi_config);
+
+    /* Detect SDL video driver. */
+    video_driver = SDL_GetCurrentVideoDriver();
+    SDL_LogInfo(
+        SDL_LOG_CATEGORY_APPLICATION, "Use %s video\n",
+        video_driver != NULL ? video_driver : "unknown"
+    );
 
     hardware_decoding = vdi_stream_client__parsec_ffmpeg_decoder_is_hardware();
     window_flags |= vdi_stream_client__video_window_flags(hardware_decoding);
@@ -1744,7 +1825,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
             idle_start = SDL_GetTicks();
         }
 
-        if (!vdi_stream_client__sync_outputs(&parsec_context, window_flags, hardware_decoding)) {
+        if (!vdi_stream_client__sync_outputs(
+                &parsec_context, vdi_config, window_flags, hardware_decoding
+            )) {
             goto error;
         }
 

@@ -58,34 +58,28 @@ The mouse wheel sensitivity to use, supported range is between 0
 (disable mouse wheel completely) up to 500. The value is in pixel. The
 default value is 100.
 .TP 8
-.B  \-\-width \fIPIXELS\fP
-The host screen and window width to use. The host will change
-resolution either to specified value or - if not supported - to closest
-one which matches. If not used, the client will resize window to current
-configured host width. The value is in pixel.
-.TP 8
-.B  \-\-height \fIPIXELS\fP
-The host screen and window height to use. The host will change
-resolution either to specified value or - if not supported - to closest
-one which matches. If not used, the client will resize window to current
-configured host height. The value is in pixel.
-.TP 8
-.B  \-\-monitors \fICOUNT\fP
+.B  \-\-monitors \fISPEC\fP
 Request host monitor streams. The default is
-.BR 1 .
-The value must be between 1 and
+.BR 1:default .
+Each comma-separated entry must use
+.BR MONITOR:default
+or
+.BR MONITOR:WIDTHxHEIGHT .
+Monitor numbers are 1-based, must be unique, and must be contiguous from
+1. The current Parsec SDK exposes
 .B NUM_VSTREAMS
-inclusive; the current Parsec SDK exposes
-.B NUM_VSTREAMS
-as 2. Stream 0 is always enabled. When more than one monitor stream is
-requested, the client enables the additional stream and creates or destroys
-the matching SDL window dynamically as monitors are added or removed in
-Windows Display Settings. The
-.BR \-\-width
-and
-.BR \-\-height
-options apply only to stream 0; additional monitor sizes follow the host
-configuration.
+as 2, so valid monitor numbers are 1 and 2. The keyword
+.B default
+uses the host display's current/default resolution. A
+.B WIDTHxHEIGHT
+entry requests that native host resolution for the monitor, falling back to
+the closest matching mode if the exact mode is unavailable. Examples:
+.BR 1:default ,
+.BR 1:1920x1080 ,
+.BR 1:1920x1080,2:default .
+When more than one monitor stream is requested, the client enables the
+additional stream and creates or destroys the matching SDL window dynamically
+as monitors are added or removed in Windows Display Settings.
 .SS Client options
 .TP 8
 .B  \-\-no\-upnp
@@ -325,41 +319,33 @@ In the Parsec UI, this host setting is shown as "Resolution".
 
 Parsec hosts expose host-side resolution options that control whether the host
 accepts client-driven resolution requests, and therefore how the
-.BR \-\-width
-and
-.BR \-\-height
-options behave.
+.BR \-\-monitors " " MONITOR:WIDTHxHEIGHT
+resolution override behaves.
 
 When both values are <0>, the host uses "Use Client Resolution", which is the
 default. At connect time the host switches its display to the resolution
 requested by the client, falling back to the closest matching mode if the exact
 value is not in the host display's mode list. This is the mode the
-.BR \-\-width
-and
-.BR \-\-height
-options are designed for: the host display is reconfigured, the encoder
-streams at the requested dimensions, and the SDL window is sized to match.
-Resolution changes requested this way are session-scoped and the host restores
-its original resolution once the last client disconnects.
+.BR \-\-monitors " " MONITOR:WIDTHxHEIGHT
+resolution override is designed for: the host display is reconfigured, the
+encoder streams at the requested dimensions, and the SDL window is sized to
+match. Resolution changes requested this way are session-scoped and the host
+restores its original resolution once the last client disconnects.
 
 When both values are <65535>, the host uses "Keep Host Resolution". The host
 ignores client-driven resolution requests and continues streaming at its own
 current display resolution. With this setting the
-.BR \-\-width
-and
-.BR \-\-height
-options are ignored and the SDL window is sized to the streamed display
-resolution. To change the host resolution under this setting, change it
-directly on the host through the Windows Display Settings or the Parsec
+.BR \-\-monitors " " MONITOR:WIDTHxHEIGHT
+resolution override is ignored and the SDL window is sized to the streamed
+display resolution. To change the host resolution under this setting, change
+it directly on the host through the Windows Display Settings or the Parsec
 overlay.
 
 When other positive values are configured, the host forces that specific
 resolution. The
-.BR \-\-width
-and
-.BR \-\-height
-options are ignored and the SDL window is sized to the forced streamed
-dimensions.
+.BR \-\-monitors " " MONITOR:WIDTHxHEIGHT
+resolution override is ignored and the SDL window is sized to the forced
+streamed dimensions.
 .SH PERFORMANCE TIPS
 Parsec hosts expose several performance-related options that affect
 host-side encoding CPU usage and client-side decoding workload.

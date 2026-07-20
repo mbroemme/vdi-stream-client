@@ -142,13 +142,13 @@ chroma subsampling for sharp and crystal clear text.
 * Host to client resolution sync with automatic window resize. User can change
   resolution in Windows control panel and client polls for the changes and
   adjust client window size.
-* Multi monitor mode with `--monitors COUNT`, requesting 1 to `NUM_VSTREAMS`
+* Multi monitor mode with `--monitors SPEC`, requesting up to `NUM_VSTREAMS`
   host monitor streams. The client enables additional Parsec video streams and
   creates or destroys matching SDL windows dynamically when monitors are added
   or removed in Windows Display Settings.
-* Specify client window size via command line and host will change native
-  resolution to it once the connection has been established. In multi monitor
-  mode, `--width` and `--height` apply to the primary stream only.
+* Specify per-monitor resolution via command line using `--monitors`, for
+  example `--monitors 1:1920x1080,2:default`, and the host will change native
+  resolution once the connection has been established.
 * Configurable mouse wheel sensitivity. User can specify mouse scroll speed via
   command line switch serving different needs and requirements.
 * Modular architecture and can be extended with additional streaming host
