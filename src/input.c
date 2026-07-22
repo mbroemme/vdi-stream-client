@@ -340,6 +340,13 @@ vdi_stream_client__input_handle_event(
             input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_WINDOW_RESIZED, stream, false
         );
         break;
+    case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+        stream = vdi_stream_client__input_stream_for_window(input_context, msg->window.windowID);
+        vdi_stream_client__context_set_input_force_redraw(parsec_context);
+        vdi_stream_client__input_queue_command(
+            input_context, VDI_STREAM_CLIENT_INPUT_COMMAND_QUIT, stream, false
+        );
+        break;
     default:
         break;
     }
