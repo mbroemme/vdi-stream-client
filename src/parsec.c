@@ -165,16 +165,13 @@ vdi_stream_client__primary_decoder_ready(const struct parsec_context_s *parsec_c
 }
 
 static bool
-vdi_stream_client__active_outputs_ready(const struct parsec_context_s *parsec_context)
+vdi_stream_client__active_primary_output_ready(const struct parsec_context_s *parsec_context)
 {
-    for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
-         stream++) {
-        const struct vdi_stream_client__output_s *output = &parsec_context->outputs[stream];
-        const ParsecDecoder *decoder = &parsec_context->client_status.decoder[stream];
+    const struct vdi_stream_client__output_s *output = &parsec_context->outputs[DEFAULT_STREAM];
+    const ParsecDecoder *decoder = &parsec_context->client_status.decoder[DEFAULT_STREAM];
 
-        if (output->active && (decoder->width == 0 || decoder->height == 0)) {
-            return false;
-        }
+    if (output->active && (decoder->width == 0 || decoder->height == 0)) {
+        return false;
     }
     return true;
 }
@@ -1015,7 +1012,7 @@ vdi_stream_client__handle_connection_status(
     }
 
     if (vdi_config->reconnect == 1 && parsec_context->client_status.networkFailure == 0 &&
-        e == PARSEC_OK && !vdi_stream_client__active_outputs_ready(parsec_context)) {
+        e == PARSEC_OK && !vdi_stream_client__active_primary_output_ready(parsec_context)) {
         vdi_stream_client__context_set_connection(parsec_context, false);
         vdi_stream_client__show_connection_overlay(parsec_context, force_redraw, "Reconnecting...");
         return;
