@@ -107,10 +107,25 @@ vdi_stream_client__enable_streams(
     struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
 )
 {
+    Uint32 now = SDL_GetTicks();
+
+    if (parsec_context->stream_enable_next_tick > now) {
+        return;
+    }
+    parsec_context->stream_enable_next_tick = now + 1000;
+
     for (Uint8 stream = 1; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
          stream++) {
-        ParsecStatus e = ParsecClientEnableStream(parsec_context->parsec, stream, true);
+        ParsecStatus e;
 
+        if (parsec_context->stream_enabled[stream]) {
+            continue;
+        }
+
+        e = ParsecClientEnableStream(parsec_context->parsec, stream, true);
+        if (e == PARSEC_OK) {
+            parsec_context->stream_enabled[stream] = true;
+        }
         if (e != PARSEC_OK || !vdi_config->monitor_resolution[stream]) {
             continue;
         }
@@ -134,9 +149,11 @@ vdi_stream_client__enable_streams(
 static void
 vdi_stream_client__disable_streams(struct parsec_context_s *parsec_context)
 {
-    for (Uint8 stream = 1; stream < parsec_context->monitors; stream++) {
+    for (Uint8 stream = 1; stream < parsec_context->monitors && stream < NUM_VSTREAMS; stream++) {
         (void)ParsecClientEnableStream(parsec_context->parsec, stream, false);
+        parsec_context->stream_enabled[stream] = false;
     }
+    parsec_context->stream_enable_next_tick = 0;
 }
 
 static bool
@@ -183,7 +200,7 @@ vdi_stream_client__monitor_resolutions_ready(
 
 static void
 vdi_stream_client__log_monitor_resolutions(
-    const struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
+    struct parsec_context_s *parsec_context, const struct vdi_config_s *vdi_config
 )
 {
     for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
@@ -200,6 +217,7 @@ vdi_stream_client__log_monitor_resolutions(
                 SDL_LOG_CATEGORY_APPLICATION, "Use monitor %u resolution %dx%d\n",
                 (unsigned int)stream + 1u, width, height
             );
+            parsec_context->monitor_resolution_logged[stream] = true;
         }
     }
 }
@@ -237,7 +255,8 @@ vdi_stream_client__parsec_reconnect(
     ParsecStatus e;
 
     vdi_stream_client__context_set_connection(parsec_context, false);
-    for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
+    for (Uint8 stream = 0; stream < parsec_context->monitors && stream < VDI_MONITORS_MAX;
+         stream++) {
         parsec_context->outputs[stream].requested_width = 0;
         parsec_context->outputs[stream].requested_height = 0;
     }
@@ -1308,6 +1327,13 @@ vdi_stream_client__sync_outputs(
             output->window_width = target_width;
             output->window_height = target_height;
             output->decoder = true;
+            if (!parsec_context->monitor_resolution_logged[stream]) {
+                SDL_LogInfo(
+                    SDL_LOG_CATEGORY_APPLICATION, "Use monitor %u resolution %dx%d\n",
+                    (unsigned int)stream + 1u, target_width, target_height
+                );
+                parsec_context->monitor_resolution_logged[stream] = true;
+            }
             if (!vdi_stream_client__output_create_with_fallback(
                     output, window_flags, hardware_decoding
                 )) {
@@ -1777,6 +1803,9 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
         vdi_stream_client__handle_connection_status(
             &parsec_context, vdi_config, &cfg, &last_time, &force_redraw
         );
+        if (vdi_stream_client__context_connected(&parsec_context)) {
+            vdi_stream_client__enable_streams(&parsec_context, vdi_config);
+        }
 
         for (ParsecClientEvent event; ParsecClientPollEvents(parsec_context.parsec, 0, &event);) {
             if (parsec_context.stats_enabled) {
@@ -1801,6 +1830,7 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
                     struct vdi_stream_client__output_s *output =
                         &parsec_context.outputs[event.stream.stream];
 
+                    parsec_context.stream_enabled[event.stream.stream] = false;
                     if (output->active && vdi_stream_client__context_connected(&parsec_context)) {
                         vdi_stream_client__output_destroy(output);
                     }

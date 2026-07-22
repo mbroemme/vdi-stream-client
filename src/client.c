@@ -72,7 +72,7 @@ vdi_stream_client__usage(char *program_name)
         "      mouse wheel sensitivity, 0-500 (default: 100)\n"
         "\n"
         "  --monitors SPEC\n"
-        "      request host monitor streams (default: 1:default)\n"
+        "      request host monitor streams (default: dynamic host monitors)\n"
         "\n"
         "      SPEC format:\n"
         "      MONITOR:default[,MONITOR:WIDTHxHEIGHT]\n"
@@ -396,7 +396,7 @@ main(int argc, char **argv)
     /* Parsec defaults. */
     vdi_config->timeout = 5000;
     vdi_config->speed = 100;
-    vdi_config->monitors = 1;
+    vdi_config->monitors = VDI_MONITORS_MAX;
 
     /* Client defaults. */
     vdi_config->video_decoder = VDI_VIDEO_DECODER_HW_HEVC_444;

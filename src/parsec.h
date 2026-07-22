@@ -121,6 +121,9 @@ struct parsec_context_s
 #endif
     ParsecClientStatus client_status;
     ParsecStatus stream_error;
+    bool stream_enabled[NUM_VSTREAMS];
+    Uint32 stream_enable_next_tick;
+    bool monitor_resolution_logged[NUM_VSTREAMS];
 
     /* video. */
     struct vdi_stream_client__output_s outputs[NUM_VSTREAMS];
