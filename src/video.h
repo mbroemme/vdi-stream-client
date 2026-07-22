@@ -30,11 +30,12 @@
 #include <SDL3/SDL.h>
 
 struct parsec_context_s;
+struct vdi_stream_client__output_s;
 
 /* video rendering. */
 SDL_WindowFlags vdi_stream_client__video_window_flags(bool acceleration);
-bool vdi_stream_client__video_init(struct parsec_context_s *parsec_context, bool acceleration);
-bool vdi_stream_client__video_render(struct parsec_context_s *parsec_context, bool force_redraw);
-void vdi_stream_client__video_destroy(struct parsec_context_s *parsec_context);
+bool vdi_stream_client__video_init(struct vdi_stream_client__output_s *output, bool acceleration);
+bool vdi_stream_client__video_render(struct vdi_stream_client__output_s *output, bool force_redraw);
+void vdi_stream_client__video_destroy(struct vdi_stream_client__output_s *output);
 
 #endif /* VDI_STREAM_CLIENT_VIDEO_H */

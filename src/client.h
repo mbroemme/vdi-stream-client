@@ -28,6 +28,7 @@
 
 /* network includes. */
 #include <arpa/inet.h>
+#include <stdbool.h>
 
 /* define return values. */
 #define VDI_STREAM_CLIENT_SUCCESS (0) /* return value for all functions which success. */
@@ -35,6 +36,7 @@
 
 /* define limits. */
 #define USB_MAX (8) /* maximum number of usb redirects. */
+#define VDI_MONITORS_MAX (2)
 
 typedef union
 {
@@ -56,12 +58,14 @@ typedef struct vdi_config_s
 {
 
     /* parsec options. */
-    char *session;  /* session id for connection. */
-    char *peer;     /* peer id for connection. */
-    Uint32 timeout; /* connection timeout in milliseconds. */
-    Uint16 speed;   /* mouse wheel sensitivity. (0 - 255) */
-    Uint16 width;   /* screen width in pixel. (host resolution is used if not specified) */
-    Uint16 height;  /* screen height in pixel. (host resolution is used if not specified) */
+    char *session;   /* session id for connection. */
+    char *peer;      /* peer id for connection. */
+    Uint32 timeout;  /* connection timeout in milliseconds. */
+    Uint16 speed;    /* mouse wheel sensitivity. (0 - 255) */
+    Uint16 monitors; /* number of Parsec video streams to enable. */
+    bool monitor_resolution[VDI_MONITORS_MAX];
+    Uint16 monitor_width[VDI_MONITORS_MAX];
+    Uint16 monitor_height[VDI_MONITORS_MAX];
 
     /* video codec, color mode and acceleration policy. */
     vdi_video_decoder_e video_decoder;

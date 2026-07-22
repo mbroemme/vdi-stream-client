@@ -37,6 +37,8 @@
 #include <stdint.h>
 #include <string.h>
 
+_Static_assert(VDI_MONITORS_MAX == NUM_VSTREAMS, "VDI monitor parser limit must match Parsec SDK");
+
 /* Print command-line help. The function only reports supported options and
  * returns success; parsing and validation stay in main(). */
 Sint32
@@ -69,11 +71,13 @@ vdi_stream_client__usage(char *program_name)
         "  --speed SPEED\n"
         "      mouse wheel sensitivity, 0-500 (default: 100)\n"
         "\n"
-        "  --width PIXELS\n"
-        "      horizontal resolution (default: host)\n"
+        "  --monitors SPEC\n"
+        "      request host monitor streams (default: dynamic host monitors)\n"
         "\n"
-        "  --height PIXELS\n"
-        "      vertical resolution (default: host)\n"
+        "      SPEC format:\n"
+        "      MONITOR:default[,MONITOR:WIDTHxHEIGHT]\n"
+        "\n"
+        "      monitors must be contiguous from 1\n"
         "\n"
         "Client options:\n"
         "  --no-upnp\n"
@@ -161,6 +165,121 @@ vdi_stream_client__video_decoder_parse(const char *value, vdi_video_decoder_e *v
     return false;
 }
 
+static bool
+vdi_stream_client__parse_monitor_dimension(const char *value, Uint16 *dimension)
+{
+    Sint64 parsed;
+    char *endptr;
+
+    if (value == NULL || value[0] == '\0' || dimension == NULL) {
+        return false;
+    }
+    parsed = SDL_strtoll(value, &endptr, 10);
+    if (endptr == value || *endptr != '\0' || parsed <= 0 || parsed > UINT16_MAX) {
+        return false;
+    }
+    *dimension = (Uint16)parsed;
+    return true;
+}
+
+static bool
+vdi_stream_client__monitors_parse(const char *value, vdi_config_s *vdi_config)
+{
+    bool seen[VDI_MONITORS_MAX] = { 0 };
+    char *spec;
+    char *cursor;
+    char *entry;
+    Uint16 monitors = 0;
+
+    if (value == NULL || value[0] == '\0' || vdi_config == NULL) {
+        return false;
+    }
+    spec = SDL_strdup(value);
+    if (spec == NULL) {
+        return false;
+    }
+    cursor = spec;
+    for (Uint16 stream = 0; stream < VDI_MONITORS_MAX; stream++) {
+        vdi_config->monitor_resolution[stream] = false;
+        vdi_config->monitor_width[stream] = 0;
+        vdi_config->monitor_height[stream] = 0;
+    }
+
+    while ((entry = strsep(&cursor, ",")) != NULL) {
+        char *monitor_value;
+        char *resolution;
+        char *width_value;
+        char *height_value;
+        char *endptr;
+        Sint64 monitor;
+        Uint16 stream;
+
+        if (entry[0] == '\0') {
+            goto error;
+        }
+        resolution = SDL_strchr(entry, ':');
+        if (resolution == NULL || resolution == entry || resolution[1] == '\0') {
+            goto error;
+        }
+        *resolution = '\0';
+        resolution++;
+        monitor_value = entry;
+        monitor = SDL_strtoll(monitor_value, &endptr, 10);
+        if (endptr == monitor_value || *endptr != '\0' || monitor <= 0 ||
+            monitor > VDI_MONITORS_MAX) {
+            goto error;
+        }
+        stream = (Uint16)monitor - 1u;
+        if (seen[stream]) {
+            goto error;
+        }
+        seen[stream] = true;
+        if ((Uint16)monitor > monitors) {
+            monitors = (Uint16)monitor;
+        }
+
+        if (SDL_strcmp(resolution, "default") == 0) {
+            continue;
+        }
+
+        height_value = SDL_strchr(resolution, 'x');
+        if (height_value == NULL || height_value == resolution || height_value[1] == '\0') {
+            goto error;
+        }
+        *height_value = '\0';
+        height_value++;
+        width_value = resolution;
+        if (SDL_strchr(height_value, 'x') != NULL) {
+            goto error;
+        }
+        if (!vdi_stream_client__parse_monitor_dimension(
+                width_value, &vdi_config->monitor_width[stream]
+            ) ||
+            !vdi_stream_client__parse_monitor_dimension(
+                height_value, &vdi_config->monitor_height[stream]
+            )) {
+            goto error;
+        }
+        vdi_config->monitor_resolution[stream] = true;
+    }
+
+    if (monitors == 0) {
+        goto error;
+    }
+    for (Uint16 stream = 0; stream < monitors; stream++) {
+        if (!seen[stream]) {
+            goto error;
+        }
+    }
+    vdi_config->monitors = monitors;
+    SDL_free(spec);
+    return true;
+
+error:
+    SDL_free(spec);
+    return false;
+}
+
 /* Print version, license, and author information for --version without starting
  * SDL, Parsec, or any streaming resources. */
 Sint32
@@ -208,8 +327,6 @@ main(int argc, char **argv)
     Sint64 port;
     Sint64 timeout;
     Sint64 speed;
-    Sint64 width;
-    Sint64 height;
     Sint64 stats_period;
 
     /* Command-line option identifiers. */
@@ -221,8 +338,6 @@ main(int argc, char **argv)
         OPTION_PEER = 4,
         OPTION_TIMEOUT = 5,
         OPTION_SPEED = 6,
-        OPTION_WIDTH = 7,
-        OPTION_HEIGHT = 8,
         OPTION_VIDEO_DECODER = 9,
         OPTION_NO_UPNP = 10,
         OPTION_NO_RECONNECT = 11,
@@ -233,6 +348,7 @@ main(int argc, char **argv)
         OPTION_REDIRECT = 16,
         OPTION_STATS = 17,
         OPTION_NO_DECORATION = 18,
+        OPTION_MONITORS = 19,
     };
 
     struct option long_options[] = {
@@ -249,8 +365,7 @@ main(int argc, char **argv)
         { "peer", required_argument, NULL, OPTION_PEER },
         { "timeout", required_argument, NULL, OPTION_TIMEOUT },
         { "speed", required_argument, NULL, OPTION_SPEED },
-        { "width", required_argument, NULL, OPTION_WIDTH },
-        { "height", required_argument, NULL, OPTION_HEIGHT },
+        { "monitors", required_argument, NULL, OPTION_MONITORS },
 
         /* Client options. */
         { "video-decoder", required_argument, NULL, OPTION_VIDEO_DECODER },
@@ -281,6 +396,7 @@ main(int argc, char **argv)
     /* Parsec defaults. */
     vdi_config->timeout = 5000;
     vdi_config->speed = 100;
+    vdi_config->monitors = VDI_MONITORS_MAX;
 
     /* Client defaults. */
     vdi_config->video_decoder = VDI_VIDEO_DECODER_HW_HEVC_444;
@@ -375,11 +491,13 @@ main(int argc, char **argv)
             }
             vdi_config->speed = speed;
             continue;
-        case OPTION_WIDTH:
-            width = SDL_strtol(optarg, &endptr, 10);
-            if (endptr == optarg || *endptr != '\0' || width < 0 || width > UINT16_MAX) {
+        case OPTION_MONITORS:
+            if (!vdi_stream_client__monitors_parse(optarg, vdi_config)) {
                 SDL_LogError(
-                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid width: %s\n", program_name, optarg
+                    SDL_LOG_CATEGORY_APPLICATION,
+                    "%s: invalid monitors: %s (expected contiguous entries like "
+                    "1:default or 1:1920x1080,2:default)\n",
+                    program_name, optarg
                 );
                 SDL_LogError(
                     SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
@@ -387,21 +505,6 @@ main(int argc, char **argv)
                 );
                 goto error;
             }
-            vdi_config->width = width;
-            continue;
-        case OPTION_HEIGHT:
-            height = SDL_strtol(optarg, &endptr, 10);
-            if (endptr == optarg || *endptr != '\0' || height < 0 || height > UINT16_MAX) {
-                SDL_LogError(
-                    SDL_LOG_CATEGORY_APPLICATION, "%s: invalid height: %s\n", program_name, optarg
-                );
-                SDL_LogError(
-                    SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n",
-                    program_name
-                );
-                goto error;
-            }
-            vdi_config->height = height;
             continue;
 
         /* Client options. */
@@ -717,18 +820,6 @@ main(int argc, char **argv)
         SDL_strlen(vdi_config->session) == 0 || SDL_strlen(vdi_config->peer) == 0) {
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "%s: mandatory arguments missing\n", program_name
-        );
-        SDL_LogError(
-            SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n", program_name
-        );
-        goto error;
-    }
-
-    /* Width and height must be specified together. */
-    if ((vdi_config->width == 0) != (vdi_config->height == 0)) {
-        SDL_LogError(
-            SDL_LOG_CATEGORY_APPLICATION, "%s: --width and --height must be specified together\n",
-            program_name
         );
         SDL_LogError(
             SDL_LOG_CATEGORY_APPLICATION, "Try `%s --help' for more information.\n", program_name

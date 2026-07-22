@@ -93,6 +93,7 @@ System SDL3             | Yes               | No
 Auto Reconnect          | Yes               | No
 Screensaver Integration | Yes               | No
 USB Redirection         | Yes               | No
+Multi Monitor           | Yes               | Yes
 [Color Mode 4:4:4](https://en.wikipedia.org/wiki/Chroma_subsampling)        | Yes               | Yes
 
 # Requirements
@@ -141,8 +142,14 @@ chroma subsampling for sharp and crystal clear text.
 * Host to client resolution sync with automatic window resize. User can change
   resolution in Windows control panel and client polls for the changes and
   adjust client window size.
-* Specify client window size via command line and host will change native
-  resolution to it once the connection has been established.
+* Multi monitor mode, requesting up to `NUM_VSTREAMS` host monitor streams by
+  default. The client enables additional Parsec video streams and creates or
+  destroys matching SDL windows dynamically when monitors are added or removed
+  in Windows Display Settings. Use `--monitors SPEC` to restrict monitors or
+  override resolutions.
+* Specify per-monitor resolution via command line using `--monitors`, for
+  example `--monitors 1:1920x1080,2:default`, and the host will change native
+  resolution once the connection has been established.
 * Configurable mouse wheel sensitivity. User can specify mouse scroll speed via
   command line switch serving different needs and requirements.
 * Modular architecture and can be extended with additional streaming host

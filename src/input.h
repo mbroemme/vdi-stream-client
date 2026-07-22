@@ -45,6 +45,7 @@ typedef enum vdi_stream_client__input_command_e
 typedef struct vdi_stream_client__input_command_s
 {
     vdi_stream_client__input_command_e type;
+    Uint8 stream;
     bool grab_forced;
 } vdi_stream_client__input_command_s;
 

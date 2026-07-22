@@ -17,11 +17,11 @@
 
 #include "parsec.h"
 
-bool vdi_stream_client__placebo_init(struct parsec_context_s *parsec_context);
+bool vdi_stream_client__placebo_init(struct vdi_stream_client__output_s *output);
 bool vdi_stream_client__placebo_render(
-    struct parsec_context_s *parsec_context, const ParsecFrame *frame, const void *image,
+    struct vdi_stream_client__output_s *output, const ParsecFrame *frame, const void *image,
     bool *handled
 );
-void vdi_stream_client__placebo_destroy(struct parsec_context_s *parsec_context);
+void vdi_stream_client__placebo_destroy(struct vdi_stream_client__output_s *output);
 
 #endif /* VDI_STREAM_CLIENT_PLACEBO_H */
