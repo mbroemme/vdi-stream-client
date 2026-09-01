@@ -1244,7 +1244,9 @@ vdi_stream_client__video_setup(
         vdi_stream_client__window_lock_size(
             output->window, output->window_width, output->window_height
         );
+        SDL_LockMutex(output->parsec_context->output_lock);
         output->active = true;
+        SDL_UnlockMutex(output->parsec_context->output_lock);
         return true;
     }
 
@@ -1258,9 +1260,18 @@ vdi_stream_client__video_setup(
 static void
 vdi_stream_client__output_destroy(struct vdi_stream_client__output_s *output)
 {
-    if (output == NULL || !output->active) {
+    if (output == NULL) {
         return;
     }
+    SDL_LockMutex(output->parsec_context->output_lock);
+    if (!output->active) {
+        SDL_UnlockMutex(output->parsec_context->output_lock);
+        return;
+    }
+    output->active = false;
+    output->window_id = 0;
+    SDL_UnlockMutex(output->parsec_context->output_lock);
+
     vdi_stream_client__release_grab(output);
     SDL_SetWindowKeyboardGrab(output->window, false);
     vdi_stream_client__video_destroy(output);
@@ -1270,8 +1281,6 @@ vdi_stream_client__output_destroy(struct vdi_stream_client__output_s *output)
     output->cursor = NULL;
     SDL_DestroyWindow(output->window);
     output->window = NULL;
-    output->window_id = 0;
-    output->active = false;
     output->decoder = false;
     output->requested_width = 0;
     output->requested_height = 0;
@@ -1404,6 +1413,13 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Initialize SDL\n");
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Initialization failed: %s\n", SDL_GetError());
+        goto error;
+    }
+    parsec_context.output_lock = SDL_CreateMutex();
+    if (parsec_context.output_lock == NULL) {
+        SDL_LogError(
+            SDL_LOG_CATEGORY_APPLICATION, "Output mutex creation failed: %s\n", SDL_GetError()
+        );
         goto error;
     }
 
@@ -1922,6 +1938,11 @@ vdi_stream_client__event_loop(struct vdi_config_s *vdi_config)
     /* Release the reused decode context now that all decoders are gone. */
     vdi_stream_client__parsec_ffmpeg_decoder_destroy();
 
+    if (parsec_context.output_lock != NULL) {
+        SDL_DestroyMutex(parsec_context.output_lock);
+        parsec_context.output_lock = NULL;
+    }
+
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);
     TTF_Quit();
@@ -1950,6 +1971,11 @@ error:
 
     /* Release the reused decode context now that all decoders are gone. */
     vdi_stream_client__parsec_ffmpeg_decoder_destroy();
+
+    if (parsec_context.output_lock != NULL) {
+        SDL_DestroyMutex(parsec_context.output_lock);
+        parsec_context.output_lock = NULL;
+    }
 
     /* TTF destroy. */
     TTF_CloseFont(parsec_context.font);

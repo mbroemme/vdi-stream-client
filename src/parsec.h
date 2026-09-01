@@ -127,6 +127,7 @@ struct parsec_context_s
 
     /* video. */
     struct vdi_stream_client__output_s outputs[NUM_VSTREAMS];
+    SDL_Mutex *output_lock;
     Uint8 monitors;
     Uint8 active_stream;
     TTF_Font *font;

@@ -65,16 +65,20 @@ vdi_stream_client__input_stream_for_window(
 )
 {
     const struct parsec_context_s *parsec_context = input_context->parsec_context;
+    Uint8 stream = parsec_context->active_stream;
 
-    if (window_id != 0) {
-        for (Uint8 stream = 0; stream < parsec_context->monitors; stream++) {
-            if (parsec_context->outputs[stream].active &&
-                parsec_context->outputs[stream].window_id == window_id) {
-                return stream;
+    if (window_id != 0 && parsec_context->output_lock != NULL) {
+        SDL_LockMutex(parsec_context->output_lock);
+        for (Uint8 candidate = 0; candidate < parsec_context->monitors; candidate++) {
+            if (parsec_context->outputs[candidate].active &&
+                parsec_context->outputs[candidate].window_id == window_id) {
+                stream = candidate;
+                break;
             }
         }
+        SDL_UnlockMutex(parsec_context->output_lock);
     }
-    return parsec_context->active_stream;
+    return stream;
 }
 
 /* Prepare the input context and its command queue. The context keeps pointers to
